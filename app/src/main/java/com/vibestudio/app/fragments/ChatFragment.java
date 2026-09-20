@@ -19,6 +19,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.vibestudio.app.service.ChatService;
+import com.vibestudio.app.view.SystemMessageView;
 
 import java.util.List;
 
@@ -116,41 +117,6 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
             if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_RESULT) {
                 continue;
             }
-            if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
-                String text = msg.getText();
-                String toolSummary = "⚙️ Executing tool call...";
-                try {
-                    if (text.contains("{") && text.contains("\"tool\"")) {
-                        int jsonStart = text.indexOf("{");
-                        int jsonEnd = text.lastIndexOf("}");
-                        if (jsonStart != -1 && jsonEnd > jsonStart) {
-                            org.json.JSONObject toolCallObj = new org.json.JSONObject(text.substring(jsonStart, jsonEnd + 1).trim());
-                            String toolName = toolCallObj.optString("tool");
-                            org.json.JSONObject args = toolCallObj.optJSONObject("args");
-                            if (args == null) args = new org.json.JSONObject();
-
-                            if ("get_skill_schema".equalsIgnoreCase(toolName)) {
-                                String skillName = args.optString("skill_name", "unknown");
-                                toolSummary = "🔧 Requesting schema for skill: " + skillName;
-                            } else if ("execute_command".equalsIgnoreCase(toolName)) {
-                                String cmd = args.optString("command", "");
-                                toolSummary = "⚡ Executing terminal command:\n" + cmd;
-                            } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
-                                toolSummary = "🔍 Inspecting terminal logs buffer";
-                            } else {
-                                toolSummary = "⚙️ Executing tool: " + toolName;
-                            }
-                        }
-                    } else {
-                        toolSummary = text;
-                    }
-                } catch (Exception ignored) {
-                    toolSummary = text;
-                }
-                ChatService.ChatMessage summaryMsg = new ChatService.ChatMessage("System Tool", toolSummary, false, ChatService.ChatMessage.MessageType.TOOL_CALL);
-                addChatMessageUI(context, summaryMsg);
-                continue;
-            }
             addChatMessageUI(context, msg);
         }
 
@@ -161,6 +127,15 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     private void addChatMessageUI(Context context, ChatService.ChatMessage msg) {
         if (context == null || mChatContainer == null) return;
 
+        if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
+            // VSCode style SystemMessageView for tool calls (no bubble, no author, sleek inline system line)
+            SystemMessageView sysView = new SystemMessageView(context);
+            sysView.bind(msg);
+            mChatContainer.addView(sysView);
+            return;
+        }
+
+        // Standard User / Assistant Message Card
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(18, 14, 18, 14);
@@ -168,10 +143,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
         params.setMargins(0, 0, 0, 16);
 
-        if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
-            params.gravity = android.view.Gravity.LEFT;
-            card.setBackgroundColor(Color.parseColor("#1E2A38")); // Dark blue accent for tool invocation
-        } else if (msg.isUser()) {
+        if (msg.isUser()) {
             params.gravity = android.view.Gravity.RIGHT;
             card.setBackgroundColor(Color.parseColor("#3700B3"));
         } else {
@@ -182,13 +154,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
 
         TextView tvSender = new TextView(context);
         tvSender.setText(msg.getSender());
-        if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
-            tvSender.setTextColor(Color.parseColor("#64B5F6")); // Light blue header
-        } else if (msg.isUser()) {
-            tvSender.setTextColor(Color.parseColor("#03DAC6"));
-        } else {
-            tvSender.setTextColor(Color.parseColor("#BB86FC"));
-        }
+        tvSender.setTextColor(msg.isUser() ? Color.parseColor("#03DAC6") : Color.parseColor("#BB86FC"));
         tvSender.setTextSize(12);
         tvSender.setTypeface(null, Typeface.BOLD);
         tvSender.setTextIsSelectable(true);

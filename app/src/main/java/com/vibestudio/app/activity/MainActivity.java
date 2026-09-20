@@ -106,6 +106,10 @@ public class MainActivity extends FragmentActivity {
         }
     }
 
+    public void selectNavigationItem(int position) {
+        selectItem(position);
+    }
+
     private void selectItem(int position) {
         MenuItem item = mMenuItems[position];
         mToolbarTitle.setText(item.title);
