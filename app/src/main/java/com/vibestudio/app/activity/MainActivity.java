@@ -20,6 +20,7 @@ import com.vibestudio.app.fragments.ModelsFragment;
 import com.vibestudio.app.fragments.PermissionsFragment;
 import com.vibestudio.app.fragments.TerminalFragment;
 import com.vibestudio.app.service.LogViewerService;
+import com.vibestudio.app.terminal.TerminalSessionManager;
 
 public class MainActivity extends FragmentActivity {
 
@@ -58,6 +59,9 @@ public class MainActivity extends FragmentActivity {
         mDrawerContainer = findViewById(R.id.left_drawer_container);
         mDrawerList = (ListView) findViewById(R.id.left_drawer);
         mToolbarTitle = (TextView) findViewById(R.id.toolbar_title);
+
+        // Start global persistent TerminalSession directly from MainActivity
+        TerminalSessionManager.getInstance().ensureSessionStarted(this.getApplicationContext());
 
         ArrayAdapter<MenuItem> adapter = new ArrayAdapter<MenuItem>(this, R.layout.drawer_list_item, mMenuItems) {
             @Override

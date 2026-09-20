@@ -1,58 +1,154 @@
 package com.vibestudio.app.mcp;
 
-import android.util.Log;
-
-import io.modelcontextprotocol.spec.McpSchema;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class McpClientManager {
-    private static final String TAG = "McpClientManager";
 
     public static class McpServerInfo {
-        private String name;
-        private String status;
-        private String color;
-        private int toolsCount;
+        private final String name;
+        private final String description;
+        private final boolean isConnected;
 
-        public McpServerInfo(String name, String status, String color, int toolsCount) {
+        public McpServerInfo(String name, String description, boolean isConnected) {
             this.name = name;
-            this.status = status;
-            this.color = color;
-            this.toolsCount = toolsCount;
+            this.description = description;
+            this.isConnected = isConnected;
         }
 
         public String getName() { return name; }
-        public String getStatus() { return status; }
-        public String getColor() { return color; }
-        public int getToolsCount() { return toolsCount; }
+        public String getDescription() { return description; }
+        public boolean isConnected() { return isConnected; }
+        public String getStatus() { return isConnected ? "Status: Connected & Ready" : "Status: Disconnected"; }
+        public String getColor() { return isConnected ? "#4CAF50" : "#F44336"; }
     }
 
-    private final List<McpServerInfo> configuredServers = new ArrayList<>();
+    private final Map<String, Object> mRegisteredServers = new HashMap<>();
 
     public McpClientManager() {
-        Log.i(TAG, "Initializing McpClientManager and loading servers...");
-        initDefaultServers();
-    }
-
-    private void initDefaultServers() {
-        configuredServers.add(new McpServerInfo("FileSystem Server", "Status: Connected • 12 tools active", "#03DAC6", 12));
-        configuredServers.add(new McpServerInfo("Puppeteer Server", "Status: Connected • Browser automation enabled", "#03DAC6", 8));
-        configuredServers.add(new McpServerInfo("SQLite Server", "Status: Idle • Local database access", "#FFB74D", 5));
-        configuredServers.add(new McpServerInfo("GitHub API Server", "Status: Disconnected", "#CF6679", 0));
-
-        for (McpServerInfo s : configuredServers) {
-            Log.d(TAG, "Loaded MCP Server: " + s.getName() + " [" + s.getStatus() + "]");
-        }
+        mRegisteredServers.put("terminal", new TerminalMcpServer());
     }
 
     public List<McpServerInfo> getConfiguredServers() {
-        return configuredServers;
+        List<McpServerInfo> list = new ArrayList<>();
+        list.add(new McpServerInfo("Terminal Skill", "Shared Terminal Execution & Buffer Inspector MCP Skill", true));
+        return list;
     }
 
-    public McpSchema.ClientCapabilities getClientCapabilities() {
-        Log.d(TAG, "Retrieving MCP client capabilities from SDK...");
-        return new McpSchema.ClientCapabilities(null, null, null, null);
+    public JSONObject getAllAvailableToolsSchema() {
+        JSONObject allTools = new JSONObject();
+        try {
+            JSONArray toolsArray = new JSONArray();
+            for (Object server : mRegisteredServers.values()) {
+                if (server instanceof TerminalMcpServer) {
+                    JSONArray tools = ((TerminalMcpServer) server).getToolsListSchema();
+                    if (tools != null) {
+                        for (int i = 0; i < tools.length(); i++) {
+                            toolsArray.put(tools.getJSONObject(i));
+                        }
+                    }
+                }
+            }
+            allTools.put("tools", toolsArray);
+        } catch (Exception ignored) {}
+        return allTools;
+    }
+
+    public JSONObject getHighLevelCatalog() {
+        JSONObject catalog = new JSONObject();
+        try {
+            JSONArray skills = new JSONArray();
+
+            JSONObject terminalSkill = new JSONObject();
+            terminalSkill.put("name", "terminal");
+            terminalSkill.put("description", "Allows running shell commands in the active IDE terminal session and inspecting terminal logs.");
+            skills.put(terminalSkill);
+
+            catalog.put("available_skills", skills);
+
+            JSONObject getMetaTool = new JSONObject();
+            getMetaTool.put("name", "get_skill_schema");
+            getMetaTool.put("description", "Fetches detailed parameters and tool schemas for a given skill name when needed.");
+            
+            JSONObject skillArg = new JSONObject();
+            skillArg.put("type", "string");
+            skillArg.put("description", "Name of the skill to load (e.g. 'terminal')");
+
+            JSONObject properties = new JSONObject();
+            properties.put("skill_name", skillArg);
+
+            JSONObject parameters = new JSONObject();
+            parameters.put("type", "object");
+            parameters.put("properties", properties);
+            
+            JSONArray required = new JSONArray();
+            required.put("skill_name");
+            parameters.put("required", required);
+
+            getMetaTool.put("parameters", parameters);
+
+            catalog.put("meta_tool", getMetaTool);
+
+        } catch (Exception ignored) {}
+        return catalog;
+    }
+
+    public JSONObject getSkillSchema(String skillName) {
+        JSONObject response = new JSONObject();
+        try {
+            if (skillName != null && mRegisteredServers.containsKey(skillName.toLowerCase())) {
+                Object server = mRegisteredServers.get(skillName.toLowerCase());
+                if (server instanceof TerminalMcpServer) {
+                    response.put("status", "success");
+                    response.put("skill", skillName.toLowerCase());
+                    JSONObject schemaObj = new JSONObject();
+                    schemaObj.put("tools", ((TerminalMcpServer) server).getToolsListSchema());
+                    response.put("schema", schemaObj);
+                    return response;
+                }
+            }
+            response.put("status", "error");
+            response.put("message", "Unknown skill name: " + skillName);
+        } catch (Exception e) {
+            try {
+                response.put("status", "error");
+                response.put("message", e.getMessage());
+            } catch (Exception ignored) {}
+        }
+        return response;
+    }
+
+    public JSONObject executeToolCall(String toolName, JSONObject args) {
+        JSONObject result = new JSONObject();
+        try {
+            if ("get_skill_schema".equalsIgnoreCase(toolName)) {
+                String skillName = args != null ? args.optString("skill_name") : "";
+                return getSkillSchema(skillName);
+            }
+
+            for (Object server : mRegisteredServers.values()) {
+                if (server instanceof TerminalMcpServer) {
+                    TerminalMcpServer terminalServer = (TerminalMcpServer) server;
+                    if ("execute_command".equals(toolName) || "read_terminal_output".equals(toolName)) {
+                        return terminalServer.callTool(toolName, args);
+                    }
+                }
+            }
+
+            result.put("status", "error");
+            result.put("message", "Tool execution failed: Unknown tool '" + toolName + "'. Lazy load skill schema via 'get_skill_schema' if not loaded.");
+
+        } catch (Exception e) {
+            try {
+                result.put("status", "error");
+                result.put("message", "Exception executing tool: " + e.getMessage());
+            } catch (Exception ignored) {}
+        }
+        return result;
     }
 }

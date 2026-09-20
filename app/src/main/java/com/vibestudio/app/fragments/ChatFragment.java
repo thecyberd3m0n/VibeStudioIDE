@@ -112,6 +112,10 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
 
         List<ChatService.ChatMessage> history = ChatService.getInstance().getMessages();
         for (ChatService.ChatMessage msg : history) {
+            // Do not display raw background TOOL_RESULT messages in UI
+            if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_RESULT) {
+                continue;
+            }
             addChatMessageUI(context, msg);
         }
 
@@ -129,7 +133,10 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
         params.setMargins(0, 0, 0, 16);
 
-        if (msg.isUser()) {
+        if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
+            params.gravity = android.view.Gravity.LEFT;
+            card.setBackgroundColor(Color.parseColor("#1E2A38")); // Dark blue accent for tool invocation
+        } else if (msg.isUser()) {
             params.gravity = android.view.Gravity.RIGHT;
             card.setBackgroundColor(Color.parseColor("#3700B3"));
         } else {
@@ -140,7 +147,13 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
 
         TextView tvSender = new TextView(context);
         tvSender.setText(msg.getSender());
-        tvSender.setTextColor(msg.isUser() ? Color.parseColor("#03DAC6") : Color.parseColor("#BB86FC"));
+        if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
+            tvSender.setTextColor(Color.parseColor("#64B5F6")); // Light blue header
+        } else if (msg.isUser()) {
+            tvSender.setTextColor(Color.parseColor("#03DAC6"));
+        } else {
+            tvSender.setTextColor(Color.parseColor("#BB86FC"));
+        }
         tvSender.setTextSize(12);
         tvSender.setTypeface(null, Typeface.BOLD);
         tvSender.setTextIsSelectable(true);
@@ -184,8 +197,10 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     public void onMessageAdded(ChatService.ChatMessage message) {
         Context context = getContext();
         if (context != null) {
-            addChatMessageUI(context, message);
-            scrollToBottom();
+            if (message.getType() != ChatService.ChatMessage.MessageType.TOOL_RESULT) {
+                addChatMessageUI(context, message);
+                scrollToBottom();
+            }
         }
     }
 
