@@ -18,8 +18,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.vibestudio.app.mcp.ToolMessageFactory;
 import com.vibestudio.app.service.ChatService;
-import com.vibestudio.app.view.TerminalToolMessage;
+import com.vibestudio.app.view.BaseToolMessageView;
 
 import java.util.List;
 
@@ -127,10 +128,9 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     private void addChatMessageUI(Context context, ChatService.ChatMessage msg) {
         if (context == null || mChatContainer == null) return;
 
-        if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
-            // Render TerminalToolMessage view for terminal tool invocation calls
-            TerminalToolMessage toolView = new TerminalToolMessage(context);
-            toolView.bind(msg);
+        // Centralized SOLID check and view creation via ToolMessageFactory
+        if (ToolMessageFactory.isToolMessage(msg)) {
+            BaseToolMessageView toolView = ToolMessageFactory.createToolMessageView(context, msg);
             mChatContainer.addView(toolView);
             return;
         }
