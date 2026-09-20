@@ -77,7 +77,7 @@ public abstract class BaseToolMessageView extends LinearLayout {
         mTvBodyContent.setTextColor(Color.parseColor("#A0A0A0"));
         mTvBodyContent.setTextSize(12);
         mTvBodyContent.setTypeface(Typeface.MONOSPACE);
-        mTvBodyContent.setTextIsSelectable(true);
+        mTvBodyContent.setTextIsSelectable(false); // Disables internal text-selection touch stealing so body click fires
 
         mBodyLayout.addView(mTvBodyContent);
 
@@ -87,8 +87,10 @@ public abstract class BaseToolMessageView extends LinearLayout {
         // Toggle Expand/Collapse on Header click
         mHeaderLayout.setOnClickListener(v -> toggleExpand());
 
-        // Navigation to target tool view on Body click
-        mBodyLayout.setOnClickListener(v -> navigateToTool());
+        // Navigation to target tool view on Body click or Body text click
+        View.OnClickListener clickToNavigate = v -> navigateToTool();
+        mBodyLayout.setOnClickListener(clickToNavigate);
+        mTvBodyContent.setOnClickListener(clickToNavigate);
     }
 
     protected abstract String getToolIcon();
@@ -103,10 +105,11 @@ public abstract class BaseToolMessageView extends LinearLayout {
 
     private void navigateToTool() {
         int navIndex = getTargetNavigationIndex();
-        if (getContext() instanceof MainActivity) {
-            ((MainActivity) getContext()).selectNavigationItem(navIndex);
-        } else if (getContext() instanceof FragmentActivity) {
-            FragmentActivity act = (FragmentActivity) getContext();
+        Context ctx = getContext();
+        if (ctx instanceof MainActivity) {
+            ((MainActivity) ctx).selectNavigationItem(navIndex);
+        } else if (ctx instanceof FragmentActivity) {
+            FragmentActivity act = (FragmentActivity) ctx;
             if (act instanceof MainActivity) {
                 ((MainActivity) act).selectNavigationItem(navIndex);
             }
