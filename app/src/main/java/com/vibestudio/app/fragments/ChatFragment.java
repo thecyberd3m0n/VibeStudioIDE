@@ -18,7 +18,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.vibestudio.app.mcp.ToolMessageFactory;
 import com.vibestudio.app.service.ChatService;
+import com.vibestudio.app.view.BaseToolMessageView;
 
 import java.util.List;
 
@@ -112,6 +114,10 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
 
         List<ChatService.ChatMessage> history = ChatService.getInstance().getMessages();
         for (ChatService.ChatMessage msg : history) {
+            // Do not display raw background TOOL_RESULT messages in UI
+            if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_RESULT) {
+                continue;
+            }
             addChatMessageUI(context, msg);
         }
 
@@ -122,6 +128,14 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     private void addChatMessageUI(Context context, ChatService.ChatMessage msg) {
         if (context == null || mChatContainer == null) return;
 
+        // Centralized SOLID check and view creation via ToolMessageFactory
+        if (ToolMessageFactory.isToolMessage(msg)) {
+            BaseToolMessageView toolView = ToolMessageFactory.createToolMessageView(context, msg);
+            mChatContainer.addView(toolView);
+            return;
+        }
+
+        // Standard User / Assistant Message Card
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(18, 14, 18, 14);
@@ -184,8 +198,10 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     public void onMessageAdded(ChatService.ChatMessage message) {
         Context context = getContext();
         if (context != null) {
-            addChatMessageUI(context, message);
-            scrollToBottom();
+            if (message.getType() != ChatService.ChatMessage.MessageType.TOOL_RESULT) {
+                addChatMessageUI(context, message);
+                scrollToBottom();
+            }
         }
     }
 

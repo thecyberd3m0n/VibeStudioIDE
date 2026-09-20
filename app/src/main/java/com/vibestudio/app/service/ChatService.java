@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.vibestudio.app.db.DatabaseHelper;
+import com.vibestudio.app.mcp.McpClientManager;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -22,25 +23,52 @@ import java.util.List;
 public class ChatService {
 
     private static final String TAG = "ChatService";
-    private static final String DEFAULT_MODEL = "gemini-2.5-flash";
-    private static final String SYSTEM_INSTRUCTION = "You are VibeStudio Assistant, an intelligent AI helper built into the VibeStudio Android IDE application. Assist the user with coding, project guidance, and general inquiries clearly and concisely.";
+    private static final String DEFAULT_MODEL = "gemini-flash-latest";
+    private static final int MAX_TOOL_LOOP_DEPTH = 5;
+    
+    private static final String BASE_SYSTEM_INSTRUCTION = 
+            "You are VibeStudio Assistant, an intelligent AI coding assistant integrated directly into VibeStudio Android IDE.\n\n" +
+            "=== LAZY TOOL LOADING ARCHITECTURE ===\n" +
+            "Detailed tool schemas are NOT loaded by default to keep context size minimal.\n" +
+            "1. Check the available high-level skills catalog below.\n" +
+            "2. If you need a specific skill (e.g., 'terminal'), call the meta tool 'get_skill_schema':\n" +
+            "{\n  \"tool\": \"get_skill_schema\",\n  \"args\": {\"skill_name\": \"terminal\"}\n}\n" +
+            "3. Once the system returns the detailed skill schema, IMMEDIATELY call the target tool (e.g. 'execute_command') to perform the requested user action.\n" +
+            "4. NEVER stop after calling 'get_skill_schema'—always proceed directly to calling the appropriate action tool.\n\n" +
+            "=== TOKEN OPTIMIZATION RULES ===\n" +
+            "- Always use low token bounds (e.g. max_lines: 30 or grep_pattern) when querying terminal logs.\n" +
+            "- Format all tool calls strictly as single JSON blocks:\n" +
+            "{\n  \"tool\": \"<tool_name>\",\n  \"args\": { ... }\n}\n";
 
     private static ChatService sInstance;
 
     public static class ChatMessage {
+        public enum MessageType {
+            NORMAL,
+            TOOL_CALL,
+            TOOL_RESULT
+        }
+
         private final String sender;
         private final String text;
         private final boolean isUser;
+        private final MessageType type;
 
         public ChatMessage(String sender, String text, boolean isUser) {
+            this(sender, text, isUser, MessageType.NORMAL);
+        }
+
+        public ChatMessage(String sender, String text, boolean isUser, MessageType type) {
             this.sender = sender;
             this.text = text;
             this.isUser = isUser;
+            this.type = type != null ? type : MessageType.NORMAL;
         }
 
         public String getSender() { return sender; }
         public String getText() { return text; }
         public boolean isUser() { return isUser; }
+        public MessageType getType() { return type; }
     }
 
     public interface OnChatMessageListener {
@@ -51,11 +79,12 @@ public class ChatService {
     private final List<ChatMessage> mMessages = new ArrayList<>();
     private final List<OnChatMessageListener> mListeners = new ArrayList<>();
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+    private final McpClientManager mMcpClientManager;
     private boolean mIsLoading = false;
 
     private ChatService() {
-        // Initial static welcome message
-        mMessages.add(new ChatMessage("Assistant", "Hello! Welcome to VibeStudio. How can I help you?", false));
+        mMcpClientManager = new McpClientManager();
+        mMessages.add(new ChatMessage("Assistant", "Hello! Welcome to VibeStudio. I am configured with lazy-loaded MCP skills. How can I assist you?", false));
     }
 
     public static synchronized ChatService getInstance() {
@@ -83,6 +112,10 @@ public class ChatService {
         mListeners.remove(listener);
     }
 
+    public McpClientManager getMcpClientManager() {
+        return mMcpClientManager;
+    }
+
     public void sendMessage(final Context context, final String userText) {
         if (userText == null || userText.trim().isEmpty()) return;
 
@@ -101,46 +134,137 @@ public class ChatService {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
-                String apiKey = dbHelper.getApiKey("Gemini");
-
-                if (apiKey == null || apiKey.trim().isEmpty()) {
-                    LogViewerService.getInstance().w(TAG, "No Gemini API key found in SQLite database");
-                    postAssistantResponse("Error: Gemini API Key is not configured. Please set your API Key in the Models tab.");
-                    return;
-                }
-
-                String[] candidateModels = new String[] {
-                    DEFAULT_MODEL,
-                    "gemini-2.5-pro",
-                    "gemini-flash-latest",
-                    "gemini-pro-latest"
-                };
-
-                String responseStr = "";
-                int statusCode = 500;
-
-                for (String model : candidateModels) {
-                    responseStr = executeGeminiRequest(apiKey.trim(), model);
-                    statusCode = getHttpStatusCode(responseStr);
-
-                    if (statusCode != 404) {
-                        break;
-                    }
-                    LogViewerService.getInstance().w(TAG, "Model " + model + " returned 404, attempting next fallback model...");
-                }
-
-                if (statusCode >= 200 && statusCode < 300) {
-                    String reply = parseGeminiResponse(responseStr);
-                    LogViewerService.getInstance().i(TAG, "Gemini reply received successfully.");
-                    postAssistantResponse(reply);
-                } else {
-                    LogViewerService.getInstance().w(TAG, "Gemini Chat API error response: " + responseStr);
-                    String errorReply = "Error (" + statusCode + "): " + parseErrorResponse(responseStr);
-                    postAssistantResponse(errorReply);
-                }
+                processUserRequest(context, 0);
             }
         }).start();
+    }
+
+    private void processUserRequest(final Context context, final int loopDepth) {
+        DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
+        String apiKey = dbHelper.getApiKey("Gemini");
+
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            LogViewerService.getInstance().w(TAG, "No Gemini API key found in SQLite database");
+            postAssistantResponse("Error: Gemini API Key is not configured. Please set your API Key in the Models tab.");
+            return;
+        }
+
+        String[] candidateModels = new String[] {
+            "gemini-flash-latest",
+            "gemini-pro-latest",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro"
+        };
+
+        String responseStr = "";
+        int statusCode = 500;
+
+        for (String model : candidateModels) {
+            responseStr = executeGeminiRequest(apiKey.trim(), model);
+            statusCode = getHttpStatusCode(responseStr);
+
+            if (statusCode != 404) {
+                break;
+            }
+            LogViewerService.getInstance().w(TAG, "Model " + model + " returned 404, attempting next fallback model...");
+        }
+
+        if (statusCode >= 200 && statusCode < 300) {
+            String reply = parseGeminiResponse(responseStr);
+            LogViewerService.getInstance().i(TAG, "Gemini reply received successfully.");
+            
+            handlePotentialToolCall(context, reply, loopDepth);
+
+        } else {
+            LogViewerService.getInstance().w(TAG, "Gemini Chat API error response: " + responseStr);
+            String errorReply = "Error (" + statusCode + "): " + parseErrorResponse(responseStr);
+            postAssistantResponse(errorReply);
+        }
+    }
+
+    private void handlePotentialToolCall(final Context context, String rawReply, final int loopDepth) {
+        try {
+            if (rawReply.contains("{") && rawReply.contains("\"tool\"")) {
+                int jsonStart = rawReply.indexOf("{");
+                int jsonEnd = rawReply.lastIndexOf("}");
+                if (jsonStart != -1 && jsonEnd > jsonStart) {
+                    String jsonBlock = rawReply.substring(jsonStart, jsonEnd + 1).trim();
+                    JSONObject toolCallObj = new JSONObject(jsonBlock);
+                    String toolName = toolCallObj.optString("tool");
+                    JSONObject args = toolCallObj.optJSONObject("args");
+
+                    if (args == null) args = new JSONObject();
+
+                    LogViewerService.getInstance().i(TAG, "Executing tool call requested by AI: " + toolName + " | Args: " + args.toString());
+
+                    // Format compact user-friendly summary message for UI
+                    String toolSummary;
+                    if ("get_skill_schema".equalsIgnoreCase(toolName)) {
+                        String skillName = args.optString("skill_name", "unknown");
+                        toolSummary = "🔧 Requesting schema for skill: " + skillName;
+                    } else if ("execute_command".equalsIgnoreCase(toolName)) {
+                        String cmd = args.optString("command", "");
+                        toolSummary = "⚡ Executing terminal command:\n`" + cmd + "`";
+                    } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
+                        toolSummary = "🔍 Inspecting terminal logs buffer";
+                    } else {
+                        toolSummary = "⚙️ Executing tool: " + toolName;
+                    }
+
+                    // Post clean summary message to chat UI
+                    postToolStatusMessage(toolSummary, ChatMessage.MessageType.TOOL_CALL);
+
+                    // Execute tool logic
+                    JSONObject toolResult = mMcpClientManager.executeToolCall(toolName, args);
+
+                    // Step 1: Model assistant call entry (role = model)
+                    ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL);
+                    
+                    // Step 2: System tool execution result (role = user) for LLM evaluation
+                    StringBuilder toolResultFormatted = new StringBuilder();
+                    toolResultFormatted.append("[MCP Tool Execution Output for ").append(toolName).append("]\n");
+                    toolResultFormatted.append(toolResult.toString(2));
+                    ChatMessage toolResultMsg = new ChatMessage("System Tool", toolResultFormatted.toString(), true, ChatMessage.MessageType.TOOL_RESULT);
+
+                    synchronized (ChatService.this) {
+                        mMessages.add(modelCallMsg);
+                        mMessages.add(toolResultMsg);
+                    }
+
+                    LogViewerService.getInstance().i(TAG, "Tool execution completed for " + toolName + ". Status: " + toolResult.optString("status", "unknown"));
+
+                    if (loopDepth < MAX_TOOL_LOOP_DEPTH) {
+                        LogViewerService.getInstance().i(TAG, "Continuing tool execution loop at depth: " + (loopDepth + 1));
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                processUserRequest(context, loopDepth + 1);
+                            }
+                        }).start();
+                        return;
+                    } else {
+                        LogViewerService.getInstance().w(TAG, "Reached maximum tool execution loop depth (" + MAX_TOOL_LOOP_DEPTH + ")");
+                        postAssistantResponse("Reached maximum automated tool call loop limit.");
+                        return;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LogViewerService.getInstance().e(TAG, "Error processing tool call from LLM output", e);
+        }
+        postAssistantResponse(rawReply);
+    }
+
+    private void postToolStatusMessage(final String summaryText, final ChatMessage.MessageType type) {
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                ChatMessage toolMsg = new ChatMessage("System Tool", summaryText, false, type);
+                synchronized (ChatService.this) {
+                    notifyMessageAdded(toolMsg);
+                }
+            }
+        });
     }
 
     private int getHttpStatusCode(String rawResult) {
@@ -190,9 +314,12 @@ public class ChatService {
 
             JSONObject payload = new JSONObject();
 
-            // System Instruction applied when sending conversation
+            StringBuilder sysPromptBuilder = new StringBuilder(BASE_SYSTEM_INSTRUCTION);
+            sysPromptBuilder.append("\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n");
+            sysPromptBuilder.append(mMcpClientManager.getHighLevelCatalog().toString(2));
+
             JSONObject sysTextPart = new JSONObject();
-            sysTextPart.put("text", SYSTEM_INSTRUCTION);
+            sysTextPart.put("text", sysPromptBuilder.toString());
 
             JSONArray sysParts = new JSONArray();
             sysParts.put(sysTextPart);
