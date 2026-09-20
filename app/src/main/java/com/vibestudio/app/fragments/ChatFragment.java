@@ -19,7 +19,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.vibestudio.app.service.ChatService;
-import com.vibestudio.app.view.SystemMessageView;
+import com.vibestudio.app.view.TerminalToolMessage;
 
 import java.util.List;
 
@@ -128,10 +128,10 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         if (context == null || mChatContainer == null) return;
 
         if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
-            // VSCode style SystemMessageView for tool calls (no bubble, no author, sleek inline system line)
-            SystemMessageView sysView = new SystemMessageView(context);
-            sysView.bind(msg);
-            mChatContainer.addView(sysView);
+            // Render TerminalToolMessage view for terminal tool invocation calls
+            TerminalToolMessage toolView = new TerminalToolMessage(context);
+            toolView.bind(msg);
+            mChatContainer.addView(toolView);
             return;
         }
 
