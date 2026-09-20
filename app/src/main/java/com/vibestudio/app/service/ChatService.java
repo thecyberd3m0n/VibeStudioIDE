@@ -218,7 +218,7 @@ public class ChatService {
                     JSONObject toolResult = mMcpClientManager.executeToolCall(toolName, args);
 
                     // Step 1: Model assistant call entry (role = model)
-                    ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.NORMAL);
+                    ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL);
                     
                     // Step 2: System tool execution result (role = user) for LLM evaluation
                     StringBuilder toolResultFormatted = new StringBuilder();

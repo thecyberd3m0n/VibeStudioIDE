@@ -116,6 +116,41 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
             if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_RESULT) {
                 continue;
             }
+            if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
+                String text = msg.getText();
+                String toolSummary = "⚙️ Executing tool call...";
+                try {
+                    if (text.contains("{") && text.contains("\"tool\"")) {
+                        int jsonStart = text.indexOf("{");
+                        int jsonEnd = text.lastIndexOf("}");
+                        if (jsonStart != -1 && jsonEnd > jsonStart) {
+                            org.json.JSONObject toolCallObj = new org.json.JSONObject(text.substring(jsonStart, jsonEnd + 1).trim());
+                            String toolName = toolCallObj.optString("tool");
+                            org.json.JSONObject args = toolCallObj.optJSONObject("args");
+                            if (args == null) args = new org.json.JSONObject();
+
+                            if ("get_skill_schema".equalsIgnoreCase(toolName)) {
+                                String skillName = args.optString("skill_name", "unknown");
+                                toolSummary = "🔧 Requesting schema for skill: " + skillName;
+                            } else if ("execute_command".equalsIgnoreCase(toolName)) {
+                                String cmd = args.optString("command", "");
+                                toolSummary = "⚡ Executing terminal command:\n" + cmd;
+                            } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
+                                toolSummary = "🔍 Inspecting terminal logs buffer";
+                            } else {
+                                toolSummary = "⚙️ Executing tool: " + toolName;
+                            }
+                        }
+                    } else {
+                        toolSummary = text;
+                    }
+                } catch (Exception ignored) {
+                    toolSummary = text;
+                }
+                ChatService.ChatMessage summaryMsg = new ChatService.ChatMessage("System Tool", toolSummary, false, ChatService.ChatMessage.MessageType.TOOL_CALL);
+                addChatMessageUI(context, summaryMsg);
+                continue;
+            }
             addChatMessageUI(context, msg);
         }
 
