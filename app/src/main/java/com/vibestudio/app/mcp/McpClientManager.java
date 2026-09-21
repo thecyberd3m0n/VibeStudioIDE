@@ -77,7 +77,7 @@ public class McpClientManager {
 
             JSONObject browserSkill = new JSONObject();
             browserSkill.put("name", "browser");
-            browserSkill.put("description", "Allows navigating the IDE webview, setting user-agent, clearing cookies, inspecting active URL, clicking elements, typing text, executing JS scripts, taking screenshots, and reading isolated browser console/navigation logs.");
+            browserSkill.put("description", "Allows enabling the WebView on demand via 'browser_enable', navigating the IDE webview, setting user-agent, clearing cookies, inspecting active URL, clicking elements, typing text, executing JS scripts, taking screenshots, and reading isolated browser console/navigation logs.");
             skills.put(browserSkill);
 
             catalog.put("available_skills", skills);

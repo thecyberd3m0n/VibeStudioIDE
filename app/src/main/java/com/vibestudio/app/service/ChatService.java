@@ -24,7 +24,7 @@ public class ChatService {
 
     private static final String TAG = "ChatService";
     private static final String DEFAULT_MODEL = "gemini-flash-latest";
-    private static final int MAX_TOOL_LOOP_DEPTH = 5;
+    private static final int MAX_TOOL_LOOP_DEPTH = 200;
     
     private static final String BASE_SYSTEM_INSTRUCTION = 
             "You are VibeStudio Assistant, an intelligent AI coding assistant integrated directly into VibeStudio Android IDE.\n\n" +

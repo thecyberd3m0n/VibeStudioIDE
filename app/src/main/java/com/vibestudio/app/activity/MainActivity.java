@@ -13,7 +13,6 @@ import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 
 import com.vibestudio.app.R;
-import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.fragments.ChatFragment;
 import com.vibestudio.app.fragments.LogViewerFragment;
@@ -65,9 +64,6 @@ public class MainActivity extends FragmentActivity {
 
         // Start global persistent TerminalSession directly from MainActivity
         TerminalSessionManager.getInstance().ensureSessionStarted(this.getApplicationContext());
-
-        // Start persistent global WebView directly on MainActivity creation so AI tools are always ready
-        BrowserManager.getInstance().ensureInitialized(this.getApplicationContext());
 
         ArrayAdapter<MenuItem> adapter = new ArrayAdapter<MenuItem>(this, R.layout.drawer_list_item, mMenuItems) {
             @Override

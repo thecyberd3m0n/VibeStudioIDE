@@ -32,6 +32,15 @@ public class BrowserMcpServer {
     public JSONArray getToolsListSchema() {
         JSONArray tools = new JSONArray();
         try {
+                        // Tool 0: browser_enable
+            JSONObject enableTool = new JSONObject();
+            enableTool.put("name", "browser_enable");
+            enableTool.put("description", "Enable and initialize the active WebView for browser operations on demand.");
+            JSONObject enableParams = new JSONObject();
+            enableParams.put("type", "object");
+            enableTool.put("inputSchema", enableParams);
+            tools.put(enableTool);
+
             // Tool 1: browser_navigate
             JSONObject navTool = new JSONObject();
             navTool.put("name", "browser_navigate");
@@ -188,6 +197,20 @@ public class BrowserMcpServer {
         try {
             BrowserManager browserManager = BrowserManager.getInstance();
 
+                        if ("browser_enable".equals(toolName) || "enable".equals(toolName)) {
+                if (context != null) {
+                    browserManager.ensureInitialized(context);
+                }
+                if (browserManager.isWebViewAvailable()) {
+                    result.put("status", "success");
+                    result.put("output", "WebView enabled and initialized successfully.");
+                } else {
+                    result.put("status", "error");
+                    result.put("message", "Failed to enable WebView. Context is missing or initialization failed.");
+                }
+                return result;
+            }
+
             if ("browser_reset_cookies".equals(toolName)) {
                 String resStr = browserManager.resetCookies();
                 result.put("status", "success");
@@ -207,7 +230,7 @@ public class BrowserMcpServer {
 
             if (!browserManager.isWebViewAvailable()) {
                 result.put("status", "error");
-                result.put("message", "WebView is not available or open in the app.");
+                result.put("message", "WebView is not available or enabled. Call 'browser_enable' to turn on the WebView first.");
                 return result;
             }
 
