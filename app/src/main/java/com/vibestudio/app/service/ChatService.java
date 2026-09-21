@@ -201,7 +201,7 @@ public class ChatService {
                     String toolSummary;
                     if ("get_skill_schema".equalsIgnoreCase(toolName)) {
                         String skillName = args.optString("skill_name", "unknown");
-                        toolSummary = "🔧 Requesting schema for skill: " + skillName;
+                        toolSummary = "Optimizing Tool Selection";
                     } else if ("execute_command".equalsIgnoreCase(toolName)) {
                         String cmd = args.optString("command", "");
                         toolSummary = "⚡ Executing terminal command:\n`" + cmd + "`";

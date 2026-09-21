@@ -6,6 +6,7 @@ import com.vibestudio.app.service.ChatService;
 import com.vibestudio.app.view.BaseToolMessageView;
 import com.vibestudio.app.view.BrowserLogsToolMessage;
 import com.vibestudio.app.view.BrowserToolMessage;
+import com.vibestudio.app.view.CustomStatusToolMessage;
 import com.vibestudio.app.view.TerminalToolMessage;
 
 public class ToolMessageFactory {
@@ -34,7 +35,11 @@ public class ToolMessageFactory {
 
         String text = msg.getText();
         if (text != null) {
-            if (text.contains("browser_") || text.contains("\"browser\"")) {
+            if ("Optimizing Tool Selection".equalsIgnoreCase(text) || text.contains("get_skill_schema")) {
+                CustomStatusToolMessage statusView = new CustomStatusToolMessage(context);
+                statusView.bind(msg);
+                return statusView;
+            } else if (text.contains("browser_") || text.contains("\"browser\"")) {
                 if (text.contains("read_browser_logs") || text.contains("browser_logs")) {
                     BrowserLogsToolMessage logsView = new BrowserLogsToolMessage(context);
                     logsView.bind(msg);
