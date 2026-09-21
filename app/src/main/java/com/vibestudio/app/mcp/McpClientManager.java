@@ -1,5 +1,6 @@
 package com.vibestudio.app.mcp;
 
+import android.content.Context;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -32,11 +33,13 @@ public class McpClientManager {
 
     public McpClientManager() {
         mRegisteredServers.put("terminal", new TerminalMcpServer());
+        mRegisteredServers.put("browser", new BrowserMcpServer());
     }
 
     public List<McpServerInfo> getConfiguredServers() {
         List<McpServerInfo> list = new ArrayList<>();
         list.add(new McpServerInfo("Terminal Skill", "Shared Terminal Execution & Buffer Inspector MCP Skill", true));
+        list.add(new McpServerInfo("Browser Skill", "Agentic WebView Automation & Browser Logs Inspector Skill", true));
         return list;
     }
 
@@ -45,12 +48,15 @@ public class McpClientManager {
         try {
             JSONArray toolsArray = new JSONArray();
             for (Object server : mRegisteredServers.values()) {
+                JSONArray tools = null;
                 if (server instanceof TerminalMcpServer) {
-                    JSONArray tools = ((TerminalMcpServer) server).getToolsListSchema();
-                    if (tools != null) {
-                        for (int i = 0; i < tools.length(); i++) {
-                            toolsArray.put(tools.getJSONObject(i));
-                        }
+                    tools = ((TerminalMcpServer) server).getToolsListSchema();
+                } else if (server instanceof BrowserMcpServer) {
+                    tools = ((BrowserMcpServer) server).getToolsListSchema();
+                }
+                if (tools != null) {
+                    for (int i = 0; i < tools.length(); i++) {
+                        toolsArray.put(tools.getJSONObject(i));
                     }
                 }
             }
@@ -69,6 +75,11 @@ public class McpClientManager {
             terminalSkill.put("description", "Allows running shell commands in the active IDE terminal session and inspecting terminal logs.");
             skills.put(terminalSkill);
 
+            JSONObject browserSkill = new JSONObject();
+            browserSkill.put("name", "browser");
+            browserSkill.put("description", "Allows navigating the IDE webview, setting user-agent, clearing cookies, inspecting active URL, clicking elements, typing text, executing JS scripts, taking screenshots, and reading isolated browser console/navigation logs.");
+            skills.put(browserSkill);
+
             catalog.put("available_skills", skills);
 
             JSONObject getMetaTool = new JSONObject();
@@ -77,7 +88,7 @@ public class McpClientManager {
             
             JSONObject skillArg = new JSONObject();
             skillArg.put("type", "string");
-            skillArg.put("description", "Name of the skill to load (e.g. 'terminal')");
+            skillArg.put("description", "Name of the skill to load (e.g. 'terminal', 'browser')");
 
             JSONObject properties = new JSONObject();
             properties.put("skill_name", skillArg);
@@ -103,11 +114,17 @@ public class McpClientManager {
         try {
             if (skillName != null && mRegisteredServers.containsKey(skillName.toLowerCase())) {
                 Object server = mRegisteredServers.get(skillName.toLowerCase());
+                JSONArray tools = null;
                 if (server instanceof TerminalMcpServer) {
+                    tools = ((TerminalMcpServer) server).getToolsListSchema();
+                } else if (server instanceof BrowserMcpServer) {
+                    tools = ((BrowserMcpServer) server).getToolsListSchema();
+                }
+                if (tools != null) {
                     response.put("status", "success");
                     response.put("skill", skillName.toLowerCase());
                     JSONObject schemaObj = new JSONObject();
-                    schemaObj.put("tools", ((TerminalMcpServer) server).getToolsListSchema());
+                    schemaObj.put("tools", tools);
                     response.put("schema", schemaObj);
                     return response;
                 }
@@ -123,7 +140,7 @@ public class McpClientManager {
         return response;
     }
 
-    public JSONObject executeToolCall(String toolName, JSONObject args) {
+    public JSONObject executeToolCall(String toolName, JSONObject args, Context context) {
         JSONObject result = new JSONObject();
         try {
             if ("get_skill_schema".equalsIgnoreCase(toolName)) {
@@ -136,6 +153,11 @@ public class McpClientManager {
                     TerminalMcpServer terminalServer = (TerminalMcpServer) server;
                     if ("execute_command".equals(toolName) || "read_terminal_output".equals(toolName)) {
                         return terminalServer.callTool(toolName, args);
+                    }
+                } else if (server instanceof BrowserMcpServer) {
+                    BrowserMcpServer browserServer = (BrowserMcpServer) server;
+                    if (toolName.startsWith("browser_") || "read_browser_logs".equals(toolName)) {
+                        return browserServer.callTool(toolName, args, context);
                     }
                 }
             }
@@ -150,5 +172,9 @@ public class McpClientManager {
             } catch (Exception ignored) {}
         }
         return result;
+    }
+
+    public JSONObject executeToolCall(String toolName, JSONObject args) {
+        return executeToolCall(toolName, args, null);
     }
 }

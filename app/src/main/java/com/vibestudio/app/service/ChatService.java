@@ -208,14 +208,20 @@ public class ChatService {
                     } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
                         toolSummary = "🔍 Inspecting terminal logs buffer";
                     } else {
+                        if (toolName.startsWith("browser_")) {
+                        toolSummary = "🌐 Executing browser tool: " + toolName;
+                    } else if ("read_browser_logs".equalsIgnoreCase(toolName)) {
+                        toolSummary = "📋 Inspecting browser logs";
+                    } else {
                         toolSummary = "⚙️ Executing tool: " + toolName;
+                    }
                     }
 
                     // Post clean summary message to chat UI
                     postToolStatusMessage(toolSummary, ChatMessage.MessageType.TOOL_CALL);
 
                     // Execute tool logic
-                    JSONObject toolResult = mMcpClientManager.executeToolCall(toolName, args);
+                    JSONObject toolResult = mMcpClientManager.executeToolCall(toolName, args, context);
 
                     // Step 1: Model assistant call entry (role = model)
                     ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL);
