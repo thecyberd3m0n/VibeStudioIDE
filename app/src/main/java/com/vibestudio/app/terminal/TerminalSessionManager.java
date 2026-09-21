@@ -3,6 +3,7 @@ package com.vibestudio.app.terminal;
 import android.content.Context;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
+import com.termux.view.TerminalView;
 import com.vibestudio.app.logging.CrashHandler;
 import com.vibestudio.app.service.LogViewerService;
 
@@ -17,6 +18,7 @@ public class TerminalSessionManager {
     private static final String TAG = "TerminalSessionManager";
     private static TerminalSessionManager sInstance;
     private TerminalSession mTerminalSession;
+    private TerminalView mTerminalView;
 
     private TerminalSessionManager() {}
 
@@ -66,7 +68,15 @@ public class TerminalSessionManager {
                 public void setTerminalShellPid(TerminalSession session, int pid) {}
 
                 @Override
-                public void onTextChanged(TerminalSession changedSession) {}
+                public void onTextChanged(TerminalSession changedSession) {
+                    TerminalView view;
+                    synchronized (TerminalSessionManager.this) {
+                        view = mTerminalView;
+                    }
+                    if (view != null) {
+                        view.post(view::onScreenUpdated);
+                    }
+                }
 
                 @Override
                 public void onTitleChanged(TerminalSession updatedSession) {}
@@ -139,6 +149,10 @@ public class TerminalSessionManager {
             LogViewerService.getInstance().e(TAG, "Failed to initialize global TerminalSession", t);
             CrashHandler.getInstance().handleException(TAG, "Global TerminalSession init failed", t);
         }
+    }
+
+    public synchronized void setTerminalView(TerminalView view) {
+        this.mTerminalView = view;
     }
 
     public synchronized void setTerminalSession(TerminalSession session) {

@@ -137,6 +137,7 @@ public class TerminalFragment extends Fragment {
             });
 
             mTerminalView.attachSession(globalSession);
+            TerminalSessionManager.getInstance().setTerminalView(mTerminalView);
             showSoftKeyboard();
             LogViewerService.getInstance().i(TAG, "Attached TerminalView to existing global TerminalSession");
         } else {
@@ -147,6 +148,7 @@ public class TerminalFragment extends Fragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        TerminalSessionManager.getInstance().setTerminalView(null);
         mTerminalView = null;
     }
 
