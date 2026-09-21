@@ -444,7 +444,7 @@ public class OnboardingActivity extends Activity {
         byte[] targetUsrBytes  = "/data/data/com.vibestudio.app/u".getBytes(StandardCharsets.UTF_8);   // 31 bytes
 
         byte[] defaultHomeBytes = "/data/data/com.termux/files/home".getBytes(StandardCharsets.UTF_8); // 32 bytes
-        byte[] targetHomeBytes  = "/data/data/com.vibestudio.app/h ".getBytes(StandardCharsets.UTF_8);  // 32 bytes (with trailing nul)
+        byte[] targetHomeBytes  = "/data/data/com.vibestudio.app/h\0".getBytes(StandardCharsets.UTF_8);  // 32 bytes (with trailing nul)
 
         int count = processDirectoryForTermuxPaths(usrDir, defaultUsrBytes, targetUsrBytes, defaultHomeBytes, targetHomeBytes, 0);
         LogViewerService.getInstance().i(TAG, "overrideSTermuxPaths completed. Overrode hardcoded termux paths in " + count + " files.");
@@ -907,8 +907,6 @@ public class OnboardingActivity extends Activity {
                     LogViewerService.getInstance().w(TAG, "Failed to symlink chosen_mirrors", t);
                 }
             }
-            File repositorySu = new File(usrDir, "etc/termux/mirrors/russia/repository.su");
-            if (repositorySu.exists()) { repositorySu.delete(); }
         } catch (Exception e) {
             LogViewerService.getInstance().w(TAG, "Failed to setup default mirrors", e);
         }
