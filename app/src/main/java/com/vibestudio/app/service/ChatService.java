@@ -24,21 +24,24 @@ public class ChatService {
 
     private static final String TAG = "ChatService";
     private static final String DEFAULT_MODEL = "gemini-flash-latest";
-    private static final int MAX_TOOL_LOOP_DEPTH = 5;
+    private static final int MAX_TOOL_LOOP_DEPTH = 200;
     
-    private static final String BASE_SYSTEM_INSTRUCTION = 
-            "You are VibeStudio Assistant, an intelligent AI coding assistant integrated directly into VibeStudio Android IDE.\n\n" +
-            "=== LAZY TOOL LOADING ARCHITECTURE ===\n" +
-            "Detailed tool schemas are NOT loaded by default to keep context size minimal.\n" +
-            "1. Check the available high-level skills catalog below.\n" +
-            "2. If you need a specific skill (e.g., 'terminal'), call the meta tool 'get_skill_schema':\n" +
-            "{\n  \"tool\": \"get_skill_schema\",\n  \"args\": {\"skill_name\": \"terminal\"}\n}\n" +
-            "3. Once the system returns the detailed skill schema, IMMEDIATELY call the target tool (e.g. 'execute_command') to perform the requested user action.\n" +
-            "4. NEVER stop after calling 'get_skill_schema'—always proceed directly to calling the appropriate action tool.\n\n" +
-            "=== TOKEN OPTIMIZATION RULES ===\n" +
-            "- Always use low token bounds (e.g. max_lines: 30 or grep_pattern) when querying terminal logs.\n" +
-            "- Format all tool calls strictly as single JSON blocks:\n" +
-            "{\n  \"tool\": \"<tool_name>\",\n  \"args\": { ... }\n}\n";
+    private String loadBaseSystemInstruction(Context context) {
+        if (context != null) {
+            try (InputStream in = context.getAssets().open("ai/system_instruction.md");
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line).append("\n");
+                }
+                return sb.toString();
+            } catch (Exception e) {
+                LogViewerService.getInstance().w(TAG, "Failed to load system_instruction.md from assets/ai", e);
+            }
+        }
+        return "You are VibeStudio Assistant, an intelligent AI coding assistant integrated directly into VibeStudio Android IDE.\n";
+    }
 
     private static ChatService sInstance;
 
@@ -160,7 +163,7 @@ public class ChatService {
         int statusCode = 500;
 
         for (String model : candidateModels) {
-            responseStr = executeGeminiRequest(apiKey.trim(), model);
+            responseStr = executeGeminiRequest(context, apiKey.trim(), model);
             statusCode = getHttpStatusCode(responseStr);
 
             if (statusCode != 404) {
@@ -201,21 +204,27 @@ public class ChatService {
                     String toolSummary;
                     if ("get_skill_schema".equalsIgnoreCase(toolName)) {
                         String skillName = args.optString("skill_name", "unknown");
-                        toolSummary = "🔧 Requesting schema for skill: " + skillName;
+                        toolSummary = "Optimizing Tool Selection";
                     } else if ("execute_command".equalsIgnoreCase(toolName)) {
                         String cmd = args.optString("command", "");
                         toolSummary = "⚡ Executing terminal command:\n`" + cmd + "`";
                     } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
                         toolSummary = "🔍 Inspecting terminal logs buffer";
                     } else {
+                        if (toolName.startsWith("browser_")) {
+                        toolSummary = "🌐 Executing browser tool: " + toolName;
+                    } else if ("read_browser_logs".equalsIgnoreCase(toolName)) {
+                        toolSummary = "📋 Inspecting browser logs";
+                    } else {
                         toolSummary = "⚙️ Executing tool: " + toolName;
+                    }
                     }
 
                     // Post clean summary message to chat UI
                     postToolStatusMessage(toolSummary, ChatMessage.MessageType.TOOL_CALL);
 
                     // Execute tool logic
-                    JSONObject toolResult = mMcpClientManager.executeToolCall(toolName, args);
+                    JSONObject toolResult = mMcpClientManager.executeToolCall(toolName, args, context);
 
                     // Step 1: Model assistant call entry (role = model)
                     ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL);
@@ -279,7 +288,7 @@ public class ChatService {
         return 500;
     }
 
-    private String executeGeminiRequest(String apiKey, String modelName) {
+    private String executeGeminiRequest(Context context, String apiKey, String modelName) {
         HttpURLConnection conn = null;
         try {
             URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey);
@@ -314,7 +323,7 @@ public class ChatService {
 
             JSONObject payload = new JSONObject();
 
-            StringBuilder sysPromptBuilder = new StringBuilder(BASE_SYSTEM_INSTRUCTION);
+            StringBuilder sysPromptBuilder = new StringBuilder(loadBaseSystemInstruction(context));
             sysPromptBuilder.append("\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n");
             sysPromptBuilder.append(mMcpClientManager.getHighLevelCatalog().toString(2));
 

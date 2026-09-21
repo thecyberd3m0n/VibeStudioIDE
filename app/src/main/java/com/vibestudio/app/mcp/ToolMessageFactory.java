@@ -4,6 +4,9 @@ import android.content.Context;
 
 import com.vibestudio.app.service.ChatService;
 import com.vibestudio.app.view.BaseToolMessageView;
+import com.vibestudio.app.view.BrowserLogsToolMessage;
+import com.vibestudio.app.view.BrowserToolMessage;
+import com.vibestudio.app.view.CustomStatusToolMessage;
 import com.vibestudio.app.view.TerminalToolMessage;
 
 public class ToolMessageFactory {
@@ -21,48 +24,39 @@ public class ToolMessageFactory {
     }
 
     /**
-     * Determines whether the tool message is associated with the Terminal tool.
-     */
-    public static boolean isTerminalTool(ChatService.ChatMessage msg) {
-        if (!isToolMessage(msg)) return false;
-        String text = msg.getText();
-        if (text == null) return false;
-
-        if (text.contains("execute_command") || text.contains("read_terminal_output") || text.contains("terminal")) {
-            return true;
-        }
-
-        try {
-            if (text.contains("{") && text.contains("\"tool\"")) {
-                int jsonStart = text.indexOf("{");
-                int jsonEnd = text.lastIndexOf("}");
-                if (jsonStart != -1 && jsonEnd > jsonStart) {
-                    org.json.JSONObject obj = new org.json.JSONObject(text.substring(jsonStart, jsonEnd + 1).trim());
-                    String toolName = obj.optString("tool", "");
-                    org.json.JSONObject args = obj.optJSONObject("args");
-                    String skillName = args != null ? args.optString("skill_name", "") : "";
-
-                    return "execute_command".equalsIgnoreCase(toolName)
-                            || "read_terminal_output".equalsIgnoreCase(toolName)
-                            || "terminal".equalsIgnoreCase(skillName);
-                }
-            }
-        } catch (Exception ignored) {}
-
-        return true; // Default fallback for system tool invocations
-    }
-
-    /**
-     * Factory method returning the appropriate BaseToolMessageView view implementation.
+     * Factory method returning the appropriate BaseToolMessageView implementation.
      */
     public static BaseToolMessageView createToolMessageView(Context context, ChatService.ChatMessage msg) {
-        if (isTerminalTool(msg)) {
-            TerminalToolMessage terminalView = new TerminalToolMessage(context);
-            terminalView.bind(msg);
-            return terminalView;
+        if (!isToolMessage(msg)) {
+            TerminalToolMessage defaultView = new TerminalToolMessage(context);
+            defaultView.bind(msg);
+            return defaultView;
         }
 
-        // Extensible for future tools (e.g. OtherToolMessage)
+        String text = msg.getText();
+        if (text != null) {
+            if ("Optimizing Tool Selection".equalsIgnoreCase(text) || text.contains("get_skill_schema")) {
+                CustomStatusToolMessage statusView = new CustomStatusToolMessage(context);
+                statusView.bind(msg);
+                return statusView;
+            } else if (text.contains("browser_") || text.contains("\"browser\"")) {
+                if (text.contains("read_browser_logs") || text.contains("browser_logs")) {
+                    BrowserLogsToolMessage logsView = new BrowserLogsToolMessage(context);
+                    logsView.bind(msg);
+                    return logsView;
+                } else {
+                    BrowserToolMessage browserView = new BrowserToolMessage(context);
+                    browserView.bind(msg);
+                    return browserView;
+                }
+            } else if (text.contains("execute_command") || text.contains("read_terminal_output") || text.contains("terminal")) {
+                TerminalToolMessage terminalView = new TerminalToolMessage(context);
+                terminalView.bind(msg);
+                return terminalView;
+            }
+        }
+
+        // Fallback default
         TerminalToolMessage defaultView = new TerminalToolMessage(context);
         defaultView.bind(msg);
         return defaultView;

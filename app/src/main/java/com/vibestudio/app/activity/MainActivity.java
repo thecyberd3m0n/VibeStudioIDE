@@ -13,6 +13,7 @@ import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 
 import com.vibestudio.app.R;
+import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.fragments.ChatFragment;
 import com.vibestudio.app.fragments.LogViewerFragment;
 import com.vibestudio.app.fragments.McpFragment;
@@ -39,6 +40,7 @@ public class MainActivity extends FragmentActivity {
         new MenuItem("MCP", "🔌"),
         new MenuItem("Terminal", "💻"),
         new MenuItem("Chat", "💬"),
+        new MenuItem("Browser", "🌐"),
         new MenuItem("Permissions", "🔒"),
         new MenuItem("Logs", "📋")
     };
@@ -132,9 +134,12 @@ public class MainActivity extends FragmentActivity {
                 fragment = new ChatFragment();
                 break;
             case 4:
-                fragment = new PermissionsFragment();
+                fragment = new BrowserFragment();
                 break;
             case 5:
+                fragment = new PermissionsFragment();
+                break;
+            case 6:
                 fragment = new LogViewerFragment();
                 break;
             default:
