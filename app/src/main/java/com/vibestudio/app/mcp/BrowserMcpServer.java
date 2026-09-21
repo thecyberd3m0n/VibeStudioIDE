@@ -3,288 +3,244 @@ package com.vibestudio.app.mcp;
 import android.content.Context;
 
 import com.vibestudio.app.browser.BrowserManager;
+import com.vibestudio.app.mcp.model.McpTool;
+import com.vibestudio.app.mcp.model.McpToolResult;
+import com.vibestudio.app.mcp.model.PropertyType;
 import com.vibestudio.app.service.LogViewerService;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
-public class BrowserMcpServer {
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+public class BrowserMcpServer implements McpServer {
 
     private static final String TAG = "BrowserMcpServer";
+    private static final String NAME = "browser";
+    private static final String DESCRIPTION = "Allows enabling the WebView on demand via 'browser_enable', navigating the IDE webview, setting user-agent, clearing cookies, inspecting active URL, clicking elements, typing text, executing JS scripts, taking screenshots, and reading isolated browser console/navigation logs.";
+
     private boolean mIsActive = true;
+    private final List<McpTool> mTools;
 
-    public BrowserMcpServer() {}
+    public BrowserMcpServer() {
+        mTools = new ArrayList<>();
 
+        // Tool 0: browser_enable
+        mTools.add(McpTool.builder("browser_enable", "Enable and initialize the active WebView for browser operations on demand.")
+                .build());
+
+        // Tool 1: browser_navigate
+        mTools.add(McpTool.builder("browser_navigate", "Navigate the active IDE browser WebView to a target URL.")
+                .addProperty("url", PropertyType.STRING, "The URL to navigate to (e.g. 'https://google.com' or 'localhost:8080').", true)
+                .build());
+
+        // Tool 2: browser_get_current_url
+        mTools.add(McpTool.builder("browser_get_current_url", "Get the current URL loaded in the active WebView.")
+                .build());
+
+        // Tool 3: browser_set_user_agent
+        mTools.add(McpTool.builder("browser_set_user_agent", "Set a custom User-Agent string for the WebView.")
+                .addProperty("user_agent", PropertyType.STRING, "Custom User-Agent string.", true)
+                .build());
+
+        // Tool 4: browser_reset_cookies
+        mTools.add(McpTool.builder("browser_reset_cookies", "Reset/clear all browser cookies in the WebView CookieManager.")
+                .build());
+
+        // Tool 5: browser_execute_js
+        mTools.add(McpTool.builder("browser_execute_js", "Execute dynamic JavaScript code in the context of the active WebView page.")
+                .addProperty("script", PropertyType.STRING, "JavaScript code to evaluate in the web page.", true)
+                .build());
+
+        // Tool 6: browser_click
+        mTools.add(McpTool.builder("browser_click", "Click an element in the active web page using a CSS selector.")
+                .addProperty("selector", PropertyType.STRING, "CSS selector of the element to click.", true)
+                .build());
+
+        // Tool 7: browser_type
+        mTools.add(McpTool.builder("browser_type", "Type text into an input or textarea element matched by a CSS selector.")
+                .addProperty("selector", PropertyType.STRING, "CSS selector of the input field.", true)
+                .addProperty("text", PropertyType.STRING, "Text to type into the targeted input field.", true)
+                .build());
+
+        // Tool 8: browser_screenshot
+        mTools.add(McpTool.builder("browser_screenshot", "Capture a screenshot of the current active WebView rendering.")
+                .build());
+
+        // Tool 9: browser_read_logs
+        mTools.add(McpTool.builder("browser_read_logs", "Read and filter browser console messages and lifecycle events.")
+                .addProperty("max_lines", PropertyType.INTEGER, "Maximum number of browser log lines to return (default: 50).", false)
+                .addProperty("grep_pattern", PropertyType.STRING, "Optional pattern/text to filter browser logs.", false)
+                .addProperty("level", PropertyType.STRING, "Optional log level filter (e.g. 'ERROR', 'WARNING', 'LOG', 'INFO', 'DEBUG').", false)
+                .build());
+    }
+
+    @Override
+    public String getName() {
+        return NAME;
+    }
+
+    @Override
+    public String getDescription() {
+        return DESCRIPTION;
+    }
+
+    @Override
     public void startServer() {
         mIsActive = true;
         LogViewerService.getInstance().i(TAG, "Browser MCP Server started.");
     }
 
+    @Override
     public void stopServer() {
         mIsActive = false;
         LogViewerService.getInstance().i(TAG, "Browser MCP Server stopped.");
     }
 
+    @Override
     public boolean isActive() {
         return mIsActive;
     }
 
-    public JSONArray getToolsListSchema() {
-        JSONArray tools = new JSONArray();
-        try {
-                        // Tool 0: browser_enable
-            JSONObject enableTool = new JSONObject();
-            enableTool.put("name", "browser_enable");
-            enableTool.put("description", "Enable and initialize the active WebView for browser operations on demand.");
-            JSONObject enableParams = new JSONObject();
-            enableParams.put("type", "object");
-            enableTool.put("inputSchema", enableParams);
-            tools.put(enableTool);
-
-            // Tool 1: browser_navigate
-            JSONObject navTool = new JSONObject();
-            navTool.put("name", "browser_navigate");
-            navTool.put("description", "Navigate the active IDE browser WebView to a target URL.");
-            JSONObject navParams = new JSONObject();
-            navParams.put("type", "object");
-            JSONObject navProps = new JSONObject();
-            JSONObject urlProp = new JSONObject();
-            urlProp.put("type", "string");
-            urlProp.put("description", "The URL to navigate to (e.g. 'https://google.com' or 'localhost:8080').");
-            navProps.put("url", urlProp);
-            navParams.put("properties", navProps);
-            JSONArray navReq = new JSONArray();
-            navReq.put("url");
-            navParams.put("required", navReq);
-            navTool.put("inputSchema", navParams);
-            tools.put(navTool);
-
-            // Tool 2: browser_get_current_url
-            JSONObject urlTool = new JSONObject();
-            urlTool.put("name", "browser_get_current_url");
-            urlTool.put("description", "Get the current URL loaded in the active WebView.");
-            JSONObject urlParams = new JSONObject();
-            urlParams.put("type", "object");
-            urlTool.put("inputSchema", urlParams);
-            tools.put(urlTool);
-
-            // Tool 3: browser_set_user_agent
-            JSONObject uaTool = new JSONObject();
-            uaTool.put("name", "browser_set_user_agent");
-            uaTool.put("description", "Set a custom User-Agent string for the WebView.");
-            JSONObject uaParams = new JSONObject();
-            uaParams.put("type", "object");
-            JSONObject uaProps = new JSONObject();
-            JSONObject uaStrProp = new JSONObject();
-            uaStrProp.put("type", "string");
-            uaStrProp.put("description", "Custom User-Agent string.");
-            uaProps.put("user_agent", uaStrProp);
-            uaParams.put("properties", uaProps);
-            JSONArray uaReq = new JSONArray();
-            uaReq.put("user_agent");
-            uaParams.put("required", uaReq);
-            uaTool.put("inputSchema", uaParams);
-            tools.put(uaTool);
-
-            // Tool 4: browser_reset_cookies
-            JSONObject cookieTool = new JSONObject();
-            cookieTool.put("name", "browser_reset_cookies");
-            cookieTool.put("description", "Reset/clear all browser cookies in the WebView CookieManager.");
-            JSONObject cookieParams = new JSONObject();
-            cookieParams.put("type", "object");
-            cookieTool.put("inputSchema", cookieParams);
-            tools.put(cookieTool);
-
-            // Tool 5: browser_execute_js
-            JSONObject jsTool = new JSONObject();
-            jsTool.put("name", "browser_execute_js");
-            jsTool.put("description", "Execute dynamic JavaScript code in the context of the active WebView page.");
-            JSONObject jsParams = new JSONObject();
-            jsParams.put("type", "object");
-            JSONObject jsProps = new JSONObject();
-            JSONObject scriptProp = new JSONObject();
-            scriptProp.put("type", "string");
-            scriptProp.put("description", "JavaScript code to evaluate in the web page.");
-            jsProps.put("script", scriptProp);
-            jsParams.put("properties", jsProps);
-            JSONArray jsReq = new JSONArray();
-            jsReq.put("script");
-            jsParams.put("required", jsReq);
-            jsTool.put("inputSchema", jsParams);
-            tools.put(jsTool);
-
-            // Tool 6: browser_click
-            JSONObject clickTool = new JSONObject();
-            clickTool.put("name", "browser_click");
-            clickTool.put("description", "Click an element in the active web page using a CSS selector.");
-            JSONObject clickParams = new JSONObject();
-            clickParams.put("type", "object");
-            JSONObject clickProps = new JSONObject();
-            JSONObject selProp = new JSONObject();
-            selProp.put("type", "string");
-            selProp.put("description", "CSS selector of the element to click.");
-            clickProps.put("selector", selProp);
-            clickParams.put("properties", clickProps);
-            JSONArray clickReq = new JSONArray();
-            clickReq.put("selector");
-            clickParams.put("required", clickReq);
-            clickTool.put("inputSchema", clickParams);
-            tools.put(clickTool);
-
-            // Tool 7: browser_keyboard_click
-            JSONObject keyTool = new JSONObject();
-            keyTool.put("name", "browser_keyboard_click");
-            keyTool.put("description", "Type text into an input or textarea element matched by a CSS selector.");
-            JSONObject keyParams = new JSONObject();
-            keyParams.put("type", "object");
-            JSONObject keyProps = new JSONObject();
-            JSONObject keySelProp = new JSONObject();
-            keySelProp.put("type", "string");
-            keySelProp.put("description", "CSS selector of the input field.");
-            keyProps.put("selector", keySelProp);
-            JSONObject textProp = new JSONObject();
-            textProp.put("type", "string");
-            textProp.put("description", "Text to type into the targeted input field.");
-            keyProps.put("text", textProp);
-            keyParams.put("properties", keyProps);
-            JSONArray keyReq = new JSONArray();
-            keyReq.put("selector");
-            keyReq.put("text");
-            keyParams.put("required", keyReq);
-            keyTool.put("inputSchema", keyParams);
-            tools.put(keyTool);
-
-            // Tool 8: browser_screenshot
-            JSONObject shotTool = new JSONObject();
-            shotTool.put("name", "browser_screenshot");
-            shotTool.put("description", "Capture a screenshot of the current active WebView rendering.");
-            JSONObject shotParams = new JSONObject();
-            shotParams.put("type", "object");
-            shotTool.put("inputSchema", shotParams);
-            tools.put(shotTool);
-
-            // Tool 9: browser_read_logs
-            JSONObject logsTool = new JSONObject();
-            logsTool.put("name", "browser_read_logs");
-            logsTool.put("description", "Read and filter browser console messages and lifecycle events.");
-            JSONObject logsParams = new JSONObject();
-            logsParams.put("type", "object");
-            JSONObject logsProps = new JSONObject();
-            JSONObject maxLinesProp = new JSONObject();
-            maxLinesProp.put("type", "integer");
-            maxLinesProp.put("description", "Maximum number of browser log lines to return (default: 50).");
-            logsProps.put("max_lines", maxLinesProp);
-            JSONObject grepProp = new JSONObject();
-            grepProp.put("type", "string");
-            grepProp.put("description", "Optional pattern/text to filter browser logs.");
-            logsProps.put("grep_pattern", grepProp);
-            JSONObject levelProp = new JSONObject();
-            levelProp.put("type", "string");
-            levelProp.put("description", "Optional log level filter (e.g. 'ERROR', 'WARNING', 'LOG', 'INFO', 'DEBUG').");
-            logsProps.put("level", levelProp);
-            logsParams.put("properties", logsProps);
-            logsTool.put("inputSchema", logsParams);
-            tools.put(logsTool);
-
-        } catch (Exception e) {
-            LogViewerService.getInstance().e(TAG, "Error building Browser MCP tools schema", e);
-        }
-        return tools;
+    @Override
+    public List<McpTool> getTools() {
+        return mTools;
     }
 
-    public JSONObject callTool(String toolName, JSONObject args, Context context) {
-        JSONObject result = new JSONObject();
+    @Override
+    public boolean handlesTool(String toolName) {
+        if (toolName == null) return false;
+        if ("read_browser_logs".equals(toolName)) return true;
+        for (McpTool tool : mTools) {
+            if (tool.getName().equals(toolName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public McpToolResult callTool(String toolName, Map<String, Object> arguments, Context context) {
         try {
             BrowserManager browserManager = BrowserManager.getInstance();
 
-                        if ("browser_enable".equals(toolName) || "enable".equals(toolName)) {
+            if ("browser_enable".equals(toolName) || "enable".equals(toolName)) {
                 if (context != null) {
                     browserManager.ensureInitialized(context);
                 }
                 if (browserManager.isWebViewAvailable()) {
-                    result.put("status", "success");
-                    result.put("output", "WebView enabled and initialized successfully.");
+                    return McpToolResult.success("WebView enabled and initialized successfully.");
                 } else {
-                    result.put("status", "error");
-                    result.put("message", "Failed to enable WebView. Context is missing or initialization failed.");
+                    return McpToolResult.error("Failed to enable WebView. Context is missing or initialization failed.");
                 }
-                return result;
             }
 
             if ("browser_reset_cookies".equals(toolName)) {
                 String resStr = browserManager.resetCookies();
-                result.put("status", "success");
-                result.put("output", resStr);
-                return result;
+                return McpToolResult.success(resStr);
             }
 
-            if ("browser_read_logs".equals(toolName)) {
-                int maxLines = args != null ? args.optInt("max_lines", 50) : 50;
-                String grepPattern = args != null ? args.optString("grep_pattern", null) : null;
-                String levelFilter = args != null ? args.optString("level", null) : null;
+            if ("browser_read_logs".equals(toolName) || "read_browser_logs".equals(toolName)) {
+                int maxLines = arguments != null ? getIntArg(arguments, "max_lines", 50) : 50;
+                String grepPattern = arguments != null ? getStringArg(arguments, "grep_pattern", null) : null;
+                String levelFilter = arguments != null ? getStringArg(arguments, "level", null) : null;
                 String logs = browserManager.getBrowserLogs(maxLines, grepPattern, levelFilter);
-                result.put("status", "success");
-                result.put("logs", logs);
-                return result;
+                
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("logs", logs);
+                return McpToolResult.success(extras);
             }
 
             if (!browserManager.isWebViewAvailable()) {
-                result.put("status", "error");
-                result.put("message", "WebView is not available or enabled. Call 'browser_enable' to turn on the WebView first.");
-                return result;
+                return McpToolResult.error("WebView is not available or enabled. Call 'browser_enable' to turn on the WebView first.");
             }
 
             if ("browser_navigate".equals(toolName)) {
-                String url = args.optString("url", "");
+                String url = arguments != null ? getStringArg(arguments, "url", "") : "";
                 String resStr = browserManager.navigate(url);
-                result.put("status", "success");
-                result.put("output", resStr);
+                return McpToolResult.success(resStr);
 
             } else if ("browser_get_current_url".equals(toolName)) {
                 String currentUrl = browserManager.getCurrentUrl();
-                result.put("status", "success");
-                result.put("url", currentUrl);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("url", currentUrl);
+                return McpToolResult.success(extras);
 
             } else if ("browser_set_user_agent".equals(toolName)) {
-                String userAgent = args.optString("user_agent", "");
+                String userAgent = arguments != null ? getStringArg(arguments, "user_agent", "") : "";
                 String resStr = browserManager.setUserAgent(userAgent);
-                result.put("status", "success");
-                result.put("output", resStr);
+                return McpToolResult.success(resStr);
 
             } else if ("browser_execute_js".equals(toolName)) {
-                String script = args.optString("script", "");
+                String script = arguments != null ? getStringArg(arguments, "script", "") : "";
                 String resStr = browserManager.executeJs(script);
-                result.put("status", "success");
-                result.put("result", resStr);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("result", resStr);
+                return McpToolResult.success(extras);
 
             } else if ("browser_click".equals(toolName)) {
-                String selector = args.optString("selector", "");
+                String selector = arguments != null ? getStringArg(arguments, "selector", "") : "";
                 String resStr = browserManager.click(selector);
-                result.put("status", "success");
-                result.put("output", resStr);
+                return McpToolResult.success(resStr);
 
-            } else if ("browser_keyboard_click".equals(toolName)) {
-                String selector = args.optString("selector", "");
-                String text = args.optString("text", "");
-                String resStr = browserManager.keyboardClick(selector, text);
-                result.put("status", "success");
-                result.put("output", resStr);
+            } else if ("browser_type".equals(toolName)) {
+                String selector = arguments != null ? getStringArg(arguments, "selector", "") : "";
+                String text = arguments != null ? getStringArg(arguments, "text", "") : "";
+                String resStr = browserManager.type(selector, text);
+                return McpToolResult.success(resStr);
 
             } else if ("browser_screenshot".equals(toolName)) {
-                return browserManager.takeScreenshot(context);
+                JSONObject jsonRes = browserManager.takeScreenshot(context);
+                return jsonToToolResult(jsonRes);
 
             } else {
-                result.put("status", "error");
-                result.put("message", "Unknown browser tool: " + toolName);
+                return McpToolResult.error("Unknown browser tool: " + toolName);
             }
 
         } catch (Exception e) {
             LogViewerService.getInstance().e(TAG, "Error executing Browser MCP tool: " + toolName, e);
-            try {
-                result.put("status", "error");
-                result.put("message", e.getMessage());
-            } catch (Exception ignored) {}
+            return McpToolResult.error(e.getMessage());
         }
-        return result;
+    }
+
+    private McpToolResult jsonToToolResult(JSONObject jsonObj) {
+        if (jsonObj == null) {
+            return McpToolResult.error("Null response from screenshot execution.");
+        }
+        String status = jsonObj.optString("status", "error");
+        if ("success".equals(status)) {
+            Map<String, Object> extras = new HashMap<>();
+            Iterator<String> keys = jsonObj.keys();
+            while (keys.hasNext()) {
+                String k = keys.next();
+                if (!"status".equals(k)) {
+                    extras.put(k, jsonObj.opt(k));
+                }
+            }
+            return McpToolResult.success(extras);
+        } else {
+            String msg = jsonObj.optString("message", "Unknown error");
+            return McpToolResult.error(msg);
+        }
+    }
+
+    private String getStringArg(Map<String, Object> args, String key, String defaultValue) {
+        Object val = args.get(key);
+        return val != null ? String.valueOf(val) : defaultValue;
+    }
+
+    private int getIntArg(Map<String, Object> args, String key, int defaultValue) {
+        Object val = args.get(key);
+        if (val instanceof Number) {
+            return ((Number) val).intValue();
+        } else if (val instanceof String) {
+            try {
+                return Integer.parseInt((String) val);
+            } catch (NumberFormatException ignored) {}
+        }
+        return defaultValue;
     }
 }

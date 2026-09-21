@@ -339,7 +339,7 @@ public class BrowserManager {
         return executeJs(script);
     }
 
-    public String keyboardClick(final String selector, final String text) {
+    public String type(final String selector, final String text) {
         if (mWebView == null) return "Error: WebView not initialized or active.";
 
         addBrowserLog("INFO", TAG, "Typing text into selector: " + selector);

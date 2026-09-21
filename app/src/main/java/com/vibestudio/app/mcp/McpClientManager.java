@@ -1,11 +1,19 @@
 package com.vibestudio.app.mcp;
 
 import android.content.Context;
+
+import com.vibestudio.app.mcp.model.McpTool;
+import com.vibestudio.app.mcp.model.McpToolResult;
+import com.vibestudio.app.mcp.model.PropertyType;
+import com.vibestudio.app.mcp.model.ToolProperty;
+
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -29,17 +37,26 @@ public class McpClientManager {
         public String getColor() { return isConnected ? "#4CAF50" : "#F44336"; }
     }
 
-    private final Map<String, Object> mRegisteredServers = new HashMap<>();
+    private final Map<String, McpServer> mRegisteredServers = new HashMap<>();
 
     public McpClientManager() {
-        mRegisteredServers.put("terminal", new TerminalMcpServer());
-        mRegisteredServers.put("browser", new BrowserMcpServer());
+        registerServer(new TerminalMcpServer());
+        registerServer(new BrowserMcpServer());
+    }
+
+    public void registerServer(McpServer server) {
+        if (server != null) {
+            mRegisteredServers.put(server.getName().toLowerCase(), server);
+            server.startServer();
+        }
     }
 
     public List<McpServerInfo> getConfiguredServers() {
         List<McpServerInfo> list = new ArrayList<>();
-        list.add(new McpServerInfo("Terminal Skill", "Shared Terminal Execution & Buffer Inspector MCP Skill", true));
-        list.add(new McpServerInfo("Browser Skill", "Agentic WebView Automation & Browser Logs Inspector Skill", true));
+        for (McpServer server : mRegisteredServers.values()) {
+            String title = capitalize(server.getName()) + " Skill";
+            list.add(new McpServerInfo(title, server.getDescription(), server.isActive()));
+        }
         return list;
     }
 
@@ -47,21 +64,13 @@ public class McpClientManager {
         JSONObject allTools = new JSONObject();
         try {
             JSONArray toolsArray = new JSONArray();
-            for (Object server : mRegisteredServers.values()) {
-                JSONArray tools = null;
-                if (server instanceof TerminalMcpServer) {
-                    tools = ((TerminalMcpServer) server).getToolsListSchema();
-                } else if (server instanceof BrowserMcpServer) {
-                    tools = ((BrowserMcpServer) server).getToolsListSchema();
-                }
-                if (tools != null) {
-                    for (int i = 0; i < tools.length(); i++) {
-                        toolsArray.put(tools.getJSONObject(i));
-                    }
+            for (McpServer server : mRegisteredServers.values()) {
+                for (McpTool tool : server.getTools()) {
+                    toolsArray.put(tool.toJsonSchema());
                 }
             }
             allTools.put("tools", toolsArray);
-        } catch (Exception ignored) {}
+        } catch (JSONException ignored) {}
         return allTools;
     }
 
@@ -70,42 +79,22 @@ public class McpClientManager {
         try {
             JSONArray skills = new JSONArray();
 
-            JSONObject terminalSkill = new JSONObject();
-            terminalSkill.put("name", "terminal");
-            terminalSkill.put("description", "Allows running shell commands in the active IDE terminal session and inspecting terminal logs.");
-            skills.put(terminalSkill);
-
-            JSONObject browserSkill = new JSONObject();
-            browserSkill.put("name", "browser");
-            browserSkill.put("description", "Allows enabling the WebView on demand via 'browser_enable', navigating the IDE webview, setting user-agent, clearing cookies, inspecting active URL, clicking elements, typing text, executing JS scripts, taking screenshots, and reading isolated browser console/navigation logs.");
-            skills.put(browserSkill);
+            for (McpServer server : mRegisteredServers.values()) {
+                JSONObject skillObj = new JSONObject();
+                skillObj.put("name", server.getName());
+                skillObj.put("description", server.getDescription());
+                skills.put(skillObj);
+            }
 
             catalog.put("available_skills", skills);
 
-            JSONObject getMetaTool = new JSONObject();
-            getMetaTool.put("name", "get_skill_schema");
-            getMetaTool.put("description", "Fetches detailed parameters and tool schemas for a given skill name when needed.");
-            
-            JSONObject skillArg = new JSONObject();
-            skillArg.put("type", "string");
-            skillArg.put("description", "Name of the skill to load (e.g. 'terminal', 'browser')");
+            McpTool metaTool = McpTool.builder("get_skill_schema", "Fetches detailed parameters and tool schemas for a given skill name when needed.")
+                    .addProperty("skill_name", PropertyType.STRING, "Name of the skill to load (e.g. 'terminal', 'browser')", true)
+                    .build();
 
-            JSONObject properties = new JSONObject();
-            properties.put("skill_name", skillArg);
+            catalog.put("meta_tool", metaTool.toJsonSchema());
 
-            JSONObject parameters = new JSONObject();
-            parameters.put("type", "object");
-            parameters.put("properties", properties);
-            
-            JSONArray required = new JSONArray();
-            required.put("skill_name");
-            parameters.put("required", required);
-
-            getMetaTool.put("parameters", parameters);
-
-            catalog.put("meta_tool", getMetaTool);
-
-        } catch (Exception ignored) {}
+        } catch (JSONException ignored) {}
         return catalog;
     }
 
@@ -113,18 +102,17 @@ public class McpClientManager {
         JSONObject response = new JSONObject();
         try {
             if (skillName != null && mRegisteredServers.containsKey(skillName.toLowerCase())) {
-                Object server = mRegisteredServers.get(skillName.toLowerCase());
-                JSONArray tools = null;
-                if (server instanceof TerminalMcpServer) {
-                    tools = ((TerminalMcpServer) server).getToolsListSchema();
-                } else if (server instanceof BrowserMcpServer) {
-                    tools = ((BrowserMcpServer) server).getToolsListSchema();
-                }
-                if (tools != null) {
+                McpServer server = mRegisteredServers.get(skillName.toLowerCase());
+                if (server != null) {
+                    JSONArray toolsArray = new JSONArray();
+                    for (McpTool tool : server.getTools()) {
+                        toolsArray.put(tool.toJsonSchema());
+                    }
+
                     response.put("status", "success");
                     response.put("skill", skillName.toLowerCase());
                     JSONObject schemaObj = new JSONObject();
-                    schemaObj.put("tools", tools);
+                    schemaObj.put("tools", toolsArray);
                     response.put("schema", schemaObj);
                     return response;
                 }
@@ -141,40 +129,50 @@ public class McpClientManager {
     }
 
     public JSONObject executeToolCall(String toolName, JSONObject args, Context context) {
-        JSONObject result = new JSONObject();
         try {
             if ("get_skill_schema".equalsIgnoreCase(toolName)) {
                 String skillName = args != null ? args.optString("skill_name") : "";
                 return getSkillSchema(skillName);
             }
 
-            for (Object server : mRegisteredServers.values()) {
-                if (server instanceof TerminalMcpServer) {
-                    TerminalMcpServer terminalServer = (TerminalMcpServer) server;
-                    if ("execute_command".equals(toolName) || "read_terminal_output".equals(toolName)) {
-                        return terminalServer.callTool(toolName, args);
-                    }
-                } else if (server instanceof BrowserMcpServer) {
-                    BrowserMcpServer browserServer = (BrowserMcpServer) server;
-                    if (toolName.startsWith("browser_") || "read_browser_logs".equals(toolName)) {
-                        return browserServer.callTool(toolName, args, context);
-                    }
+            Map<String, Object> arguments = jsonObjectToMap(args);
+
+            for (McpServer server : mRegisteredServers.values()) {
+                if (server.handlesTool(toolName)) {
+                    McpToolResult result = server.callTool(toolName, arguments, context);
+                    return result.toJsonObject();
                 }
             }
 
-            result.put("status", "error");
-            result.put("message", "Tool execution failed: Unknown tool '" + toolName + "'. Lazy load skill schema via 'get_skill_schema' if not loaded.");
+            McpToolResult errResult = McpToolResult.error("Tool execution failed: Unknown tool '" + toolName + "'. Lazy load skill schema via 'get_skill_schema' if not loaded.");
+            return errResult.toJsonObject();
 
         } catch (Exception e) {
-            try {
-                result.put("status", "error");
-                result.put("message", "Exception executing tool: " + e.getMessage());
-            } catch (Exception ignored) {}
+            return McpToolResult.error("Exception executing tool: " + e.getMessage()).toJsonObject();
         }
-        return result;
     }
 
     public JSONObject executeToolCall(String toolName, JSONObject args) {
         return executeToolCall(toolName, args, null);
+    }
+
+    private Map<String, Object> jsonObjectToMap(JSONObject jsonObj) {
+        Map<String, Object> map = new HashMap<>();
+        if (jsonObj == null) return map;
+
+        Iterator<String> keys = jsonObj.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            Object value = jsonObj.opt(key);
+            if (value != null && value != JSONObject.NULL) {
+                map.put(key, value);
+            }
+        }
+        return map;
+    }
+
+    private String capitalize(String str) {
+        if (str == null || str.isEmpty()) return str;
+        return str.substring(0, 1).toUpperCase() + str.substring(1);
     }
 }
