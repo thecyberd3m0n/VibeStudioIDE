@@ -6,7 +6,7 @@ import android.graphics.Typeface;
 import android.view.Gravity;
 import android.widget.TextView;
 
-import com.vibestudio.app.service.ChatService;
+import com.vibestudio.app.chat.model.ChatMessage;
 
 public class CustomStatusToolMessage extends BaseToolMessageView {
 
@@ -32,7 +32,7 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
     }
 
     @Override
-    public void bind(ChatService.ChatMessage message) {
+    public void bind(ChatMessage message) {
         removeAllViews();
 
         setOrientation(VERTICAL);

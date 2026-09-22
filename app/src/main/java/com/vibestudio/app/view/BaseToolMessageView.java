@@ -11,7 +11,7 @@ import android.widget.TextView;
 import androidx.fragment.app.FragmentActivity;
 
 import com.vibestudio.app.activity.MainActivity;
-import com.vibestudio.app.service.ChatService;
+import com.vibestudio.app.chat.model.ChatMessage;
 
 public abstract class BaseToolMessageView extends LinearLayout {
 
@@ -116,7 +116,7 @@ public abstract class BaseToolMessageView extends LinearLayout {
         }
     }
 
-    public void bind(ChatService.ChatMessage msg) {
+    public void bind(ChatMessage msg) {
         String text = msg.getText();
         String displayContent = text;
 
@@ -136,6 +136,8 @@ public abstract class BaseToolMessageView extends LinearLayout {
                         displayContent = "Schema request: " + args.optString("skill_name", "");
                     } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
                         displayContent = "Reading terminal buffer (" + args.optInt("max_lines", 30) + " lines)";
+                    } else if (toolName.startsWith("browser_")) {
+                        displayContent = "Browser Tool [" + toolName + "]: " + args.toString();
                     } else {
                         displayContent = toolName + "(" + args.toString() + ")";
                     }

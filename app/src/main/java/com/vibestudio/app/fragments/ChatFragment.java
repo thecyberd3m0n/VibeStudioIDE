@@ -13,11 +13,14 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.vibestudio.app.chat.connection.ModelConnectionManager;
+import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.mcp.ToolMessageFactory;
 import com.vibestudio.app.service.ChatService;
 import com.vibestudio.app.view.BaseToolMessageView;
@@ -81,6 +84,9 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
             public void onClick(View v) {
                 String text = mMsgInput.getText().toString();
                 if (text.trim().length() > 0) {
+                    if (!ModelConnectionManager.getInstance().isConnectedAndConfigured(context)) {
+                        Toast.makeText(context, ModelConnectionManager.getInstance().getConnectionStatusMessage(context), Toast.LENGTH_LONG).show();
+                    }
                     mMsgInput.setText("");
                     ChatService.getInstance().sendMessage(context, text);
                 }
@@ -112,10 +118,10 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         if (mChatContainer == null) return;
         mChatContainer.removeAllViews();
 
-        List<ChatService.ChatMessage> history = ChatService.getInstance().getMessages();
-        for (ChatService.ChatMessage msg : history) {
+        List<ChatMessage> history = ChatService.getInstance().getMessages();
+        for (ChatMessage msg : history) {
             // Do not display raw background TOOL_RESULT messages in UI
-            if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_RESULT) {
+            if (msg.getType() == ChatMessage.MessageType.TOOL_RESULT) {
                 continue;
             }
             addChatMessageUI(context, msg);
@@ -125,7 +131,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         scrollToBottom();
     }
 
-    private void addChatMessageUI(Context context, ChatService.ChatMessage msg) {
+    private void addChatMessageUI(Context context, ChatMessage msg) {
         if (context == null || mChatContainer == null) return;
 
         // Centralized SOLID check and view creation via ToolMessageFactory
@@ -195,10 +201,10 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     }
 
     @Override
-    public void onMessageAdded(ChatService.ChatMessage message) {
+    public void onMessageAdded(ChatMessage message) {
         Context context = getContext();
         if (context != null) {
-            if (message.getType() != ChatService.ChatMessage.MessageType.TOOL_RESULT) {
+            if (message.getType() != ChatMessage.MessageType.TOOL_RESULT) {
                 addChatMessageUI(context, message);
                 scrollToBottom();
             }

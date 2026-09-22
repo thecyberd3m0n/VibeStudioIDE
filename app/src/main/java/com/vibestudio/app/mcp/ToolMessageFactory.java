@@ -2,7 +2,7 @@ package com.vibestudio.app.mcp;
 
 import android.content.Context;
 
-import com.vibestudio.app.service.ChatService;
+import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.view.BaseToolMessageView;
 import com.vibestudio.app.view.BrowserLogsToolMessage;
 import com.vibestudio.app.view.BrowserToolMessage;
@@ -14,9 +14,9 @@ public class ToolMessageFactory {
     /**
      * Centralized logic to determine if a ChatMessage is a tool call message.
      */
-    public static boolean isToolMessage(ChatService.ChatMessage msg) {
+    public static boolean isToolMessage(ChatMessage msg) {
         if (msg == null) return false;
-        if (msg.getType() == ChatService.ChatMessage.MessageType.TOOL_CALL) {
+        if (msg.getType() == ChatMessage.MessageType.TOOL_CALL) {
             return true;
         }
         String text = msg.getText();
@@ -26,7 +26,7 @@ public class ToolMessageFactory {
     /**
      * Factory method returning the appropriate BaseToolMessageView implementation.
      */
-    public static BaseToolMessageView createToolMessageView(Context context, ChatService.ChatMessage msg) {
+    public static BaseToolMessageView createToolMessageView(Context context, ChatMessage msg) {
         if (!isToolMessage(msg)) {
             TerminalToolMessage defaultView = new TerminalToolMessage(context);
             defaultView.bind(msg);
