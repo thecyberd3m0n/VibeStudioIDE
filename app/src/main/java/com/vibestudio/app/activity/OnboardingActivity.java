@@ -516,7 +516,7 @@ public class OnboardingActivity extends Activity {
                     "Dir::Bin::apt-key \"" + new File(usrDir, "bin/apt-key").getAbsolutePath() + "\";\n" +
                     "Dir::Bin::gpg \"" + new File(usrDir, "bin/gpg").getAbsolutePath() + "\";\n" +
                     "Dir::Bin::gpgv \"" + new File(usrDir, "bin/gpgv").getAbsolutePath() + "\";\n" +
-                    "DPKG::Options { \"--root=" + usrDir.getAbsolutePath() + "\"; \"--admindir=" + dpkgDir.getAbsolutePath() + "\"; \"--force-confdef\"; \"--force-confold\"; };\n" +
+                    "DPKG::Options { \"--admindir=" + new File(usrDir, "var/lib/dpkg").getAbsolutePath() + "\"; \"--force-confdef\"; \"--force-confold\"; };\n" +
                     "APT::System \"Debian dpkg interface\";\n" +
                     "APT::Get::AllowUnauthenticated \"true\";\n" +
                     "Acquire::AllowInsecureRepositories \"true\";\n" +
@@ -711,6 +711,8 @@ public class OnboardingActivity extends Activity {
         makeDirectoryExecutable(new File(usrDir, "lib/apt/methods"));
         makeDirectoryExecutable(new File(usrDir, "lib/apt/solvers"));
         makeDirectoryExecutable(new File(usrDir, "lib/apt/planners"));
+        makeDirectoryExecutable(new File(usrDir, "var/lib/dpkg"));
+        makeDirectoryExecutable(new File(usrDir, "tmp"));
 
         // 2. Wrap dpkg binary to force --root and --admindir to VibeStudio prefix
         File dpkgFile = new File(binDir, "dpkg");
@@ -722,12 +724,12 @@ public class OnboardingActivity extends Activity {
                     try { Os.chmod(dpkgRealFile.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
                     String wrapperContent = "#!/system/bin/sh\n" +
                             "PREFIX=\"${PREFIX:-" + usrDir.getAbsolutePath() + "}\"\n" +
-                            "exec \"$PREFIX/bin/dpkg.real\" --root=\"$PREFIX\" --admindir=\"$PREFIX/var/lib/dpkg\" --force-script-chrootless --force-unsafe-io \"$@\"\n";
+                            "exec \"$PREFIX/bin/dpkg.real\" --admindir=\"$PREFIX/var/lib/dpkg\" --force-script-chrootless --force-unsafe-io \"$@\"\n";
                     try (FileOutputStream out = new FileOutputStream(dpkgFile)) {
                         out.write(wrapperContent.getBytes(StandardCharsets.UTF_8));
                     } catch (Throwable ignored) {}
                     try { Os.chmod(dpkgFile.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                    appendLog("[libtermux] Created dpkg wrapper script pointing to --root=" + usrDir.getAbsolutePath());
+                    appendLog("[libtermux] Created dpkg wrapper script pointing to admindir=" + new File(usrDir, "var/lib/dpkg").getAbsolutePath());
                 }
             }
         }
@@ -840,6 +842,9 @@ public class OnboardingActivity extends Activity {
 
     private void makeDirectoryExecutable(File dir) {
         if (dir == null || !dir.exists() || !dir.isDirectory()) return;
+        try {
+            Os.chmod(dir.getAbsolutePath(), 0755);
+        } catch (Throwable ignored) {}
         File[] files = dir.listFiles();
         if (files == null) return;
         for (File f : files) {
