@@ -26,8 +26,6 @@ if [ -x "$PREFIX/bin/pkg" ]; then
     sed -i "s|/data/data/com.termux/files/usr|$PREFIX|g" "$PREFIX/bin/pkg" 2>/dev/null || true
 fi
 
-
-
 # Neutralize termux-bootstrap second-stage triggers completely and silently
 if [ -d "$PREFIX/etc/termux/termux-bootstrap" ]; then
     mkdir -p "$PREFIX/etc/termux/termux-bootstrap/second-stage"
@@ -48,7 +46,6 @@ if [ -f "$PREFIX/etc/bash.bashrc" ]; then
     sed -i "/termux-bootstrap/d" "$PREFIX/etc/bash.bashrc" 2>/dev/null || true
 fi
 
-
 echo "[vibestudio-bootstrap] Checking available package managers..."
 # Link default mirror to chosen_mirrors
 if [ -f "$PREFIX/etc/termux/mirrors/default" ]; then
@@ -60,23 +57,22 @@ fi
 if [ -x "$PREFIX/bin/apt-get" ]; then
     echo "[vibestudio-bootstrap] Found apt-get at $PREFIX/bin/apt-get"
     echo "[vibestudio-bootstrap] Running apt-get update..."
-    "$PREFIX/bin/apt-get" update -y || true
+    "$PREFIX/bin/apt-get" update -y
     echo "[vibestudio-bootstrap] Installing ca-certificates termux-keyring..."
-    "$PREFIX/bin/apt-get" install -y ca-certificates termux-keyring || true
+    "$PREFIX/bin/apt-get" install -y ca-certificates termux-keyring
     echo "[vibestudio-bootstrap] Running package upgrades (dist-upgrade)..."
-    "$PREFIX/bin/apt-get" dist-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" || "$PREFIX/bin/apt-get" upgrade -y || true
+    "$PREFIX/bin/apt-get" dist-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" || "$PREFIX/bin/apt-get" upgrade -y
 elif [ -x "$PREFIX/bin/pkg" ] && [ -x "$PREFIX/bin/bash" ]; then
     echo "[vibestudio-bootstrap] Found pkg at $PREFIX/bin/pkg"
     echo "[vibestudio-bootstrap] Running pkg update..."
-    "$PREFIX/bin/bash" "$PREFIX/bin/pkg" update -y || true
+    "$PREFIX/bin/bash" "$PREFIX/bin/pkg" update -y
     echo "[vibestudio-bootstrap] Installing ca-certificates termux-keyring..."
-    "$PREFIX/bin/bash" "$PREFIX/bin/pkg" install -y ca-certificates termux-keyring || true
+    "$PREFIX/bin/bash" "$PREFIX/bin/pkg" install -y ca-certificates termux-keyring
     echo "[vibestudio-bootstrap] Running pkg upgrade..."
-    "$PREFIX/bin/bash" "$PREFIX/bin/pkg" upgrade -y || true
+    "$PREFIX/bin/bash" "$PREFIX/bin/pkg" upgrade -y
 else
-    echo "[vibestudio-bootstrap] Warning: Neither apt-get nor pkg found at $PREFIX/bin"
+    echo "[vibestudio-bootstrap] Error: Neither apt-get nor pkg found at $PREFIX/bin"
     exit 1
 fi
 
 echo "[vibestudio-bootstrap] Environment setup completed!"
-exit 0
