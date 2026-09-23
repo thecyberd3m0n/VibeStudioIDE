@@ -39,8 +39,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,7 +50,6 @@ import kotlinx.coroutines.flow.Flow;
 import kotlinx.coroutines.flow.FlowCollector;
 
 public class OnboardingActivity extends Activity {
-    
     
     private void deployAssetDirectory(String assetSubDir, File targetDir) {
         if (!targetDir.exists()) {
@@ -77,36 +74,6 @@ public class OnboardingActivity extends Activity {
             appendLog("[warning] Failed to deploy asset directory " + assetSubDir + ": " + t.getMessage());
         }
     }
-
-    private static void cleanProfileFile(File file) {
-        if (file != null && file.exists()) {
-            try {
-                List<String> lines = Files.readAllLines(file.toPath());
-                List<String> filtered = new ArrayList<>();
-                for (String line : lines) {
-                    if (!line.contains("fallback run") && !line.contains("termux-bootstrap")) {
-                        filtered.add(line);
-                    }
-                }
-                Files.write(file.toPath(), filtered);
-            } catch (Throwable ignored) {}
-        }
-    }
-
-    private static void deleteRecursive(File fileOrDirectory) {
-        if (fileOrDirectory != null && fileOrDirectory.exists()) {
-            if (fileOrDirectory.isDirectory()) {
-                File[] children = fileOrDirectory.listFiles();
-                if (children != null) {
-                    for (File child : children) {
-                        deleteRecursive(child);
-                    }
-                }
-            }
-            fileOrDirectory.delete();
-        }
-    }
-
 
     private static final String TAG = "OnboardingActivity";
 
@@ -348,8 +315,8 @@ public class OnboardingActivity extends Activity {
                         }, continuation)
                     );
 
-                    appendLog("[libtermux] Overriding Termux hardcoded paths...");
-                    overrideSTermuxPaths(usrDir, homeDir);
+                    appendLog("[libtermux] Configuring APT repository and environment...");
+                    setupAptEnvironment(usrDir);
                     setupSymlinksAndPermissions(usrDir);
                     fixPermissionsRecursively(usrDir);
                     runBootstrapScript(usrDir, homeDir, aptConfFile);
@@ -407,49 +374,6 @@ public class OnboardingActivity extends Activity {
                 }
             }
         }).start();
-    }
-
-                private void overrideSTermuxPaths(File usrDir, File homeDir) {
-        if (usrDir == null || !usrDir.exists() || !usrDir.isDirectory()) return;
-
-        // 1. Create symlinks /u -> usrDir and /h -> homeDir across all candidate app directories
-        List<File> targetDirs = new ArrayList<>();
-        try { targetDirs.add(getDataDir()); } catch (Throwable ignored) {}
-        targetDirs.add(new File("/data/data/com.vibestudio.app"));
-        targetDirs.add(new File("/data/user/0/com.vibestudio.app"));
-        if (usrDir.getParentFile() != null) {
-            targetDirs.add(usrDir.getParentFile());
-            if (usrDir.getParentFile().getParentFile() != null) {
-                targetDirs.add(usrDir.getParentFile().getParentFile());
-            }
-        }
-
-        for (File dir : targetDirs) {
-            if (dir == null) continue;
-            if (!dir.exists()) { try { dir.mkdirs(); } catch (Throwable ignored) {} }
-            File uLink = new File(dir, "u");
-            File hLink = new File(dir, "h");
-            try { Os.remove(uLink.getAbsolutePath()); } catch (Throwable ignored) {}
-            try { Os.remove(hLink.getAbsolutePath()); } catch (Throwable ignored) {}
-            try { Os.symlink(usrDir.getAbsolutePath(), uLink.getAbsolutePath()); } catch (Throwable ignored) {}
-            try {
-                if (homeDir != null) {
-                    Os.symlink(homeDir.getAbsolutePath(), hLink.getAbsolutePath());
-                }
-            } catch (Throwable ignored) {}
-        }
-        appendLog("[libtermux] Created symlinks pointing to " + usrDir.getAbsolutePath());
-
-        byte[] defaultUsrBytes = "/data/data/com.termux/files/usr".getBytes(StandardCharsets.UTF_8); // 31 bytes
-        byte[] targetUsrBytes  = "/data/data/com.vibestudio.app/u".getBytes(StandardCharsets.UTF_8);   // 31 bytes
-
-        byte[] defaultHomeBytes = "/data/data/com.termux/files/home".getBytes(StandardCharsets.UTF_8); // 32 bytes
-        byte[] targetHomeBytes  = "/data/data/com.vibestudio.app/h\0".getBytes(StandardCharsets.UTF_8);  // 32 bytes (with trailing nul)
-
-        int count = processDirectoryForTermuxPaths(usrDir, defaultUsrBytes, targetUsrBytes, defaultHomeBytes, targetHomeBytes, 0);
-        LogViewerService.getInstance().i(TAG, "overrideSTermuxPaths completed. Overrode hardcoded termux paths in " + count + " files.");
-
-        setupAptEnvironment(usrDir);
     }
 
     private void setupAptEnvironment(File usrDir) {
@@ -527,7 +451,6 @@ public class OnboardingActivity extends Activity {
             Files.write(aptConfFile.toPath(), aptConfContent.getBytes(StandardCharsets.UTF_8));
             LogViewerService.getInstance().i(TAG, "Configured apt.conf at " + aptConfFile.getAbsolutePath());
 
-            setupDefaultMirrors(usrDir);
             fixSourcesListFiles(usrDir);
         } catch (Exception e) {
             LogViewerService.getInstance().w(TAG, "Failed to setup APT environment", e);
@@ -538,123 +461,29 @@ public class OnboardingActivity extends Activity {
     private void fixSourcesListFiles(File usrDir) {
         try {
             File aptEtcDir = new File(usrDir, "etc/apt");
-            List<File> sourcesFiles = new ArrayList<>();
-            File mainSources = new File(aptEtcDir, "sources.list");
-            if (mainSources.exists()) sourcesFiles.add(mainSources);
+            if (!aptEtcDir.exists()) aptEtcDir.mkdirs();
 
+            // Clear old sources.list.d directory files
             File sourcesListDir = new File(aptEtcDir, "sources.list.d");
             if (sourcesListDir.exists() && sourcesListDir.isDirectory()) {
                 File[] listFiles = sourcesListDir.listFiles();
                 if (listFiles != null) {
                     for (File f : listFiles) {
-                        if (f.isFile() && f.getName().endsWith(".list")) {
-                            sourcesFiles.add(f);
+                        if (f.isFile()) {
+                            f.delete();
                         }
                     }
                 }
             }
 
-            for (File f : sourcesFiles) {
-                String content = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
-                String[] lines = content.split("\n");
-                StringBuilder sb = new StringBuilder();
-                boolean modified = false;
-                for (String line : lines) {
-                    String trimmed = line.trim();
-                    if (trimmed.startsWith("deb ") && !trimmed.contains("[trusted=yes]")) {
-                        line = line.replaceFirst("deb\\s+", "deb [trusted=yes] ");
-                        modified = true;
-                    }
-                    sb.append(line).append("\n");
-                }
-                if (modified) {
-                    Files.write(f.toPath(), sb.toString().getBytes(StandardCharsets.UTF_8));
-                    LogViewerService.getInstance().i(TAG, "Updated sources file with trusted=yes: " + f.getName());
-                }
-            }
+            // Write custom VibeStudio APT repository source
+            File mainSources = new File(aptEtcDir, "sources.list");
+            String customRepo = "deb [trusted=yes] https://thecyberd3m0n.github.io/termux-packages stable main\ndeb [trusted=yes] https://packages-cf.termux.dev/apt/termux-main stable main\n";
+            Files.write(mainSources.toPath(), customRepo.getBytes(StandardCharsets.UTF_8));
+            LogViewerService.getInstance().i(TAG, "Configured VibeStudio APT repository in sources.list");
         } catch (Exception e) {
             LogViewerService.getInstance().w(TAG, "Failed to fix sources list files", e);
         }
-    }
-
-            private int processDirectoryForTermuxPaths(File dir, byte[] matchUsr, byte[] replaceUsr, byte[] matchHome, byte[] replaceHome, int depth) {
-        if (depth > 8 || dir == null) return 0;
-        File[] files = dir.listFiles();
-        if (files == null) return 0;
-
-        int count = 0;
-        for (File file : files) {
-            try {
-                if (Files.isSymbolicLink(file.toPath())) {
-                    Path targetPath = Files.readSymbolicLink(file.toPath());
-                    String targetStr = targetPath.toString();
-                    boolean modified = false;
-                    String defaultUsrStr = new String(matchUsr, StandardCharsets.UTF_8);
-                    String targetUsrStr = new String(replaceUsr, StandardCharsets.UTF_8);
-                    if (targetStr.contains(defaultUsrStr)) {
-                        targetStr = targetStr.replace(defaultUsrStr, targetUsrStr);
-                        modified = true;
-                    }
-                    if (modified) {
-                        Files.delete(file.toPath());
-                        Files.createSymbolicLink(file.toPath(), Paths.get(targetStr));
-                        count++;
-                    }
-                    continue;
-                }
-            } catch (Exception e) {
-                continue;
-            }
-
-            if (file.isDirectory()) {
-                count += processDirectoryForTermuxPaths(file, matchUsr, replaceUsr, matchHome, replaceHome, depth + 1);
-            } else if (file.isFile() && file.canRead() && file.length() > 0 && file.length() < 10 * 1024 * 1024) {
-                try {
-                    byte[] bytes = Files.readAllBytes(file.toPath());
-                    boolean modifiedUsr = replaceByteSequenceInPlace(bytes, matchUsr, replaceUsr);
-                    boolean modifiedHome = replaceByteSequenceInPlace(bytes, matchHome, replaceHome);
-
-                    if (modifiedUsr || modifiedHome) {
-                        Files.write(file.toPath(), bytes);
-                        if (file.getParentFile() != null) {
-                            String parentName = file.getParentFile().getName();
-                            if ("bin".equals(parentName) || "libexec".equals(parentName)) {
-                                try { Os.chmod(file.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
-                            }
-                        }
-                        count++;
-                    }
-                } catch (Exception e) {
-                    LogViewerService.getInstance().w(TAG, "Failed to process path for " + file.getName(), e);
-                }
-            }
-        }
-        return count;
-    }
-
-    private boolean replaceByteSequenceInPlace(byte[] src, byte[] match, byte[] replace) {
-        if (src == null || match == null || replace == null || match.length != replace.length || src.length < match.length) {
-            return false;
-        }
-        boolean modified = false;
-        int maxIndex = src.length - match.length;
-        for (int i = 0; i <= maxIndex; i++) {
-            boolean isMatch = true;
-            for (int j = 0; j < match.length; j++) {
-                if (src[i + j] != match[j]) {
-                    isMatch = false;
-                    break;
-                }
-            }
-            if (isMatch) {
-                for (int j = 0; j < replace.length; j++) {
-                    src[i + j] = replace[j];
-                }
-                i += match.length - 1;
-                modified = true;
-            }
-        }
-        return modified;
     }
 
     private void navigateToMain() {
@@ -714,7 +543,7 @@ public class OnboardingActivity extends Activity {
         makeDirectoryExecutable(new File(usrDir, "var/lib/dpkg"));
         makeDirectoryExecutable(new File(usrDir, "tmp"));
 
-        // 2. Wrap dpkg binary to force --root and --admindir to VibeStudio prefix
+        // 2. Wrap dpkg binary to force --admindir to VibeStudio prefix
         File dpkgFile = new File(binDir, "dpkg");
         File dpkgRealFile = new File(binDir, "dpkg.real");
         if (dpkgFile.exists() && !dpkgRealFile.exists()) {
@@ -777,7 +606,7 @@ public class OnboardingActivity extends Activity {
             }
         }
 
-        // 4. Guarantee all 6 required dpkg binaries are executable
+        // 4. Guarantee required binaries are executable
         ensureExecutableTool(binDir, "sh", "dash", "bash");
         ensureExecutableTool(binDir, "rm", "coreutils", "busybox");
         ensureExecutableTool(binDir, "tar", "busybox", "coreutils");
@@ -798,7 +627,7 @@ public class OnboardingActivity extends Activity {
         makeDirectoryExecutable(new File(usrDir, "libexec"));
         makeDirectoryExecutable(new File(usrDir, "lib/apt/methods"));
 
-        // 7. Verify and log status of all 6 expected dpkg binaries
+        // 7. Verify and log status of expected dpkg binaries
         String[] required = new String[]{"sh", "rm", "tar", "diff", "dpkg-deb", "start-stop-daemon"};
         for (String req : required) {
             File reqFile = new File(binDir, req);
@@ -858,13 +687,6 @@ public class OnboardingActivity extends Activity {
         }
     }
 
-    private void createSymlinkIfNotExists(File dir, String symlinkName, String targetName) {
-        File linkFile = new File(dir, symlinkName);
-        if (!linkFile.exists()) {
-            createSymlink(dir, symlinkName, targetName);
-        }
-    }
-
     private void createSymlink(File dir, String symlinkName, String target) {
         File linkFile = new File(dir, symlinkName);
         try {
@@ -897,47 +719,5 @@ public class OnboardingActivity extends Activity {
                 }
             }
         } catch (Throwable ignored) {}
-    }
-
-    private void setupDefaultMirrors(File usrDir) {
-        try {
-            File chosenMirrors = new File(usrDir, "etc/termux/chosen_mirrors");
-            File defaultMirror = new File(usrDir, "etc/termux/mirrors/default");
-            if (defaultMirror.exists()) {
-                try {
-                    if (chosenMirrors.exists() || chosenMirrors.isAbsolute()) { chosenMirrors.delete(); }
-                    Os.symlink(defaultMirror.getAbsolutePath(), chosenMirrors.getAbsolutePath());
-                    LogViewerService.getInstance().i(TAG, "Linked chosen_mirrors to default mirror");
-                } catch (Throwable t) {
-                    LogViewerService.getInstance().w(TAG, "Failed to symlink chosen_mirrors", t);
-                }
-            }
-        } catch (Exception e) {
-            LogViewerService.getInstance().w(TAG, "Failed to setup default mirrors", e);
-        }
-    }
-
-    private boolean replaceBytesInFile(File file, byte[] pattern, byte[] replacement) {
-        if (pattern == null || replacement == null || pattern.length != replacement.length) return false;
-        try {
-            byte[] data = Files.readAllBytes(file.toPath());
-            boolean modified = false;
-            for (int i = 0; i <= data.length - pattern.length; i++) {
-                boolean match = true;
-                for (int j = 0; j < pattern.length; j++) {
-                    if (data[i + j] != pattern[j]) { match = false; break; }
-                }
-                if (match) {
-                    System.arraycopy(replacement, 0, data, i, replacement.length);
-                    modified = true;
-                    i += pattern.length - 1;
-                }
-            }
-            if (modified) {
-                Files.write(file.toPath(), data);
-                return true;
-            }
-        } catch (Exception ignored) {}
-        return false;
     }
 }

@@ -1,8 +1,6 @@
 #!/system/bin/sh
 set -e
 
-trap 'exit_code=$?; if [ $exit_code -ne 0 ]; then echo "[vibestudio-bootstrap] ERROR: Script failed with exit code $exit_code"; echo "[vibestudio-bootstrap] Checking dpkg/info contents:"; ls -la "$PREFIX/var/lib/dpkg/info/" 2>/dev/null || true; fi' EXIT
-
 echo "[vibestudio-bootstrap] Starting environment setup..."
 export PATH="$PREFIX/bin:$PREFIX/bin/applets:/system/bin:$PATH"
 export LD_LIBRARY_PATH="$PREFIX/lib:$LD_LIBRARY_PATH"
@@ -12,26 +10,10 @@ export TERMUX_PKG_NO_MIRROR_SELECT="true"
 export DPKG_ADMINDIR="$PREFIX/var/lib/dpkg"
 export APT_CONFIG="$PREFIX/etc/apt/apt.conf"
 
-echo "[vibestudio-bootstrap] === ENVIRONMENT DIAGNOSTICS ==="
-echo "[vibestudio-bootstrap] PREFIX=$PREFIX"
-echo "[vibestudio-bootstrap] HOME=$HOME"
-echo "[vibestudio-bootstrap] PATH=$PATH"
-echo "[vibestudio-bootstrap] LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
-echo "[vibestudio-bootstrap] TMPDIR=$TMPDIR"
-echo "[vibestudio-bootstrap] DPKG_ADMINDIR=$DPKG_ADMINDIR"
-echo "[vibestudio-bootstrap] APT_CONFIG=$APT_CONFIG"
-
-echo "[vibestudio-bootstrap] === SYMLINK & PATH VERIFICATION ==="
-ls -ld /data/data/com.vibestudio.app/u 2>/dev/null || echo "/data/data/com.vibestudio.app/u does not exist"
-ls -ld /data/data/com.termux/files/usr 2>/dev/null || echo "/data/data/com.termux/files/usr does not exist"
-
 chmod -R 755 "$PREFIX/bin" "$PREFIX/libexec" "$PREFIX/lib/apt/methods" "$PREFIX/var/lib/dpkg" "$PREFIX/tmp" 2>/dev/null || true
 
 mkdir -p "$PREFIX/etc/dpkg/dpkg.cfg.d" "$PREFIX/var/lib/dpkg/updates" "$PREFIX/var/lib/dpkg/info" "$PREFIX/var/lib/dpkg/triggers" "$PREFIX/var/lib/dpkg/alternatives" "$PREFIX/tmp"
 touch "$PREFIX/var/lib/dpkg/status" "$PREFIX/var/lib/dpkg/available"
-
-echo "[vibestudio-bootstrap] === DIRECTORY PERMISSIONS ==="
-ls -ld "$PREFIX/bin" "$PREFIX/libexec" "$PREFIX/var/lib/dpkg" "$PREFIX/var/lib/dpkg/info" "$PREFIX/tmp" 2>/dev/null || true
 
 # Patch pkg script if it contains hardcoded /data/data/com.termux/files/usr
 if [ -x "$PREFIX/bin/pkg" ]; then
@@ -63,17 +45,6 @@ if [ -f "$PREFIX/etc/termux/mirrors/default" ]; then
     mkdir -p "$PREFIX/etc/termux"
     rm -f "$PREFIX/etc/termux/chosen_mirrors"
     ln -sf "$PREFIX/etc/termux/mirrors/default" "$PREFIX/etc/termux/chosen_mirrors"
-fi
-
-echo "[vibestudio-bootstrap] === DPKG & ALTERNATIVES CHECK ==="
-if [ -f "$PREFIX/bin/dpkg" ]; then
-    echo "--- $PREFIX/bin/dpkg contents ---"
-    cat "$PREFIX/bin/dpkg"
-    echo "---------------------------------"
-fi
-if [ -f "$PREFIX/bin/update-alternatives" ]; then
-    ls -la "$PREFIX/bin/update-alternatives"
-    head -n 5 "$PREFIX/bin/update-alternatives" 2>/dev/null || true
 fi
 
 if [ -x "$PREFIX/bin/apt-get" ]; then
