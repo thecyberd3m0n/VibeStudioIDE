@@ -9,6 +9,7 @@
 - **Models Management**: Interface to configure, monitor, and switch between local or remote AI models.
 - **MCP Integration**: Connect and manage Model Context Protocol (MCP) tool providers and services.
 - **Built-in Terminal**: Direct terminal interface for executing shell commands and scripts.
+- **Built-in Agentic Browser**: Test your work, automate your online actions thanks to WebView with dedicated MCP.
 - **Interactive AI Chat**: Chat experience connected with your active AI models and tools.
 - **Permissions Management**: Granular control over system permissions and access scopes.
 - **Native Stepper Onboarding**: Guided setup walkthrough for first-time app configuration.
