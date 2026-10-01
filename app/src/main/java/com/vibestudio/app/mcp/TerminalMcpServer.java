@@ -16,7 +16,7 @@ public class TerminalMcpServer implements McpServer {
 
     private static final String TAG = "TerminalMcpServer";
     private static final String NAME = "terminal";
-    private static final String DESCRIPTION = "Allows running shell commands in the active IDE terminal session, injecting keystrokes (such as 'n\\n', 'y\\n', ENTER, 'CTRL+C'), and inspecting terminal logs.";
+    private static final String DESCRIPTION = "Allows running shell commands in the active IDE terminal session, injecting keystrokes (such as 'n\\n', 'y\\n', ENTER, 'CTRL+C'), and inspecting terminal logs. Auto-responds 'n\\n' to telemetry/anonymous analytics prompts when detected.";
 
     private boolean mIsActive = false;
     private final List<McpTool> mTools;
@@ -25,13 +25,13 @@ public class TerminalMcpServer implements McpServer {
         mTools = new ArrayList<>();
 
         // Tool 1: execute_command
-        mTools.add(McpTool.builder("execute_command", "Execute a bash shell command in the shared active terminal session. Useful for non-interactive commands.")
+        mTools.add(McpTool.builder("execute_command", "Execute a bash shell command in the shared active terminal session. Useful for non-interactive commands. Automatically handles interactive prompts by preferring non-interactive flags or responding 'No' (n) to telemetry prompts.")
                 .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
                 .build());
 
         // Tool 2: send_keystroke
-        mTools.add(McpTool.builder("send_keystroke", "Inject raw keystrokes, responses to prompts, or control sequences into the active terminal session at any time. Use to auto-respond 'n' or 'y' to interactive prompts (e.g., 'would you like to share anonymous statistics? y/N') or interrupt hanging processes with 'CTRL+C'.")
-                .addProperty("keystroke", PropertyType.STRING, "The keystroke string or control sequence to send (e.g., 'n\\n', 'y\\n', 'n', 'y', 'ENTER', 'CTRL+C', 'CTRL+D').", true)
+        mTools.add(McpTool.builder("send_keystroke", "Inject raw keystrokes, prompt responses (e.g. 'n\\n' to decline telemetry, 'y\\n' to confirm), or control sequences (ENTER, 'CTRL+C' to interrupt, 'CTRL+D') into the active terminal session at any time.")
+                .addProperty("keystroke", PropertyType.STRING, "The keystroke string or control sequence to send (e.g., 'n\\n', 'y\\n', 'ENTER', 'CTRL+C', 'CTRL+D').", true)
                 .build());
 
         // Tool 3: read_terminal_output
