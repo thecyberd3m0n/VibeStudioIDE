@@ -6,10 +6,14 @@ import com.vibestudio.app.chat.model.ToolCall;
 import com.vibestudio.app.chat.model.ToolResult;
 import com.vibestudio.app.chat.truncator.OutputTruncator;
 import com.vibestudio.app.mcp.McpClientManager;
+import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONObject;
 
 public class ToolExecutionManager {
+
+    private static final String TAG = "ToolExecutionManager";
+    private static final long STATEFUL_TOOL_WAIT_MS = 10L;
 
     private final McpClientManager mMcpClientManager;
 
@@ -27,11 +31,35 @@ public class ToolExecutionManager {
             return new ToolResult("unknown", err);
         }
 
-        JSONObject resultObj = mMcpClientManager.executeToolCall(toolCall.getName(), toolCall.getArguments(), context);
+        String toolName = toolCall.getName();
+        long plannedDelayMs = toolCall.getPlannedDelayMs();
+
+        if (plannedDelayMs > 0) {
+            LogViewerService.getInstance().i(TAG, "Agent requested planned delay of " + plannedDelayMs + " ms for tool: " + toolName);
+        }
+
+        JSONObject resultObj = mMcpClientManager.executeToolCall(toolName, toolCall.getArguments(), context);
+
+        // For stateful tools (terminal & browser), delay execution wait by max 10ms before capturing initial state
+        if (isStatefulTool(toolName)) {
+            try {
+                Thread.sleep(STATEFUL_TOOL_WAIT_MS);
+            } catch (InterruptedException ignored) {}
+        }
 
         // Apply 25KB output truncation rule
         JSONObject truncatedObj = OutputTruncator.truncateOutput(resultObj);
 
-        return new ToolResult(toolCall.getName(), truncatedObj);
+        return new ToolResult(toolName, truncatedObj);
+    }
+
+    private boolean isStatefulTool(String toolName) {
+        if (toolName == null) return false;
+        return toolName.startsWith("browser_")
+                || toolName.startsWith("terminal_")
+                || "execute_command".equalsIgnoreCase(toolName)
+                || "send_keystroke".equalsIgnoreCase(toolName)
+                || "read_terminal_output".equalsIgnoreCase(toolName)
+                || "read_browser_logs".equalsIgnoreCase(toolName);
     }
 }
