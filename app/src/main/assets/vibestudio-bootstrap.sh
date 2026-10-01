@@ -21,10 +21,24 @@ chmod -R 755 "$PREFIX/bin" "$PREFIX/libexec" "$PREFIX/lib/apt/methods" 2>/dev/nu
 mkdir -p "$PREFIX/etc/dpkg/dpkg.cfg.d" "$PREFIX/var/lib/dpkg/updates" "$PREFIX/var/lib/dpkg/info" "$PREFIX/var/lib/dpkg/triggers" "$PREFIX/var/lib/dpkg/alternatives" "$PREFIX/tmp"
 touch "$PREFIX/var/lib/dpkg/status" "$PREFIX/var/lib/dpkg/available"
 
-# Patch pkg script if it contains hardcoded /data/data/com.termux/files/usr
-if [ -x "$PREFIX/bin/pkg" ]; then
+# Force chrootless script execution in dpkg.cfg so maintainer scripts don't trigger SIGSYS chroot
+printf 'force-script-chrootless\nforce-unsafe-io\nforce-confdef\nforce-confold\n' > "$PREFIX/etc/dpkg/dpkg.cfg"
+
+# Patch pkg script if it exists and force executable permissions on bin
+if [ -f "$PREFIX/bin/pkg" ]; then
+    chmod 755 "$PREFIX/bin/pkg" 2>/dev/null || true
     sed -i "s|/data/data/com.termux/files/usr|$PREFIX|g" "$PREFIX/bin/pkg" 2>/dev/null || true
 fi
+chmod -R 755 "$PREFIX/bin" "$PREFIX/libexec" "$PREFIX/lib/apt/methods" 2>/dev/null || true
+
+# Ensure termux and vibestudio compatibility path symlinks exist so dpkg extracts packages directly into $PREFIX
+mkdir -p "$PREFIX/data/data/com.vibestudio.app/files"
+mkdir -p "$PREFIX/data/user/0/com.vibestudio.app/files"
+mkdir -p "$PREFIX/data/data/com.termux/files"
+
+[ ! -e "$PREFIX/data/data/com.vibestudio.app/files/usr" ] && ln -sf "$PREFIX" "$PREFIX/data/data/com.vibestudio.app/files/usr" 2>/dev/null || true
+[ ! -e "$PREFIX/data/user/0/com.vibestudio.app/files/usr" ] && ln -sf "$PREFIX" "$PREFIX/data/user/0/com.vibestudio.app/files/usr" 2>/dev/null || true
+[ ! -e "$PREFIX/data/data/com.termux/files/usr" ] && ln -sf "$PREFIX" "$PREFIX/data/data/com.termux/files/usr" 2>/dev/null || true
 
 
 
@@ -50,6 +64,13 @@ fi
 
 
 echo "[vibestudio-bootstrap] Checking available package managers..."
+# Point apt at the VibeStudio package repository (Cloudflare R2).
+# [trusted=yes] is required on first run because the stock bootstrap keyring does
+# not contain our signing key yet; the termux-keyring installed below ships it.
+mkdir -p "$PREFIX/etc/apt"
+printf 'deb [trusted=yes] https://pub-88d4652a5f2b459b95722d5376b49dfa.r2.dev/apt/termux-main/ stable main\n' > "$PREFIX/etc/apt/sources.list"
+rm -f "$PREFIX"/etc/apt/sources.list.d/*.list 2>/dev/null || true
+
 # Link default mirror to chosen_mirrors
 if [ -f "$PREFIX/etc/termux/mirrors/default" ]; then
     mkdir -p "$PREFIX/etc/termux"
