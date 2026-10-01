@@ -11,7 +11,9 @@
         android:label="VibeStudio" 
         android:theme="@style/AppTheme"
         android:extractNativeLibs="true"
-        android:allowBackup="true">
+        android:allowBackup="true"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <service 
             android:name=".service.McpService"

@@ -149,6 +149,9 @@ public class ChatService {
             } else if ("execute_command".equalsIgnoreCase(toolName)) {
                 String cmd = args.optString("command", "");
                 toolSummary = "⚡ Executing terminal command:\n`" + cmd + "`";
+            } else if ("send_keystroke".equalsIgnoreCase(toolName)) {
+                String key = args.optString("keystroke", "");
+                toolSummary = "⌨️ Injecting terminal keystroke: `" + key + "`";
             } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
                 toolSummary = "🔍 Inspecting terminal logs buffer";
             } else if (toolName.startsWith("browser_")) {
