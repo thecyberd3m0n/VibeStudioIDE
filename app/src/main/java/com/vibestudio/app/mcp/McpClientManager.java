@@ -6,11 +6,16 @@ import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
 import com.vibestudio.app.mcp.model.ToolProperty;
+import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -18,6 +23,8 @@ import java.util.List;
 import java.util.Map;
 
 public class McpClientManager {
+
+    private static final String TAG = "McpClientManager";
 
     public static class McpServerInfo {
         private final String name;
@@ -51,27 +58,16 @@ public class McpClientManager {
         }
     }
 
-    public List<McpServerInfo> getConfiguredServers() {
+    public List<McpServerInfo> getServerInfos() {
         List<McpServerInfo> list = new ArrayList<>();
         for (McpServer server : mRegisteredServers.values()) {
-            String title = capitalize(server.getName()) + " Skill";
-            list.add(new McpServerInfo(title, server.getDescription(), server.isActive()));
+            list.add(new McpServerInfo(server.getName(), server.getDescription(), server.isActive()));
         }
         return list;
     }
 
-    public JSONObject getAllAvailableToolsSchema() {
-        JSONObject allTools = new JSONObject();
-        try {
-            JSONArray toolsArray = new JSONArray();
-            for (McpServer server : mRegisteredServers.values()) {
-                for (McpTool tool : server.getTools()) {
-                    toolsArray.put(tool.toJsonSchema());
-                }
-            }
-            allTools.put("tools", toolsArray);
-        } catch (JSONException ignored) {}
-        return allTools;
+    public List<McpServerInfo> getConfiguredServers() {
+        return getServerInfos();
     }
 
     public JSONObject getHighLevelCatalog() {
@@ -98,11 +94,12 @@ public class McpClientManager {
         return catalog;
     }
 
-    public JSONObject getSkillSchema(String skillName) {
+    public JSONObject getSkillSchema(Context context, String skillName) {
         JSONObject response = new JSONObject();
         try {
             if (skillName != null && mRegisteredServers.containsKey(skillName.toLowerCase())) {
-                McpServer server = mRegisteredServers.get(skillName.toLowerCase());
+                String cleanSkillName = skillName.toLowerCase();
+                McpServer server = mRegisteredServers.get(cleanSkillName);
                 if (server != null) {
                     JSONArray toolsArray = new JSONArray();
                     for (McpTool tool : server.getTools()) {
@@ -110,9 +107,16 @@ public class McpClientManager {
                     }
 
                     response.put("status", "success");
-                    response.put("skill", skillName.toLowerCase());
+                    response.put("skill", cleanSkillName);
                     JSONObject schemaObj = new JSONObject();
                     schemaObj.put("tools", toolsArray);
+
+                    // Load guidelines from assets/ai/<skill>_tool.md if present
+                    String instructions = loadSkillGuidelinesAsset(context, cleanSkillName);
+                    if (instructions != null && !instructions.trim().isEmpty()) {
+                        schemaObj.put("guidelines", instructions.trim());
+                    }
+
                     response.put("schema", schemaObj);
                     return response;
                 }
@@ -128,11 +132,32 @@ public class McpClientManager {
         return response;
     }
 
+    public JSONObject getSkillSchema(String skillName) {
+        return getSkillSchema(null, skillName);
+    }
+
+    private String loadSkillGuidelinesAsset(Context context, String skillName) {
+        if (context == null || skillName == null) return null;
+        String assetPath = "ai/" + skillName + "_tool.md";
+        try (InputStream in = context.getAssets().open(assetPath);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line).append("\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            LogViewerService.getInstance().i(TAG, "No asset guidelines found for path: " + assetPath);
+            return null;
+        }
+    }
+
     public JSONObject executeToolCall(String toolName, JSONObject args, Context context) {
         try {
             if ("get_skill_schema".equalsIgnoreCase(toolName)) {
                 String skillName = args != null ? args.optString("skill_name") : "";
-                return getSkillSchema(skillName);
+                return getSkillSchema(context, skillName);
             }
 
             Map<String, Object> arguments = jsonObjectToMap(args);
@@ -169,10 +194,5 @@ public class McpClientManager {
             }
         }
         return map;
-    }
-
-    private String capitalize(String str) {
-        if (str == null || str.isEmpty()) return str;
-        return str.substring(0, 1).toUpperCase() + str.substring(1);
     }
 }
