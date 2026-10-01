@@ -132,6 +132,8 @@ public abstract class BaseToolMessageView extends LinearLayout {
 
                     if ("execute_command".equalsIgnoreCase(toolName)) {
                         displayContent = "$ " + args.optString("command", "");
+                    } else if ("send_keystroke".equalsIgnoreCase(toolName)) {
+                        displayContent = "Keystroke: " + args.optString("keystroke", "");
                     } else if ("get_skill_schema".equalsIgnoreCase(toolName)) {
                         displayContent = "Schema request: " + args.optString("skill_name", "");
                     } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {

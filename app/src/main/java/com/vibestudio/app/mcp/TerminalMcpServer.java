@@ -16,7 +16,7 @@ public class TerminalMcpServer implements McpServer {
 
     private static final String TAG = "TerminalMcpServer";
     private static final String NAME = "terminal";
-    private static final String DESCRIPTION = "Allows running shell commands in the active IDE terminal session and inspecting terminal logs.";
+    private static final String DESCRIPTION = "Allows running shell commands in the active IDE terminal session, injecting keystrokes (such as 'n\\n', 'y\\n', ENTER, 'CTRL+C'), and inspecting terminal logs.";
 
     private boolean mIsActive = false;
     private final List<McpTool> mTools;
@@ -25,11 +25,16 @@ public class TerminalMcpServer implements McpServer {
         mTools = new ArrayList<>();
 
         // Tool 1: execute_command
-        mTools.add(McpTool.builder("execute_command", "Execute a bash shell command in the shared active terminal session.")
+        mTools.add(McpTool.builder("execute_command", "Execute a bash shell command in the shared active terminal session. Useful for non-interactive commands.")
                 .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
                 .build());
 
-        // Tool 2: read_terminal_output
+        // Tool 2: send_keystroke
+        mTools.add(McpTool.builder("send_keystroke", "Inject raw keystrokes, responses to prompts, or control sequences into the active terminal session at any time.")
+                .addProperty("keystroke", PropertyType.STRING, "The keystroke string or control sequence to send (e.g., 'n\\n', 'y\\n', 'ENTER', 'CTRL+C', 'CTRL+D').", true)
+                .build());
+
+        // Tool 3: read_terminal_output
         mTools.add(McpTool.builder("read_terminal_output", "Read a paginated or filtered output fragment from the active terminal session screen buffer.")
                 .addProperty("max_lines", PropertyType.INTEGER, "Maximum number of lines to return (default: 30 to conserve tokens).", false)
                 .addProperty("start_line", PropertyType.INTEGER, "Start line index for pagination (default: 0).", false)
@@ -95,6 +100,19 @@ public class TerminalMcpServer implements McpServer {
                     return McpToolResult.success("Command dispatched to terminal session.");
                 } else {
                     return McpToolResult.error("Failed to dispatch command.");
+                }
+
+            } else if ("send_keystroke".equals(toolName)) {
+                String keystroke = arguments != null ? getStringArg(arguments, "keystroke", "") : "";
+                if (keystroke.isEmpty()) {
+                    return McpToolResult.error("Missing 'keystroke' parameter.");
+                }
+
+                boolean success = TerminalSessionManager.getInstance().sendKeystroke(keystroke);
+                if (success) {
+                    return McpToolResult.success("Keystroke injected into terminal session: " + keystroke);
+                } else {
+                    return McpToolResult.error("Failed to inject keystroke.");
                 }
 
             } else if ("read_terminal_output".equals(toolName)) {

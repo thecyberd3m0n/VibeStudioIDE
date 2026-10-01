@@ -49,7 +49,7 @@ public class ToolMessageFactory {
                     browserView.bind(msg);
                     return browserView;
                 }
-            } else if (text.contains("execute_command") || text.contains("read_terminal_output") || text.contains("terminal")) {
+            } else if (text.contains("execute_command") || text.contains("read_terminal_output") || text.contains("send_keystroke") || text.contains("terminal")) {
                 TerminalToolMessage terminalView = new TerminalToolMessage(context);
                 terminalView.bind(msg);
                 return terminalView;

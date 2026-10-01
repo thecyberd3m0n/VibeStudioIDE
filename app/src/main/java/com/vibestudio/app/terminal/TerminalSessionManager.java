@@ -239,6 +239,46 @@ public class TerminalSessionManager {
         }
     }
 
+    public synchronized boolean sendKeystroke(String keystroke) {
+        if (!isSessionAvailable() || keystroke == null) {
+            LogViewerService.getInstance().w(TAG, "Cannot send keystroke: TerminalSession is not active or keystroke is null.");
+            return false;
+        }
+
+        try {
+            String dataToSend = keystroke;
+            if ("CTRL+C".equalsIgnoreCase(dataToSend) || "CTRL_C".equalsIgnoreCase(dataToSend)) {
+                dataToSend = "\u0003";
+            } else if ("CTRL+D".equalsIgnoreCase(dataToSend) || "CTRL_D".equalsIgnoreCase(dataToSend)) {
+                dataToSend = "\u0004";
+            } else if ("CTRL+Z".equalsIgnoreCase(dataToSend) || "CTRL_Z".equalsIgnoreCase(dataToSend)) {
+                dataToSend = "\u001A";
+            } else if ("ENTER".equalsIgnoreCase(dataToSend) || "RETURN".equalsIgnoreCase(dataToSend)) {
+                dataToSend = "\n";
+            } else {
+                dataToSend = dataToSend.replace("CTRL+C", "\u0003")
+                                       .replace("ctrl+c", "\u0003")
+                                       .replace("CTRL+D", "\u0004")
+                                       .replace("ctrl+d", "\u0004")
+                                       .replace("ENTER", "\n")
+                                       .replace("enter", "\n");
+            }
+
+            // Auto append newline if input is a raw answer like "y", "n", "Y", "N", "yes", "no" without trailing newline
+            if (dataToSend.matches("^(?i)(y|n|yes|no)$")) {
+                dataToSend += "\n";
+            }
+
+            byte[] bytes = dataToSend.getBytes(StandardCharsets.UTF_8);
+            mTerminalSession.write(bytes, 0, bytes.length);
+            LogViewerService.getInstance().i(TAG, "Keystroke injected to shared TerminalSession: " + keystroke);
+            return true;
+        } catch (Exception e) {
+            LogViewerService.getInstance().e(TAG, "Failed to inject keystroke to TerminalSession", e);
+            return false;
+        }
+    }
+
     public synchronized String readTerminalOutput(int maxLines, int startLine, boolean tailOnly, String grepPattern) {
         if (!isSessionAvailable()) {
             LogViewerService.getInstance().w(TAG, "Cannot read terminal output: TerminalSession is not active.");
