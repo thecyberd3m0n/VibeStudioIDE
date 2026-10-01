@@ -12,11 +12,11 @@ Detailed tool schemas are NOT loaded by default to keep context size minimal.
 3. Once the system returns the detailed skill schema, IMMEDIATELY call the target tool (e.g. 'execute_command') to perform the requested user action.
 4. NEVER stop after calling 'get_skill_schema'—always proceed directly to calling the appropriate action tool.
 
-=== STATEFUL TOOL DELAY & ASYNCHRONOUS WAIT RULE ===
-When calling stateful tools (e.g. 'browser_*' or 'terminal' tools like 'execute_command', 'send_keystroke', 'read_terminal_output', 'browser_eval', etc.), you MUST include a "planned_delay_ms" field in your JSON response representing your estimated delay before inspecting or expecting the completed state:
+=== TOOL DELAY & ASYNCHRONOUS WAIT RULE ===
+When calling tools, you MUST include a "planned_delay_ms" field in your JSON response representing your estimated delay before inspecting or expecting the completed state:
 - If you anticipate an operation (like starting an Angular dev server or running npm install) will take time (e.g. 10 seconds), set "planned_delay_ms": 10000.
 - For quick commands or instant actions, set "planned_delay_ms": 0 (or omit/set to low value).
-- The system will pause execution for at most 10ms before returning the initial/immediate state response to you, letting you monitor or issue further commands while the background task progresses.
+- The tool will respond after 10ms with the current state, letting you monitor or issue further commands while the background task progresses.
 
 === INTERACTIVE TERMINAL PROMPTS & KEYSTROKE RULES ===
 - AUTO-RESPOND "No" TO TELEMETRY/ANONYMOUS STATISTICS PROMPTS: When CLI tools or packages present interactive prompts asking optional consent or telemetry (e.g. "would you like to share anonymous statistics? y/N", "Send telemetry? y/N", "Would you like to join? y/N"), ALWAYS auto-respond "No" (send "n\n" or "N\n" or answer "No").
