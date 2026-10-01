@@ -38,8 +38,8 @@ public class TerminalSessionManager {
 
         try {
             File filesDir = context.getApplicationContext().getFilesDir();
-            File usrDir = new File(filesDir, "libtermux/usr");
-            File homeDir = new File(filesDir, "libtermux/home");
+            File usrDir = new File(filesDir, "usr");
+            File homeDir = new File(filesDir, "home");
             if (!homeDir.exists()) homeDir.mkdirs();
 
             File bashFile = new File(usrDir, "bin/bash");
@@ -50,6 +50,8 @@ public class TerminalSessionManager {
                     "HOME=" + homeDir.getAbsolutePath(),
                     "PATH=" + new File(usrDir, "bin").getAbsolutePath() + ":" + new File(usrDir, "bin/applets").getAbsolutePath() + ":/system/bin:/system/xbin",
                     "LD_LIBRARY_PATH=" + new File(usrDir, "lib").getAbsolutePath(),
+                    // termux-exec intercepts execve() so dpkg/apt can run maintainer scripts on Android's no-exec app data.
+                    "LD_PRELOAD=" + new File(usrDir, "lib/libtermux-exec.so").getAbsolutePath(),
                     "TMPDIR=" + new File(usrDir, "tmp").getAbsolutePath(),
                     "TERM=xterm-256color",
                     "LANG=en_US.UTF-8",
@@ -92,10 +94,29 @@ public class TerminalSessionManager {
                 }
 
                 @Override
-                public void onCopyTextToClipboard(TerminalSession session, String text) {}
+                public void onCopyTextToClipboard(TerminalSession session, String text) {
+                    if (text == null || text.isEmpty()) return;
+                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                            context.getApplicationContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("terminal", text));
+                    }
+                }
 
                 @Override
-                public void onPasteTextFromClipboard(TerminalSession session) {}
+                public void onPasteTextFromClipboard(TerminalSession session) {
+                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                            context.getApplicationContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (clipboard == null || !clipboard.hasPrimaryClip()) return;
+                    android.content.ClipData clip = clipboard.getPrimaryClip();
+                    if (clip == null || clip.getItemCount() == 0) return;
+                    CharSequence pasted = clip.getItemAt(0).coerceToText(context.getApplicationContext());
+                    if (pasted == null || pasted.length() == 0) return;
+                    TerminalSession target = (session != null) ? session : mTerminalSession;
+                    if (target != null && target.getEmulator() != null) {
+                        target.getEmulator().paste(pasted.toString());
+                    }
+                }
 
                 @Override
                 public void onBell(TerminalSession session) {}

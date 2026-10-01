@@ -18,6 +18,9 @@ gen_r/
 compiled_res/
 build/extracted_aars/
 
+# libtermux-android bootstrap binaries (fetched by build-logic/bootstrap-fetch)
+libtermux-android/bootstrap-*/src/main/jniLibs/
+
 # Android Studio and IDE local files
 .idea/
 *.iml

@@ -50,6 +50,13 @@ fi
 
 
 echo "[vibestudio-bootstrap] Checking available package managers..."
+# Point apt at the VibeStudio package repository (Cloudflare R2).
+# [trusted=yes] is required on first run because the stock bootstrap keyring does
+# not contain our signing key yet; the termux-keyring installed below ships it.
+mkdir -p "$PREFIX/etc/apt"
+printf 'deb [trusted=yes] https://pub-88d4652a5f2b459b95722d5376b49dfa.r2.dev/apt/termux-main/ stable main\n' > "$PREFIX/etc/apt/sources.list"
+rm -f "$PREFIX"/etc/apt/sources.list.d/*.list 2>/dev/null || true
+
 # Link default mirror to chosen_mirrors
 if [ -f "$PREFIX/etc/termux/mirrors/default" ]; then
     mkdir -p "$PREFIX/etc/termux"

@@ -145,12 +145,12 @@ public class OnboardingActivity extends Activity {
 
             if (mDbHelper.isEnvInitialized()) {
                 String storedPrefix = mDbHelper.getSetting("env_prefix");
-                File expectedUsrDir = new File(getFilesDir(), "libtermux/usr");
+                File expectedUsrDir = new File(getFilesDir(), "usr");
                 if (storedPrefix != null && new File(storedPrefix).getAbsolutePath().equals(expectedUsrDir.getAbsolutePath())) {
                     navigateToMain();
                     return;
                 }
-                // Invalid or legacy path (e.g., files/usr), invalidate readiness flag so onboarding completes migration
+                // Invalid or legacy path (e.g., libtermux/usr), invalidate readiness flag so onboarding completes migration
                 mDbHelper.setEnvInitialized(false);
             }
 
@@ -292,8 +292,8 @@ public class OnboardingActivity extends Activity {
             public void run() {
                 try {
                     File filesDir = getFilesDir();
-                    File usrDir = new File(filesDir, "libtermux/usr");
-                    File homeDir = new File(filesDir, "libtermux/home");
+                    File usrDir = new File(filesDir, "usr");
+                    File homeDir = new File(filesDir, "home");
                     File usrBin = new File(usrDir, "bin");
                     File bashFile = new File(usrBin, "bash");
                     File pkgFile = new File(usrBin, "pkg");
@@ -687,6 +687,8 @@ public class OnboardingActivity extends Activity {
         pb.environment().put("HOME", homeDir.getAbsolutePath());
         pb.environment().put("PATH", new File(usrDir, "bin").getAbsolutePath() + ":" + new File(usrDir, "bin/applets").getAbsolutePath() + ":/system/bin:/system/xbin");
         pb.environment().put("LD_LIBRARY_PATH", new File(usrDir, "lib").getAbsolutePath());
+        // termux-exec intercepts execve() so dpkg/apt maintainer scripts run on Android's no-exec app data.
+        pb.environment().put("LD_PRELOAD", new File(usrDir, "lib/libtermux-exec.so").getAbsolutePath());
         pb.environment().put("TMPDIR", new File(usrDir, "tmp").getAbsolutePath());
         pb.environment().put("TERM", "xterm-256color"); pb.environment().put("TERMUX_PKG_NO_MIRROR_SELECT", "true"); pb.environment().put("DPKG_ADMINDIR", new File(usrDir, "var/lib/dpkg").getAbsolutePath());
         if (aptConfFile != null && aptConfFile.exists()) { pb.environment().put("APT_CONFIG", aptConfFile.getAbsolutePath()); }
