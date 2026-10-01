@@ -20,6 +20,7 @@ import android.system.OsConstants
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
@@ -170,9 +171,12 @@ internal object FileUtils {
      * the target), so busybox and all its symlinked applets get 0755.
      */
     fun makeExecutable(dir: File) {
-        dir.walkTopDown().forEach { file ->
-            runCatching { Os.chmod(file.absolutePath, MODE_755) }
-        }
+        if (!dir.exists()) return
+        dir.walkTopDown()
+            .onEnter { !Files.isSymbolicLink(it.toPath()) }
+            .forEach { file ->
+                runCatching { Os.chmod(file.absolutePath, MODE_755) }
+            }
         TermuxLogger.d("makeExecutable: chmod 0755 applied to ${dir.absolutePath}")
     }
 

@@ -28,6 +28,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -47,6 +49,7 @@ sealed class InstallState {
     data class Failed(val error: String, val cause: Throwable? = null) : InstallState()
 }
 
+@OptIn(InternalSerializationApi::class, ExperimentalSerializationApi::class)
 @Serializable
 internal data class GithubRelease(val tag_name: String, val published_at: String? = null)
 
@@ -213,6 +216,7 @@ class BootstrapInstaller(
             if (totalBytes <= 0) {
                 emit(InstallState.Downloading(1f, zipFile.length(), zipFile.length()))
             }
+            TermuxLogger.i("Downloading bootstrap done")
 
             TermuxLogger.i("Extracting bootstrap to ${vfs.prefixDir}")
             if (forceReinstall) {
@@ -236,6 +240,7 @@ class BootstrapInstaller(
                 )
             }
             emit(InstallState.Extracting(1f))
+            TermuxLogger.i("Extracting bootstrap done")
 
             // ===== SYMLINKS FIX: emit state first, then call regular function =====
             emit(InstallState.ProcessingSymlinks)

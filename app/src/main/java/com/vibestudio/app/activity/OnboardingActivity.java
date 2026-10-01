@@ -95,6 +95,10 @@ public class OnboardingActivity extends Activity {
 
     private static void deleteRecursive(File fileOrDirectory) {
         if (fileOrDirectory != null && fileOrDirectory.exists()) {
+            if (Files.isSymbolicLink(fileOrDirectory.toPath())) {
+                fileOrDirectory.delete();
+                return;
+            }
             if (fileOrDirectory.isDirectory()) {
                 File[] children = fileOrDirectory.listFiles();
                 if (children != null) {
@@ -320,6 +324,11 @@ public class OnboardingActivity extends Activity {
                     boolean forceReinstall = !binariesExist;
                     Flow<InstallState> flow = libTermux.install(forceReinstall);
 
+                    final boolean[] dlStarted = new boolean[]{false};
+                    final boolean[] dlDone = new boolean[]{false};
+                    final boolean[] extStarted = new boolean[]{false};
+                    final boolean[] extDone = new boolean[]{false};
+
                     BuildersKt.runBlocking(
                         Dispatchers.getIO(),
                         (scope, continuation) -> flow.collect(new FlowCollector<InstallState>() {
@@ -327,17 +336,36 @@ public class OnboardingActivity extends Activity {
                             @Override
                             public Object emit(InstallState state, @NonNull Continuation<? super Unit> $completion) {
                                 if (state instanceof InstallState.Downloading) {
-                                    InstallState.Downloading d = (InstallState.Downloading) state;
-                                    int pct = (int) (d.getProgress() * 100);
-                                    appendLog("[libtermux] Downloading bootstrap: " + pct + "%");
-                                    setStatusMessage("Downloading bootstrap: " + pct + "%", "#3B82F6");
+                                    if (!dlStarted[0]) {
+                                        dlStarted[0] = true;
+                                        appendLog("[libtermux] Downloading bootstrap...");
+                                        setStatusMessage("Downloading bootstrap...", "#3B82F6");
+                                    }
                                 } else if (state instanceof InstallState.Extracting) {
-                                    InstallState.Extracting e = (InstallState.Extracting) state;
-                                    int pct = (int) (e.getProgress() * 100);
-                                    appendLog("[libtermux] Extracting bootstrap: " + pct + "%");
-                                    setStatusMessage("Extracting bootstrap: " + pct + "%", "#3B82F6");
-                                } else if (state instanceof InstallState.Completed) {
-                                    appendLog("[libtermux] Bootstrap extraction completed.");
+                                    if (!dlDone[0]) {
+                                        dlDone[0] = true;
+                                        appendLog("[libtermux] Downloading bootstrap done");
+                                    }
+                                    if (!extStarted[0]) {
+                                        extStarted[0] = true;
+                                        appendLog("[libtermux] Extracting bootstrap...");
+                                        setStatusMessage("Extracting bootstrap...", "#3B82F6");
+                                    }
+                                } else if (state instanceof InstallState.ProcessingSymlinks ||
+                                           state instanceof InstallState.SettingPermissions ||
+                                           state instanceof InstallState.Verifying ||
+                                           state instanceof InstallState.Completed) {
+                                    if (!dlDone[0]) {
+                                        dlDone[0] = true;
+                                        appendLog("[libtermux] Downloading bootstrap done");
+                                    }
+                                    if (!extDone[0]) {
+                                        extDone[0] = true;
+                                        appendLog("[libtermux] Extracting bootstrap done");
+                                    }
+                                    if (state instanceof InstallState.Completed) {
+                                        appendLog("[libtermux] Bootstrap extraction completed.");
+                                    }
                                 } else if (state instanceof InstallState.Failed) {
                                     InstallState.Failed f = (InstallState.Failed) state;
                                     appendLog("[error] Bootstrap installation failed: " + f.getError());
@@ -484,7 +512,13 @@ public class OnboardingActivity extends Activity {
             File dpkgEtcDir = new File(usrDir, "etc/dpkg/dpkg.cfg.d");
             if (!dpkgEtcDir.exists()) dpkgEtcDir.mkdirs();
             File dpkgCfgFile = new File(usrDir, "etc/dpkg/dpkg.cfg");
-            if (!dpkgCfgFile.exists()) { try { dpkgCfgFile.createNewFile(); } catch (Exception ignored) {} }
+            String dpkgCfgContent = "force-script-chrootless\n" +
+                    "force-unsafe-io\n" +
+                    "force-confdef\n" +
+                    "force-confold\n";
+            try {
+                Files.write(dpkgCfgFile.toPath(), dpkgCfgContent.getBytes(StandardCharsets.UTF_8));
+            } catch (Exception ignored) {}
 
             File aptEtcDir = new File(usrDir, "etc/apt");
             if (!aptEtcDir.exists()) aptEtcDir.mkdirs();
@@ -516,7 +550,7 @@ public class OnboardingActivity extends Activity {
                     "Dir::Bin::apt-key \"" + new File(usrDir, "bin/apt-key").getAbsolutePath() + "\";\n" +
                     "Dir::Bin::gpg \"" + new File(usrDir, "bin/gpg").getAbsolutePath() + "\";\n" +
                     "Dir::Bin::gpgv \"" + new File(usrDir, "bin/gpgv").getAbsolutePath() + "\";\n" +
-                    "DPKG::Options { \"--root=" + usrDir.getAbsolutePath() + "\"; \"--admindir=" + dpkgDir.getAbsolutePath() + "\"; \"--force-confdef\"; \"--force-confold\"; };\n" +
+                    "DPKG::Options { \"--root=" + usrDir.getAbsolutePath() + "\"; \"--admindir=" + dpkgDir.getAbsolutePath() + "\"; \"--force-script-chrootless\"; \"--force-unsafe-io\"; \"--force-confdef\"; \"--force-confold\"; };\n" +
                     "APT::System \"Debian dpkg interface\";\n" +
                     "APT::Get::AllowUnauthenticated \"true\";\n" +
                     "Acquire::AllowInsecureRepositories \"true\";\n" +
@@ -714,6 +748,24 @@ public class OnboardingActivity extends Activity {
         makeDirectoryExecutable(new File(usrDir, "lib/apt/solvers"));
         makeDirectoryExecutable(new File(usrDir, "lib/apt/planners"));
 
+        // Ensure compatibility symlinks so that dpkg --root=$PREFIX extracts packages directly into $PREFIX (bin, lib, etc.)
+        try {
+            File v1 = new File(usrDir, "data/data/com.vibestudio.app/files");
+            if (!v1.exists()) v1.mkdirs();
+            File l1 = new File(v1, "usr");
+            if (!l1.exists()) Os.symlink(usrDir.getAbsolutePath(), l1.getAbsolutePath());
+
+            File v2 = new File(usrDir, "data/user/0/com.vibestudio.app/files");
+            if (!v2.exists()) v2.mkdirs();
+            File l2 = new File(v2, "usr");
+            if (!l2.exists()) Os.symlink(usrDir.getAbsolutePath(), l2.getAbsolutePath());
+
+            File v3 = new File(usrDir, "data/data/com.termux/files");
+            if (!v3.exists()) v3.mkdirs();
+            File l3 = new File(v3, "usr");
+            if (!l3.exists()) Os.symlink(usrDir.getAbsolutePath(), l3.getAbsolutePath());
+        } catch (Throwable ignored) {}
+
         // 2. Wrap dpkg binary to force --root and --admindir to VibeStudio prefix
         File dpkgFile = new File(binDir, "dpkg");
         File dpkgRealFile = new File(binDir, "dpkg.real");
@@ -777,7 +829,20 @@ public class OnboardingActivity extends Activity {
             }
         }
 
-        // 4. Guarantee all 6 required dpkg binaries are executable
+        // 4. Patch pkg script and guarantee all 6 required dpkg binaries are executable
+        File pkgScriptFile = new File(binDir, "pkg");
+        if (pkgScriptFile.exists()) {
+            try { Os.chmod(pkgScriptFile.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+            try {
+                byte[] pkgBytes = Files.readAllBytes(pkgScriptFile.toPath());
+                String content = new String(pkgBytes, StandardCharsets.UTF_8);
+                if (content.contains("/data/data/com.termux/files/usr")) {
+                    content = content.replace("/data/data/com.termux/files/usr", usrDir.getAbsolutePath());
+                    Files.write(pkgScriptFile.toPath(), content.getBytes(StandardCharsets.UTF_8));
+                }
+            } catch (Throwable ignored) {}
+        }
+
         ensureExecutableTool(binDir, "sh", "dash", "bash");
         ensureExecutableTool(binDir, "rm", "coreutils", "busybox");
         ensureExecutableTool(binDir, "tar", "busybox", "coreutils");
@@ -842,15 +907,15 @@ public class OnboardingActivity extends Activity {
 
     private void makeDirectoryExecutable(File dir) {
         if (dir == null || !dir.exists() || !dir.isDirectory()) return;
+        if (Files.isSymbolicLink(dir.toPath())) return;
         File[] files = dir.listFiles();
         if (files == null) return;
         for (File f : files) {
-            if (f.isDirectory()) {
+            try {
+                Os.chmod(f.getAbsolutePath(), 0755);
+            } catch (Throwable ignored) {}
+            if (!Files.isSymbolicLink(f.toPath()) && f.isDirectory()) {
                 makeDirectoryExecutable(f);
-            } else {
-                try {
-                    Os.chmod(f.getAbsolutePath(), 0755);
-                } catch (Throwable ignored) {}
             }
         }
     }
@@ -875,8 +940,11 @@ public class OnboardingActivity extends Activity {
     }
 
     private void fixPermissionsRecursively(File file) {
-        if (file == null) return;
+        if (file == null || !file.exists()) return;
         try {
+            if (Files.isSymbolicLink(file.toPath())) {
+                return;
+            }
             boolean isDir = file.isDirectory();
             File parent = file.getParentFile();
             String parentName = (parent != null) ? parent.getName() : "";

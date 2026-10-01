@@ -1,6 +1,10 @@
 package com.vibestudio.app.terminal;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.system.Os;
+
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 import com.termux.view.TerminalView;
@@ -9,6 +13,7 @@ import com.vibestudio.app.service.LogViewerService;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -41,6 +46,34 @@ public class TerminalSessionManager {
             File usrDir = new File(filesDir, "usr");
             File homeDir = new File(filesDir, "home");
             if (!homeDir.exists()) homeDir.mkdirs();
+
+            // Force 0755 permissions on binary directories so executables and scripts can run
+            String[] execDirs = new String[]{"bin", "libexec", "lib/apt/methods", "lib/apt/solvers", "lib/apt/planners"};
+            for (String execDirName : execDirs) {
+                File dir = new File(usrDir, execDirName);
+                if (dir.exists()) {
+                    File[] files = dir.listFiles();
+                    if (files != null) {
+                        for (File f : files) {
+                            try { Os.chmod(f.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                        }
+                    }
+                }
+            }
+
+            // Patch pkg script if it contains hardcoded termux path
+            File pkgScript = new File(usrDir, "bin/pkg");
+            if (pkgScript.exists()) {
+                try { Os.chmod(pkgScript.getAbsolutePath(), 0755); } catch (Throwable ignored) {}
+                try {
+                    byte[] pkgBytes = Files.readAllBytes(pkgScript.toPath());
+                    String content = new String(pkgBytes, StandardCharsets.UTF_8);
+                    if (content.contains("/data/data/com.termux/files/usr")) {
+                        content = content.replace("/data/data/com.termux/files/usr", usrDir.getAbsolutePath());
+                        Files.write(pkgScript.toPath(), content.getBytes(StandardCharsets.UTF_8));
+                    }
+                } catch (Throwable ignored) {}
+            }
 
             File bashFile = new File(usrDir, "bin/bash");
             String shellPath = bashFile.exists() ? bashFile.getAbsolutePath() : "/system/bin/sh";
@@ -96,19 +129,19 @@ public class TerminalSessionManager {
                 @Override
                 public void onCopyTextToClipboard(TerminalSession session, String text) {
                     if (text == null || text.isEmpty()) return;
-                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                    ClipboardManager clipboard = (ClipboardManager)
                             context.getApplicationContext().getSystemService(Context.CLIPBOARD_SERVICE);
                     if (clipboard != null) {
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("terminal", text));
+                        clipboard.setPrimaryClip(ClipData.newPlainText("terminal", text));
                     }
                 }
 
                 @Override
                 public void onPasteTextFromClipboard(TerminalSession session) {
-                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                    ClipboardManager clipboard = (ClipboardManager)
                             context.getApplicationContext().getSystemService(Context.CLIPBOARD_SERVICE);
                     if (clipboard == null || !clipboard.hasPrimaryClip()) return;
-                    android.content.ClipData clip = clipboard.getPrimaryClip();
+                    ClipData clip = clipboard.getPrimaryClip();
                     if (clip == null || clip.getItemCount() == 0) return;
                     CharSequence pasted = clip.getItemAt(0).coerceToText(context.getApplicationContext());
                     if (pasted == null || pasted.length() == 0) return;
