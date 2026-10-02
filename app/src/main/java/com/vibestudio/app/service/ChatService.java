@@ -63,6 +63,10 @@ public class ChatService {
         return mIsLoading;
     }
 
+    public boolean isStopRequested() {
+        return mStopRequested;
+    }
+
     public void stopAgentExecution() {
         LogViewerService.getInstance().i(TAG, "Agent execution stop requested by user.");
         mStopRequested = true;
