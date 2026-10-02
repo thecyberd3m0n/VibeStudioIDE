@@ -1,5 +1,6 @@
 package com.vibestudio.app.fragments;
 
+import android.content.Context;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.KeyEvent;
@@ -18,14 +19,37 @@ import androidx.fragment.app.Fragment;
 import com.vibestudio.app.R;
 import com.vibestudio.app.browser.BrowserManager;
 
+import java.util.UUID;
+
 public class BrowserFragment extends Fragment implements BrowserManager.UrlChangeListener {
 
+    private static final String ARG_SESSION_ID = "arg_session_id";
     private static final String TAG = "BrowserFragment";
 
+    private String mSessionId;
     private EditText mEditUrl;
     private Button mBtnGo;
     private ViewGroup mContainerView;
     private WebView mWebView;
+
+    public static BrowserFragment newInstance(String sessionId) {
+        BrowserFragment fragment = new BrowserFragment();
+        Bundle args = new Bundle();
+        args.putString(ARG_SESSION_ID, sessionId);
+        fragment.setArguments(args);
+        return fragment;
+    }
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (getArguments() != null) {
+            mSessionId = getArguments().getString(ARG_SESSION_ID);
+        }
+        if (mSessionId == null) {
+            mSessionId = "browser_" + UUID.randomUUID().toString().substring(0, 8);
+        }
+    }
 
     @Nullable
     @Override
@@ -36,18 +60,15 @@ public class BrowserFragment extends Fragment implements BrowserManager.UrlChang
         mBtnGo = root.findViewById(R.id.btn_go);
         mContainerView = root.findViewById(R.id.web_view_container);
 
-        // Ensure global WebView is initialized in BrowserManager
-        if (getContext() != null) {
-            BrowserManager.getInstance().ensureInitialized(getContext());
+        Context context = getContext();
+        if (context != null) {
+            mWebView = BrowserManager.getInstance().getOrCreateWebView(mSessionId, context);
         }
 
-        mWebView = BrowserManager.getInstance().getWebView();
         if (mWebView != null) {
-            // Detach from previous parent if attached
             if (mWebView.getParent() != null) {
                 ((ViewGroup) mWebView.getParent()).removeView(mWebView);
             }
-            // Attach active global WebView to fragment container
             mContainerView.addView(mWebView, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
@@ -62,6 +83,14 @@ public class BrowserFragment extends Fragment implements BrowserManager.UrlChang
         setupListeners();
 
         return root;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (mSessionId != null) {
+            BrowserManager.getInstance().setActiveSessionId(mSessionId);
+        }
     }
 
     private void setupListeners() {
@@ -81,18 +110,20 @@ public class BrowserFragment extends Fragment implements BrowserManager.UrlChang
     private void navigateToEnteredUrl() {
         String urlText = mEditUrl.getText() != null ? mEditUrl.getText().toString().trim() : "";
         if (!TextUtils.isEmpty(urlText)) {
-            BrowserManager.getInstance().navigate(urlText);
+            BrowserManager.getInstance().navigate(mSessionId, urlText);
         }
     }
 
     @Override
-    public void onUrlChanged(String newUrl) {
-        if (getActivity() != null && mEditUrl != null) {
-            getActivity().runOnUiThread(() -> {
-                if (mEditUrl != null && !mEditUrl.hasFocus()) {
-                    mEditUrl.setText(newUrl);
-                }
-            });
+    public void onUrlChanged(String sessionId, String newUrl) {
+        if (mSessionId != null && mSessionId.equals(sessionId)) {
+            if (getActivity() != null && mEditUrl != null) {
+                getActivity().runOnUiThread(() -> {
+                    if (mEditUrl != null && !mEditUrl.hasFocus()) {
+                        mEditUrl.setText(newUrl);
+                    }
+                });
+            }
         }
     }
 
@@ -103,5 +134,9 @@ public class BrowserFragment extends Fragment implements BrowserManager.UrlChang
             mContainerView.removeView(mWebView);
         }
         super.onDestroyView();
+    }
+
+    public String getSessionId() {
+        return mSessionId;
     }
 }

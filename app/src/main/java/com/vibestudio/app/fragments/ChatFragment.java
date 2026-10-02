@@ -4,11 +4,15 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -19,6 +23,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.vibestudio.app.R;
 import com.vibestudio.app.chat.connection.ModelConnectionManager;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.mcp.ToolMessageFactory;
@@ -35,7 +40,8 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     private ScrollView mChatScroll;
     private LinearLayout mChatContainer;
     private EditText mMsgInput;
-    private Button mBtnSend;
+    private FrameLayout mBtnActionButton;
+    private TextView mTvActionIcon;
     private ProgressBar mProgressBar;
 
     @Nullable
@@ -62,6 +68,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
 
         LinearLayout inputRow = new LinearLayout(context);
         inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
         inputRow.setPadding(0, 12, 0, 0);
 
         mMsgInput = new EditText(context);
@@ -69,32 +76,47 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         mMsgInput.setHintTextColor(Color.parseColor("#666666"));
         mMsgInput.setTextColor(Color.parseColor("#FFFFFF"));
         mMsgInput.setBackgroundColor(Color.parseColor("#1E1E24"));
-        mMsgInput.setPadding(16, 16, 16, 16);
+        mMsgInput.setPadding(24, 20, 24, 20);
 
         LinearLayout.LayoutParams inParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
         mMsgInput.setLayoutParams(inParams);
 
-        mBtnSend = new Button(context);
-        mBtnSend.setText("SEND");
-        mBtnSend.setTextColor(Color.parseColor("#121212"));
-        mBtnSend.setBackgroundColor(Color.parseColor("#03DAC6"));
+        // Round action button container (48dp circle)
+        int buttonSizePx = dpToPx(context, 48);
+        mBtnActionButton = new FrameLayout(context);
+        LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(buttonSizePx, buttonSizePx);
+        btnParams.setMargins(12, 0, 0, 0);
+        mBtnActionButton.setLayoutParams(btnParams);
+        mBtnActionButton.setBackgroundResource(R.drawable.round_send_button_bg);
 
-        mBtnSend.setOnClickListener(new View.OnClickListener() {
+        mTvActionIcon = new TextView(context);
+        mTvActionIcon.setText("➔");
+        mTvActionIcon.setTextColor(Color.parseColor("#121212"));
+        mTvActionIcon.setTextSize(20);
+        mTvActionIcon.setTypeface(null, Typeface.BOLD);
+        
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+        iconParams.gravity = Gravity.CENTER;
+        mTvActionIcon.setLayoutParams(iconParams);
+        mBtnActionButton.addView(mTvActionIcon);
+
+        mBtnActionButton.setOnClickListener(v -> onActionButtonClicked(context));
+
+        mMsgInput.addTextChangedListener(new TextWatcher() {
             @Override
-            public void onClick(View v) {
-                String text = mMsgInput.getText().toString();
-                if (text.trim().length() > 0) {
-                    if (!ModelConnectionManager.getInstance().isConnectedAndConfigured(context)) {
-                        Toast.makeText(context, ModelConnectionManager.getInstance().getConnectionStatusMessage(context), Toast.LENGTH_LONG).show();
-                    }
-                    mMsgInput.setText("");
-                    ChatService.getInstance().sendMessage(context, text);
-                }
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                updateActionButtonState();
             }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
         });
 
         inputRow.addView(mMsgInput);
-        inputRow.addView(mBtnSend);
+        inputRow.addView(mBtnActionButton);
 
         layout.addView(mChatScroll);
         layout.addView(mProgressBar);
@@ -106,6 +128,51 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         renderChatHistory(context);
 
         return layout;
+    }
+
+    private int dpToPx(Context context, int dp) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, context.getResources().getDisplayMetrics());
+    }
+
+    private void onActionButtonClicked(Context context) {
+        boolean isLoading = ChatService.getInstance().isLoading();
+        String text = mMsgInput.getText() != null ? mMsgInput.getText().toString() : "";
+
+        if (isLoading && text.trim().isEmpty()) {
+            // User pressed STOP while prompt is empty and agent is operating
+            ChatService.getInstance().stopAgentExecution();
+            Toast.makeText(context, "Stopping Agent execution...", Toast.LENGTH_SHORT).show();
+            updateActionButtonState();
+            return;
+        }
+
+        if (text.trim().length() > 0) {
+            if (!ModelConnectionManager.getInstance().isConnectedAndConfigured(context)) {
+                Toast.makeText(context, ModelConnectionManager.getInstance().getConnectionStatusMessage(context), Toast.LENGTH_LONG).show();
+            }
+            mMsgInput.setText("");
+            ChatService.getInstance().sendMessage(context, text);
+            updateActionButtonState();
+        }
+    }
+
+    private void updateActionButtonState() {
+        if (mBtnActionButton == null || mTvActionIcon == null) return;
+
+        boolean isLoading = ChatService.getInstance().isLoading();
+        String text = mMsgInput.getText() != null ? mMsgInput.getText().toString() : "";
+
+        if (isLoading && text.trim().isEmpty()) {
+            // Show delicate STOP button state (subtle dark grey circle with red stop square)
+            mBtnActionButton.setBackgroundResource(R.drawable.round_stop_button_bg);
+            mTvActionIcon.setText("■");
+            mTvActionIcon.setTextColor(Color.parseColor("#FF6B6B"));
+        } else {
+            // Show SEND button state
+            mBtnActionButton.setBackgroundResource(R.drawable.round_send_button_bg);
+            mTvActionIcon.setText("➔");
+            mTvActionIcon.setTextColor(Color.parseColor("#121212"));
+        }
     }
 
     @Override
@@ -150,10 +217,10 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         params.setMargins(0, 0, 0, 16);
 
         if (msg.isUser()) {
-            params.gravity = android.view.Gravity.RIGHT;
+            params.gravity = Gravity.RIGHT;
             card.setBackgroundColor(Color.parseColor("#3700B3"));
         } else {
-            params.gravity = android.view.Gravity.LEFT;
+            params.gravity = Gravity.LEFT;
             card.setBackgroundColor(Color.parseColor("#25252A"));
         }
         card.setLayoutParams(params);
@@ -181,12 +248,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         if (mProgressBar != null) {
             mProgressBar.setVisibility(isLoading ? View.VISIBLE : View.GONE);
         }
-        if (mBtnSend != null) {
-            mBtnSend.setEnabled(!isLoading);
-        }
-        if (mMsgInput != null) {
-            mMsgInput.setEnabled(!isLoading);
-        }
+        updateActionButtonState();
     }
 
     private void scrollToBottom() {
