@@ -163,6 +163,12 @@ public class BrowserMcpServer implements McpServer {
             }
 
             if (!browserManager.isWebViewAvailable(sessionId)) {
+                if (context != null) {
+                    browserManager.ensureInitialized(context);
+                }
+            }
+
+            if (!browserManager.isWebViewAvailable(sessionId)) {
                 return McpToolResult.error("WebView is not available or enabled. Call 'browser_enable' to turn on the WebView first.");
             }
 

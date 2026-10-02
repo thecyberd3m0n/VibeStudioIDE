@@ -6,11 +6,14 @@ import android.graphics.Canvas;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Base64;
+import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.ConsoleMessage;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -123,12 +126,24 @@ public class BrowserManager {
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
+        settings.setBuiltInZoomControls(true);
+        settings.setDisplayZoomControls(false);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return false;
+            }
+
+            @Deprecated
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                view.loadUrl(url);
-                return true;
+                return false;
             }
 
             @Override
@@ -143,9 +158,24 @@ public class BrowserManager {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                addBrowserLog("INFO", "WebViewPage", "[" + sessionId + "] Page load finished: " + url);
+                String title = view.getTitle();
+                addBrowserLog("INFO", "WebViewPage", "[" + sessionId + "] Page load finished: " + url + (title != null ? " (" + title + ")" : ""));
                 if (mUrlChangeListener != null) {
                     mUrlChangeListener.onUrlChanged(sessionId, url);
+                }
+            }
+
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                super.onReceivedError(view, errorCode, description, failingUrl);
+                addBrowserLog("ERROR", "WebViewPage", "[" + sessionId + "] Error (" + errorCode + "): " + description + " at " + failingUrl);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request != null && request.isForMainFrame() && error != null) {
+                    addBrowserLog("ERROR", "WebViewPage", "[" + sessionId + "] MainFrame Error (" + error.getErrorCode() + "): " + error.getDescription() + " at " + request.getUrl());
                 }
             }
         });
@@ -445,6 +475,12 @@ public class BrowserManager {
                 int height = webView.getHeight();
                 if (width <= 0) width = 1080;
                 if (height <= 0) height = 1920;
+
+                if (webView.getWidth() <= 0 || webView.getHeight() <= 0) {
+                    webView.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
+                    webView.layout(0, 0, width, height);
+                }
 
                 Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
                 Canvas canvas = new Canvas(bitmap);
