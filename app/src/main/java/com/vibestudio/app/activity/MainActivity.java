@@ -1,156 +1,308 @@
 package com.vibestudio.app.activity;
 
+import android.content.Context;
+import android.graphics.Color;
 import android.os.Bundle;
+import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
-import android.widget.ListView;
+import android.view.inputmethod.InputMethodManager;
+import android.webkit.WebView;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
 
+import com.termux.terminal.TerminalSession;
 import com.vibestudio.app.R;
+import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.fragments.ChatFragment;
-import com.vibestudio.app.fragments.LogViewerFragment;
-import com.vibestudio.app.fragments.McpFragment;
-import com.vibestudio.app.fragments.ModelsFragment;
-import com.vibestudio.app.fragments.PermissionsFragment;
+import com.vibestudio.app.fragments.LauncherFragment;
+import com.vibestudio.app.fragments.SettingsFragment;
 import com.vibestudio.app.fragments.TerminalFragment;
 import com.vibestudio.app.service.LogViewerService;
+import com.vibestudio.app.tab.TabItem;
+import com.vibestudio.app.tab.TabManager;
+import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
 
-public class MainActivity extends FragmentActivity {
+import java.util.List;
 
-    private static class MenuItem {
-        String title;
-        String icon;
+public class MainActivity extends FragmentActivity implements TabManager.TabListener {
 
-        MenuItem(String title, String icon) {
-            this.title = title;
-            this.icon = icon;
-        }
-    }
-
-    private final MenuItem[] mMenuItems = new MenuItem[] {
-        new MenuItem("Models", "🧠"),
-        new MenuItem("MCP", "🔌"),
-        new MenuItem("Terminal", "💻"),
-        new MenuItem("Chat", "💬"),
-        new MenuItem("Browser", "🌐"),
-        new MenuItem("Permissions", "🔒"),
-        new MenuItem("Logs", "📋")
-    };
-
-    private DrawerLayout mDrawerLayout;
-    private View mDrawerContainer;
-    private ListView mDrawerList;
-    private TextView mToolbarTitle;
+    private LinearLayout mTabStripContainer;
+    private View mBtnLauncherContainer;
+    private TabManager mTabManager;
+    private LauncherFragment mLauncherFragment;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        LogViewerService.getInstance().i("MainActivity", "MainActivity created");
+        LogViewerService.getInstance().i("MainActivity", "MainActivity created with Tabbed Layout");
 
-        mDrawerLayout = (DrawerLayout) findViewById(R.id.drawer_layout);
-        mDrawerContainer = findViewById(R.id.left_drawer_container);
-        mDrawerList = (ListView) findViewById(R.id.left_drawer);
-        mToolbarTitle = (TextView) findViewById(R.id.toolbar_title);
+        mTabStripContainer = findViewById(R.id.tab_strip_container);
+        mBtnLauncherContainer = findViewById(R.id.btn_launcher_container);
 
-        // Start global persistent TerminalSession directly from MainActivity
-        TerminalSessionManager.getInstance().ensureSessionStarted(this.getApplicationContext());
+        mTabManager = TabManager.getInstance();
+        mTabManager.addListener(this);
 
-        ArrayAdapter<MenuItem> adapter = new ArrayAdapter<MenuItem>(this, R.layout.drawer_list_item, mMenuItems) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                if (convertView == null) {
-                    convertView = getLayoutInflater().inflate(R.layout.drawer_list_item, parent, false);
-                }
-                MenuItem item = getItem(position);
-                TextView tvIcon = (TextView) convertView.findViewById(R.id.item_icon);
-                TextView tvTitle = (TextView) convertView.findViewById(R.id.item_title);
+        mLauncherFragment = new LauncherFragment();
 
-                if (item != null) {
-                    tvIcon.setText(item.icon);
-                    tvTitle.setText(item.title);
-                }
-                return convertView;
-            }
-        };
-
-        mDrawerList.setAdapter(adapter);
-
-        mDrawerList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-            @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                selectItem(position);
-            }
+        // Big circle launcher button switches view directly to launcher (without creating a tab)
+        mBtnLauncherContainer.setOnClickListener(v -> {
+            hideSoftKeyboard();
+            showLauncherOverlay();
         });
 
-        findViewById(R.id.btn_menu).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mDrawerLayout.isDrawerOpen(mDrawerContainer)) {
-                    mDrawerLayout.closeDrawer(mDrawerContainer);
-                } else {
-                    mDrawerLayout.openDrawer(mDrawerContainer);
-                }
-            }
-        });
-
-        if (savedInstanceState == null) {
-            selectItem(0);
+        renderTabs();
+        if (mTabManager.getActiveTab() != null) {
+            displayTabFragment(mTabManager.getActiveTab());
+        } else {
+            showLauncherOverlay();
         }
     }
 
-    public void selectNavigationItem(int position) {
-        selectItem(position);
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mTabManager.removeListener(this);
     }
 
-    private void selectItem(int position) {
-        MenuItem item = mMenuItems[position];
-        mToolbarTitle.setText(item.title);
-        mDrawerList.setItemChecked(position, true);
+    public void hideSoftKeyboard() {
+        View currentFocus = getCurrentFocus();
+        if (currentFocus != null) {
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(currentFocus.getWindowToken(), 0);
+            }
+        }
+    }
 
-        LogViewerService.getInstance().i("MainActivity", "Selected navigation view: " + item.title);
+    private void showLauncherOverlay() {
+        mTabManager.clearActiveSelection();
 
-        Fragment fragment;
-        switch (position) {
-            case 0:
-                fragment = new ModelsFragment();
+        FragmentManager fm = getSupportFragmentManager();
+        FragmentTransaction ft = fm.beginTransaction();
+
+        // Hide all active tab fragments
+        for (TabItem tab : mTabManager.getTabs()) {
+            Fragment f = tab.getFragment();
+            if (f != null && f.isAdded()) {
+                ft.hide(f);
+            }
+        }
+
+        if (!mLauncherFragment.isAdded()) {
+            ft.add(R.id.content_frame, mLauncherFragment, "launcher_overlay");
+        } else {
+            ft.show(mLauncherFragment);
+        }
+
+        ft.commitAllowingStateLoss();
+        renderTabs();
+    }
+
+    public void selectNavigationItem(int navIndex) {
+        TabType type;
+        Fragment fragment = null;
+
+        switch (navIndex) {
+            case 2: // Terminal
+                type = TabType.TERMINAL;
                 break;
-            case 1:
-                fragment = new McpFragment();
-                break;
-            case 2:
-                fragment = new TerminalFragment();
-                break;
-            case 3:
+            case 3: // Chat
+                type = TabType.CHAT;
                 fragment = new ChatFragment();
                 break;
-            case 4:
-                fragment = new BrowserFragment();
+            case 4: // Browser
+                type = TabType.BROWSER;
                 break;
-            case 5:
-                fragment = new PermissionsFragment();
-                break;
-            case 6:
-                fragment = new LogViewerFragment();
-                break;
+            case 0: // Models
+            case 1: // MCP
+            case 5: // Permissions
+            case 6: // Logs
             default:
-                fragment = new ModelsFragment();
+                type = TabType.SETTINGS;
+                fragment = new SettingsFragment();
                 break;
         }
 
-        getSupportFragmentManager().beginTransaction()
-            .replace(R.id.content_frame, fragment)
-            .commit();
+        // Search if tab of this type already exists and select it, or open a new one
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == type) {
+                mTabManager.selectTab(tab);
+                return;
+            }
+        }
 
-        mDrawerLayout.closeDrawer(mDrawerContainer);
+        // Create independent User-initiated session (unmapped in ToolSessionManager)
+        if (type == TabType.TERMINAL) {
+            TerminalSession session = TerminalSessionManager.getInstance().createSession(this);
+            mTabManager.openTab(
+                    TabType.TERMINAL,
+                    "Terminal",
+                    "💻",
+                    TerminalFragment.newInstance(session),
+                    true
+            );
+            return;
+        } else if (type == TabType.BROWSER) {
+            WebView webView = BrowserManager.getInstance().createWebView(this);
+            mTabManager.openTab(
+                    TabType.BROWSER,
+                    "Browser",
+                    "🌐",
+                    BrowserFragment.newInstance(webView),
+                    true
+            );
+            return;
+        }
+
+        mTabManager.openTab(type, null, null, fragment, true);
+    }
+
+    @Override
+    public void onTabAdded(TabItem tab) {
+        renderTabs();
+        if (tab.getFragment() != null) {
+            // Background tabs (not currently active) are added as hidden. Active tabs are handled in displayTabFragment via onTabSelected.
+            if (mTabManager.getActiveTab() != tab) {
+                FragmentManager fm = getSupportFragmentManager();
+                Fragment f = tab.getFragment();
+                if (!f.isAdded()) {
+                    FragmentTransaction ft = fm.beginTransaction();
+                    ft.add(R.id.content_frame, f, tab.getId());
+                    ft.hide(f);
+                    ft.commitAllowingStateLoss();
+                }
+            }
+        }
+    }
+
+    @Override
+    public void onTabRemoved(TabItem tab, int removedIndex) {
+        Fragment frag = tab.getFragment();
+
+        if (frag instanceof TerminalFragment) {
+            TerminalSessionManager.getInstance().closeSession(((TerminalFragment) frag).getTerminalSession());
+        } else if (frag instanceof BrowserFragment) {
+            BrowserManager.getInstance().closeWebView(((BrowserFragment) frag).getWebView());
+        }
+
+        if (frag != null) {
+            getSupportFragmentManager()
+                    .beginTransaction()
+                    .remove(frag)
+                    .commitAllowingStateLoss();
+        }
+        renderTabs();
+        if (mTabManager.getTabs().isEmpty()) {
+            showLauncherOverlay();
+        }
+    }
+
+    @Override
+    public void onTabSelected(TabItem tab) {
+        hideSoftKeyboard();
+        renderTabs();
+        displayTabFragment(tab);
+    }
+
+    @Override
+    public void onTabUpdated(TabItem tab) {
+        renderTabs();
+    }
+
+    private void displayTabFragment(TabItem activeTab) {
+        if (activeTab == null || activeTab.getFragment() == null) return;
+
+        FragmentManager fm = getSupportFragmentManager();
+        FragmentTransaction ft = fm.beginTransaction();
+
+        // Always hide launcher overlay when displaying active tab fragment
+        if (mLauncherFragment != null && mLauncherFragment.isAdded()) {
+            ft.hide(mLauncherFragment);
+        }
+
+        for (TabItem tab : mTabManager.getTabs()) {
+            Fragment f = tab.getFragment();
+            if (f != null && f.isAdded()) {
+                if (tab == activeTab) {
+                    ft.show(f);
+                } else {
+                    ft.hide(f);
+                }
+            }
+        }
+
+        Fragment target = activeTab.getFragment();
+        if (!target.isAdded()) {
+            ft.add(R.id.content_frame, target, activeTab.getId());
+        } else {
+            ft.show(target);
+        }
+
+        ft.commitAllowingStateLoss();
+    }
+
+    private void renderTabs() {
+        mTabStripContainer.removeAllViews();
+        List<TabItem> tabs = mTabManager.getTabs();
+        TabItem activeTab = mTabManager.getActiveTab();
+
+        LayoutInflater inflater = LayoutInflater.from(this);
+
+        for (final TabItem tab : tabs) {
+            View tabView = inflater.inflate(R.layout.tab_item_view, mTabStripContainer, false);
+
+            TextView tvIcon = tabView.findViewById(R.id.tab_icon);
+            ImageView ivFavicon = tabView.findViewById(R.id.tab_favicon);
+            TextView tvTitle = tabView.findViewById(R.id.tab_title);
+            TextView tvClose = tabView.findViewById(R.id.tab_close_btn);
+
+            if (tab.getFavicon() != null) {
+                ivFavicon.setImageBitmap(tab.getFavicon());
+                ivFavicon.setVisibility(View.VISIBLE);
+                tvIcon.setVisibility(View.GONE);
+            } else {
+                tvIcon.setText(tab.getIcon());
+                tvIcon.setVisibility(View.VISIBLE);
+                ivFavicon.setVisibility(View.GONE);
+            }
+            tvTitle.setText(tab.getTitle());
+
+            boolean isActive = (activeTab != null && activeTab.getId().equals(tab.getId()));
+
+            if (isActive) {
+                tabView.setBackgroundColor(Color.parseColor("#1E1E1E"));
+                tvTitle.setTextColor(Color.parseColor("#FFFFFF"));
+                tvIcon.setTextColor(Color.parseColor("#FFFFFF"));
+            } else {
+                tabView.setBackgroundColor(Color.parseColor("#2D2D2D"));
+                tvTitle.setTextColor(Color.parseColor("#969696"));
+                tvIcon.setTextColor(Color.parseColor("#969696"));
+            }
+
+            if (!tab.isCloseable()) {
+                tvClose.setVisibility(View.GONE);
+            } else {
+                tvClose.setVisibility(View.VISIBLE);
+                tvClose.setOnClickListener(v -> {
+                    mTabManager.closeTab(tab);
+                });
+            }
+
+            tabView.setOnClickListener(v -> {
+                mTabManager.selectTab(tab);
+            });
+
+            mTabStripContainer.addView(tabView);
+        }
     }
 }

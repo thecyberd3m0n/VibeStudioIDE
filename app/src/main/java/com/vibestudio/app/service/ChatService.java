@@ -39,6 +39,7 @@ public class ChatService {
     private final ToolExecutionManager mToolExecutionManager;
     private final AiProvider mAiProvider;
     private boolean mIsLoading = false;
+    private volatile boolean mStopRequested = false;
 
     private ChatService() {
         mMcpClientManager = new McpClientManager();
@@ -60,6 +61,24 @@ public class ChatService {
 
     public synchronized boolean isLoading() {
         return mIsLoading;
+    }
+
+    public boolean isStopRequested() {
+        return mStopRequested;
+    }
+
+    public void stopAgentExecution() {
+        LogViewerService.getInstance().i(TAG, "Agent execution stop requested by user.");
+        mStopRequested = true;
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                synchronized (ChatService.this) {
+                    mIsLoading = false;
+                    notifyLoading(false);
+                }
+            }
+        });
     }
 
     public synchronized void addListener(OnChatMessageListener listener) {
@@ -86,6 +105,7 @@ public class ChatService {
             mMessages.add(userMsg);
             notifyMessageAdded(userMsg);
             mIsLoading = true;
+            mStopRequested = false;
             notifyLoading(true);
         }
 
@@ -100,6 +120,12 @@ public class ChatService {
     }
 
     private void processUserRequest(final Context context) {
+        if (mStopRequested) {
+            LogViewerService.getInstance().i(TAG, "Agent loop stopped prior to model generation.");
+            postAssistantResponse("⏹️ Operation stopped by user.");
+            return;
+        }
+
         String apiKey = ModelConnectionManager.getInstance().getApiKey(context);
 
         if (apiKey == null || apiKey.isEmpty()) {
@@ -123,6 +149,12 @@ public class ChatService {
 
         AiResponse response = mAiProvider.generateContent(context, apiKey, fullSystemInstruction, processedHistory);
 
+        if (mStopRequested) {
+            LogViewerService.getInstance().i(TAG, "Agent loop stopped after model response.");
+            postAssistantResponse("⏹️ Operation stopped by user.");
+            return;
+        }
+
         if (response.isSuccess()) {
             String rawReply = response.getContent();
             LogViewerService.getInstance().i(TAG, "AI response received successfully.");
@@ -134,6 +166,11 @@ public class ChatService {
     }
 
     private void handlePotentialToolCall(final Context context, String rawReply) {
+        if (mStopRequested) {
+            postAssistantResponse("⏹️ Operation stopped by user.");
+            return;
+        }
+
         ToolCall toolCall = ToolCallParser.parse(rawReply);
 
         if (toolCall != null) {
@@ -174,6 +211,11 @@ public class ChatService {
             synchronized (ChatService.this) {
                 mMessages.add(modelCallMsg);
                 mMessages.add(toolResultMsg);
+            }
+
+            if (mStopRequested) {
+                postAssistantResponse("⏹️ Operation stopped by user.");
+                return;
             }
 
             LogViewerService.getInstance().i(TAG, "Tool execution completed for " + toolName + ". Continuing agent execution loop...");

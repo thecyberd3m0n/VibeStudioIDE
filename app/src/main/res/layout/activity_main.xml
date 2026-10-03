@@ -1,118 +1,65 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.drawerlayout.widget.DrawerLayout
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/drawer_layout"
     android:layout_width="-1px"
     android:layout_height="-1px"
+    android:orientation="vertical"
+    android:background="#1E1E1E"
     android:fitsSystemWindows="true">
 
-    <!-- Main Screen Content Area -->
-    <LinearLayout
+    <!-- Content Frame where Active Tab's Fragment is displayed -->
+    <FrameLayout
+        android:id="@+id/content_frame"
         android:layout_width="-1px"
-        android:layout_height="-1px"
-        android:orientation="vertical"
-        android:background="#121212"
-        android:fitsSystemWindows="true">
+        android:layout_height="0dp"
+        android:layout_weight="1"/>
 
-        <!-- Custom Material Top Bar -->
-        <RelativeLayout
-            android:layout_width="-1px"
-            android:layout_height="56dp"
-            android:background="#1F1B24"
-            android:paddingLeft="8dp"
-            android:paddingRight="16dp">
+    <!-- Bottom Taskbar Bar Layout -->
+    <RelativeLayout
+        android:layout_width="-1px"
+        android:layout_height="52dp"
+        android:background="#181818"
+        android:gravity="center_vertical">
+
+        <!-- Bottom-Left Circular Launcher Button -->
+        <FrameLayout
+            android:id="@+id/btn_launcher_container"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_alignParentLeft="true"
+            android:layout_alignParentBottom="true"
+            android:clickable="true"
+            android:focusable="true">
 
             <TextView
-                android:id="@+id/btn_menu"
-                android:layout_width="48dp"
-                android:layout_height="56dp"
+                android:id="@+id/btn_launcher"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_gravity="center"
                 android:gravity="center"
-                android:text="☰"
-                android:textColor="#BB86FC"
-                android:textSize="22sp"/>
+                android:text="📱"
+                android:textSize="22sp"
+                android:textColor="#FFFFFF"
+                android:background="@drawable/circle_launcher_bg"/>
+        </FrameLayout>
 
-            <TextView
-                android:id="@+id/toolbar_title"
+        <!-- Horizontal Tab Bar (To the right of the Launcher circle) -->
+        <HorizontalScrollView
+            android:id="@+id/tab_scroll_view"
+            android:layout_width="-1px"
+            android:layout_height="44dp"
+            android:layout_toRightOf="@id/btn_launcher_container"
+            android:layout_alignParentBottom="true"
+            android:scrollbars="none"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:id="@+id/tab_strip_container"
                 android:layout_width="-2px"
                 android:layout_height="-1px"
-                android:layout_toRightOf="@id/btn_menu"
-                android:gravity="center_vertical"
-                android:text="VibeStudio"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:textStyle="bold"/>
-        </RelativeLayout>
+                android:orientation="horizontal"
+                android:gravity="bottom"/>
+        </HorizontalScrollView>
 
-        <!-- Dynamic Content Frame -->
-        <FrameLayout
-            android:id="@+id/content_frame"
-            android:layout_width="-1px"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:padding="16dp">
-
-            <!-- Dynamic views will be added programmatically here -->
-
-        </FrameLayout>
-    </LinearLayout>
-
-    <!-- Drawer Navigation Panel -->
-    <LinearLayout
-        android:id="@+id/left_drawer_container"
-        android:layout_width="280dp"
-        android:layout_height="-1px"
-        android:layout_gravity="left"
-        android:orientation="vertical"
-        android:background="#1E1E24"
-        android:fitsSystemWindows="true">
-
-        <!-- Drawer Header -->
-        <LinearLayout
-            android:layout_width="-1px"
-            android:layout_height="140dp"
-            android:background="#2D2B38"
-            android:orientation="vertical"
-            android:gravity="bottom"
-            android:padding="20dp">
-
-            <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
-                android:text="VibeStudio"
-                android:textColor="#03DAC6"
-                android:textSize="22sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
-                android:text="AI &amp; Developer Workspace"
-                android:textColor="#A0A0A0"
-                android:textSize="13sp"
-                android:paddingTop="4dp" />
-        </LinearLayout>
-
-        <!-- Drawer Navigation List -->
-        <ListView
-            android:id="@+id/left_drawer"
-            android:layout_width="-1px"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:choiceMode="singleChoice"
-            android:divider="@null"
-            android:dividerHeight="0dp"
-            android:background="#1E1E24"/>
-
-        <!-- Drawer Footer -->
-        <TextView
-            android:layout_width="-1px"
-            android:layout_height="-2px"
-            android:padding="16dp"
-            android:text="VibeStudio v1.0 • Dark Theme"
-            android:textColor="#666666"
-            android:textSize="12sp"
-            android:gravity="center" />
-
-    </LinearLayout>
-
-</androidx.drawerlayout.widget.DrawerLayout>
+    </RelativeLayout>
+</LinearLayout>

@@ -1,5 +1,7 @@
 package com.vibestudio.app.fragments;
 
+import android.content.Context;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.KeyEvent;
@@ -17,8 +19,10 @@ import androidx.fragment.app.Fragment;
 
 import com.vibestudio.app.R;
 import com.vibestudio.app.browser.BrowserManager;
+import com.vibestudio.app.tab.TabItem;
+import com.vibestudio.app.tab.TabManager;
 
-public class BrowserFragment extends Fragment implements BrowserManager.UrlChangeListener {
+public class BrowserFragment extends Fragment implements BrowserManager.BrowserStateListener {
 
     private static final String TAG = "BrowserFragment";
 
@@ -26,6 +30,16 @@ public class BrowserFragment extends Fragment implements BrowserManager.UrlChang
     private Button mBtnGo;
     private ViewGroup mContainerView;
     private WebView mWebView;
+
+    public static BrowserFragment newInstance() {
+        return new BrowserFragment();
+    }
+
+    public static BrowserFragment newInstance(WebView webView) {
+        BrowserFragment fragment = new BrowserFragment();
+        fragment.mWebView = webView;
+        return fragment;
+    }
 
     @Nullable
     @Override
@@ -36,18 +50,15 @@ public class BrowserFragment extends Fragment implements BrowserManager.UrlChang
         mBtnGo = root.findViewById(R.id.btn_go);
         mContainerView = root.findViewById(R.id.web_view_container);
 
-        // Ensure global WebView is initialized in BrowserManager
-        if (getContext() != null) {
-            BrowserManager.getInstance().ensureInitialized(getContext());
+        Context context = getContext();
+        if (mWebView == null && context != null) {
+            mWebView = BrowserManager.getInstance().createWebView(context);
         }
 
-        mWebView = BrowserManager.getInstance().getWebView();
         if (mWebView != null) {
-            // Detach from previous parent if attached
             if (mWebView.getParent() != null) {
                 ((ViewGroup) mWebView.getParent()).removeView(mWebView);
             }
-            // Attach active global WebView to fragment container
             mContainerView.addView(mWebView, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
@@ -56,9 +67,9 @@ public class BrowserFragment extends Fragment implements BrowserManager.UrlChang
             if (!TextUtils.isEmpty(currentUrl)) {
                 mEditUrl.setText(currentUrl);
             }
+            BrowserManager.getInstance().setStateListener(mWebView, this);
         }
 
-        BrowserManager.getInstance().setUrlChangeListener(this);
         setupListeners();
 
         return root;
@@ -80,28 +91,66 @@ public class BrowserFragment extends Fragment implements BrowserManager.UrlChang
 
     private void navigateToEnteredUrl() {
         String urlText = mEditUrl.getText() != null ? mEditUrl.getText().toString().trim() : "";
-        if (!TextUtils.isEmpty(urlText)) {
-            BrowserManager.getInstance().navigate(urlText);
+        if (!TextUtils.isEmpty(urlText) && mWebView != null) {
+            BrowserManager.getInstance().navigate(mWebView, urlText);
         }
     }
 
     @Override
-    public void onUrlChanged(String newUrl) {
-        if (getActivity() != null && mEditUrl != null) {
-            getActivity().runOnUiThread(() -> {
-                if (mEditUrl != null && !mEditUrl.hasFocus()) {
-                    mEditUrl.setText(newUrl);
-                }
-            });
+    public void onUrlChanged(WebView view, String newUrl) {
+        if (mWebView != null && mWebView == view) {
+            if (getActivity() != null && mEditUrl != null) {
+                getActivity().runOnUiThread(() -> {
+                    if (mEditUrl != null && !mEditUrl.hasFocus()) {
+                        mEditUrl.setText(newUrl);
+                    }
+                });
+            }
+        }
+    }
+
+    @Override
+    public void onTitleChanged(WebView view, String title) {
+        if (mWebView != null && mWebView == view) {
+            if (getActivity() != null) {
+                getActivity().runOnUiThread(() -> {
+                    TabItem tab = TabManager.getInstance().findTabByFragment(BrowserFragment.this);
+                    if (tab != null) {
+                        tab.setTitle(title);
+                        TabManager.getInstance().notifyTabUpdated(tab);
+                    }
+                });
+            }
+        }
+    }
+
+    @Override
+    public void onFaviconChanged(WebView view, Bitmap favicon) {
+        if (mWebView != null && mWebView == view) {
+            if (getActivity() != null) {
+                getActivity().runOnUiThread(() -> {
+                    TabItem tab = TabManager.getInstance().findTabByFragment(BrowserFragment.this);
+                    if (tab != null) {
+                        tab.setFavicon(favicon);
+                        TabManager.getInstance().notifyTabUpdated(tab);
+                    }
+                });
+            }
         }
     }
 
     @Override
     public void onDestroyView() {
-        BrowserManager.getInstance().setUrlChangeListener(null);
+        if (mWebView != null) {
+            BrowserManager.getInstance().setStateListener(mWebView, null);
+        }
         if (mContainerView != null && mWebView != null) {
             mContainerView.removeView(mWebView);
         }
         super.onDestroyView();
+    }
+
+    public WebView getWebView() {
+        return mWebView;
     }
 }

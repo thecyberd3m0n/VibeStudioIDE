@@ -1,6 +1,7 @@
 package com.vibestudio.app.mcp;
 
 import android.content.Context;
+import android.webkit.WebView;
 
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.mcp.model.McpTool;
@@ -20,7 +21,7 @@ public class BrowserMcpServer implements McpServer {
 
     private static final String TAG = "BrowserMcpServer";
     private static final String NAME = "browser";
-    private static final String DESCRIPTION = "Allows enabling the WebView on demand via 'browser_enable', navigating the IDE webview, setting user-agent, clearing cookies, inspecting active URL, clicking elements, typing text, executing JS scripts, taking screenshots, and reading isolated browser console/navigation logs.";
+    private static final String DESCRIPTION = "Allows opening a new browser tab via 'browser_open_tab', navigating webview sessions, setting user-agent, clearing cookies, inspecting active URL, clicking elements, typing text, executing JS scripts, taking screenshots, and reading browser console/navigation logs.";
 
     private boolean mIsActive = true;
     private final List<McpTool> mTools;
@@ -28,22 +29,25 @@ public class BrowserMcpServer implements McpServer {
     public BrowserMcpServer() {
         mTools = new ArrayList<>();
 
-        // Tool 0: browser_enable
-        mTools.add(McpTool.builder("browser_enable", "Enable and initialize the active WebView for browser operations on demand.")
+        // Tool 0: browser_open_tab
+        mTools.add(McpTool.builder("browser_open_tab", "Explicitly request opening a new isolated browser session/tab.")
                 .build());
 
         // Tool 1: browser_navigate
-        mTools.add(McpTool.builder("browser_navigate", "Navigate the active IDE browser WebView to a target URL.")
+        mTools.add(McpTool.builder("browser_navigate", "Navigate an IDE browser WebView session to a target URL.")
                 .addProperty("url", PropertyType.STRING, "The URL to navigate to (e.g. 'https://google.com' or 'localhost:8080').", true)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 2: browser_get_current_url
-        mTools.add(McpTool.builder("browser_get_current_url", "Get the current URL loaded in the active WebView.")
+        mTools.add(McpTool.builder("browser_get_current_url", "Get the current URL loaded in a WebView session.")
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 3: browser_set_user_agent
-        mTools.add(McpTool.builder("browser_set_user_agent", "Set a custom User-Agent string for the WebView.")
+        mTools.add(McpTool.builder("browser_set_user_agent", "Set a custom User-Agent string for a WebView session.")
                 .addProperty("user_agent", PropertyType.STRING, "Custom User-Agent string.", true)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 4: browser_reset_cookies
@@ -51,23 +55,27 @@ public class BrowserMcpServer implements McpServer {
                 .build());
 
         // Tool 5: browser_execute_js
-        mTools.add(McpTool.builder("browser_execute_js", "Execute dynamic JavaScript code in the context of the active WebView page.")
+        mTools.add(McpTool.builder("browser_execute_js", "Execute dynamic JavaScript code in the context of a WebView page session.")
                 .addProperty("script", PropertyType.STRING, "JavaScript code to evaluate in the web page.", true)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 6: browser_click
-        mTools.add(McpTool.builder("browser_click", "Click an element in the active web page using a CSS selector.")
+        mTools.add(McpTool.builder("browser_click", "Click an element in a web page session using a CSS selector.")
                 .addProperty("selector", PropertyType.STRING, "CSS selector of the element to click.", true)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 7: browser_type
         mTools.add(McpTool.builder("browser_type", "Type text into an input or textarea element matched by a CSS selector.")
                 .addProperty("selector", PropertyType.STRING, "CSS selector of the input field.", true)
                 .addProperty("text", PropertyType.STRING, "Text to type into the targeted input field.", true)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 8: browser_screenshot
-        mTools.add(McpTool.builder("browser_screenshot", "Capture a screenshot of the current active WebView rendering.")
+        mTools.add(McpTool.builder("browser_screenshot", "Capture a screenshot of a WebView session rendering.")
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 9: browser_read_logs
@@ -126,16 +134,13 @@ public class BrowserMcpServer implements McpServer {
     public McpToolResult callTool(String toolName, Map<String, Object> arguments, Context context) {
         try {
             BrowserManager browserManager = BrowserManager.getInstance();
+            ToolSessionManager sessionManager = ToolSessionManager.getInstance();
 
-            if ("browser_enable".equals(toolName) || "enable".equals(toolName)) {
-                if (context != null) {
-                    browserManager.ensureInitialized(context);
-                }
-                if (browserManager.isWebViewAvailable()) {
-                    return McpToolResult.success("WebView enabled and initialized successfully.");
-                } else {
-                    return McpToolResult.error("Failed to enable WebView. Context is missing or initialization failed.");
-                }
+            if ("browser_open_tab".equals(toolName) || "open_tab".equals(toolName)) {
+                int newSessionId = sessionManager.getOrCreateSession(ToolType.BROWSER, context, true);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", newSessionId);
+                return McpToolResult.success(extras);
             }
 
             if ("browser_reset_cookies".equals(toolName)) {
@@ -154,46 +159,66 @@ public class BrowserMcpServer implements McpServer {
                 return McpToolResult.success(extras);
             }
 
-            if (!browserManager.isWebViewAvailable()) {
-                return McpToolResult.error("WebView is not available or enabled. Call 'browser_enable' to turn on the WebView first.");
+            int sessionIdArg = arguments != null ? getIntArg(arguments, "session_id", -1) : -1;
+            ToolSessionManager.ToolSession session;
+
+            if (sessionIdArg > 0) {
+                // Strict validation when explicit session_id is requested by the Agent
+                ToolSessionManager.SessionValidationResult validation = sessionManager.validateSession(sessionIdArg, ToolType.BROWSER);
+                if (!validation.isValid()) {
+                    return McpToolResult.error(validation.errorMessage);
+                }
+                session = validation.session;
+            } else {
+                // Get or create active default browser session
+                int activeSessionId = sessionManager.getOrCreateSession(ToolType.BROWSER, context, false);
+                session = sessionManager.getSession(activeSessionId);
+                if (session == null) {
+                    return McpToolResult.error("Failed to initialize active browser session.");
+                }
+            }
+
+            WebView webView = session.getWebView();
+            if (webView == null) {
+                return McpToolResult.error("WebView handle is null or destroyed for session #" + session.id);
             }
 
             if ("browser_navigate".equals(toolName)) {
                 String url = arguments != null ? getStringArg(arguments, "url", "") : "";
-                String resStr = browserManager.navigate(url);
+                String resStr = browserManager.navigate(webView, url);
                 return McpToolResult.success(resStr);
 
             } else if ("browser_get_current_url".equals(toolName)) {
-                String currentUrl = browserManager.getCurrentUrl();
+                String currentUrl = browserManager.getCurrentUrl(webView);
                 Map<String, Object> extras = new HashMap<>();
                 extras.put("url", currentUrl);
                 return McpToolResult.success(extras);
 
             } else if ("browser_set_user_agent".equals(toolName)) {
                 String userAgent = arguments != null ? getStringArg(arguments, "user_agent", "") : "";
-                String resStr = browserManager.setUserAgent(userAgent);
+                String resStr = browserManager.setUserAgent(webView, userAgent);
                 return McpToolResult.success(resStr);
 
             } else if ("browser_execute_js".equals(toolName)) {
                 String script = arguments != null ? getStringArg(arguments, "script", "") : "";
-                String resStr = browserManager.executeJs(script);
+                String resStr = browserManager.executeJs(webView, script);
                 Map<String, Object> extras = new HashMap<>();
                 extras.put("result", resStr);
                 return McpToolResult.success(extras);
 
             } else if ("browser_click".equals(toolName)) {
                 String selector = arguments != null ? getStringArg(arguments, "selector", "") : "";
-                String resStr = browserManager.click(selector);
+                String resStr = browserManager.click(webView, selector);
                 return McpToolResult.success(resStr);
 
             } else if ("browser_type".equals(toolName)) {
                 String selector = arguments != null ? getStringArg(arguments, "selector", "") : "";
                 String text = arguments != null ? getStringArg(arguments, "text", "") : "";
-                String resStr = browserManager.type(selector, text);
+                String resStr = browserManager.type(webView, selector, text);
                 return McpToolResult.success(resStr);
 
             } else if ("browser_screenshot".equals(toolName)) {
-                JSONObject jsonRes = browserManager.takeScreenshot(context);
+                JSONObject jsonRes = browserManager.takeScreenshot(webView, context);
                 return jsonToToolResult(jsonRes);
 
             } else {
@@ -229,7 +254,7 @@ public class BrowserMcpServer implements McpServer {
 
     private String getStringArg(Map<String, Object> args, String key, String defaultValue) {
         Object val = args.get(key);
-        return val != null ? String.valueOf(val) : defaultValue;
+        return (val != null && !"null".equalsIgnoreCase(val.toString())) ? String.valueOf(val) : defaultValue;
     }
 
     private int getIntArg(Map<String, Object> args, String key, int defaultValue) {

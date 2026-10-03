@@ -6,11 +6,14 @@ import android.graphics.Canvas;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Base64;
+import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.ConsoleMessage;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -26,6 +29,8 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -37,15 +42,16 @@ public class BrowserManager {
     private static final int MAX_BROWSER_LOGS = 200;
     private static BrowserManager sInstance;
 
-    private WebView mWebView;
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
     private final Deque<String> mBrowserLogBuffer = new ArrayDeque<>();
 
-    public interface UrlChangeListener {
-        void onUrlChanged(String newUrl);
+    public interface BrowserStateListener {
+        void onUrlChanged(WebView view, String newUrl);
+        void onTitleChanged(WebView view, String title);
+        void onFaviconChanged(WebView view, Bitmap favicon);
     }
 
-    private UrlChangeListener mUrlChangeListener;
+    private final Map<WebView, BrowserStateListener> mStateListeners = new WeakHashMap<>();
 
     private BrowserManager() {}
 
@@ -56,71 +62,120 @@ public class BrowserManager {
         return sInstance;
     }
 
-    public void setUrlChangeListener(UrlChangeListener listener) {
-        this.mUrlChangeListener = listener;
+    public void setStateListener(WebView webView, BrowserStateListener listener) {
+        if (webView == null) return;
+        if (listener == null) {
+            mStateListeners.remove(webView);
+        } else {
+            mStateListeners.put(webView, listener);
+        }
     }
 
-    public synchronized void ensureInitialized(final Context context) {
-        if (mWebView != null) return;
+    public WebView createWebView(final Context context) {
+        if (context == null) return null;
 
-        final CountDownLatch latch = new CountDownLatch(1);
-        mMainHandler.post(() -> {
-            try {
-                if (mWebView == null) {
-                    Context appContext = context.getApplicationContext();
-                    mWebView = new WebView(appContext);
-                    
-                    // Invisible off-screen layout params so rendering engine functions fully
-                    ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT);
-                    mWebView.setLayoutParams(lp);
-
-                    setupWebViewSettings(mWebView);
-                    addBrowserLog("INFO", TAG, "Global WebView initialized on MainActivity start.");
-                    mWebView.loadUrl(DEFAULT_URL);
+        final AtomicReference<WebView> ref = new AtomicReference<>();
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            ref.set(createWebViewInternal(context));
+        } else {
+            final CountDownLatch latch = new CountDownLatch(1);
+            mMainHandler.post(() -> {
+                try {
+                    ref.set(createWebViewInternal(context));
+                } finally {
+                    latch.countDown();
                 }
-            } catch (Exception e) {
-                addBrowserLog("ERROR", TAG, "Failed to initialize global WebView: " + e.getMessage());
-            } finally {
-                latch.countDown();
-            }
-        });
+            });
+            try {
+                latch.await(3, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {}
+        }
 
-        try {
-            latch.await(3, TimeUnit.SECONDS);
-        } catch (InterruptedException ignored) {}
+        return ref.get();
     }
 
-    private void setupWebViewSettings(WebView webView) {
+    private WebView createWebViewInternal(Context context) {
+        try {
+            Context appContext = context.getApplicationContext();
+            WebView webView = new WebView(appContext);
+            
+            ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT);
+            webView.setLayoutParams(lp);
+
+            setupWebViewSettings(webView);
+            addBrowserLog("INFO", TAG, "WebView initialized.");
+            webView.loadUrl(DEFAULT_URL);
+
+            return webView;
+        } catch (Exception e) {
+            addBrowserLog("ERROR", TAG, "Failed to initialize WebView: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void setupWebViewSettings(final WebView webView) {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
+        settings.setBuiltInZoomControls(true);
+        settings.setDisplayZoomControls(false);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                return false;
+            }
+
+            @Deprecated
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                view.loadUrl(url);
-                return true;
+                return false;
             }
 
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
                 addBrowserLog("INFO", "WebViewPage", "Page load started: " + url);
-                if (mUrlChangeListener != null) {
-                    mUrlChangeListener.onUrlChanged(url);
+                BrowserStateListener listener = mStateListeners.get(view);
+                if (listener != null) {
+                    listener.onUrlChanged(view, url);
                 }
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                addBrowserLog("INFO", "WebViewPage", "Page load finished: " + url);
-                if (mUrlChangeListener != null) {
-                    mUrlChangeListener.onUrlChanged(url);
+                String title = view.getTitle();
+                addBrowserLog("INFO", "WebViewPage", "Page load finished: " + url + (title != null ? " (" + title + ")" : ""));
+                BrowserStateListener listener = mStateListeners.get(view);
+                if (listener != null) {
+                    listener.onUrlChanged(view, url);
+                    if (title != null) {
+                        listener.onTitleChanged(view, title);
+                    }
+                }
+            }
+
+            @Override
+            public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                super.onReceivedError(view, errorCode, description, failingUrl);
+                addBrowserLog("ERROR", "WebViewPage", "Error (" + errorCode + "): " + description + " at " + failingUrl);
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                super.onReceivedError(view, request, error);
+                if (request != null && request.isForMainFrame() && error != null) {
+                    addBrowserLog("ERROR", "WebViewPage", "MainFrame Error (" + error.getErrorCode() + "): " + error.getDescription() + " at " + request.getUrl());
                 }
             }
         });
@@ -134,6 +189,24 @@ public class BrowserManager {
                     addBrowserLog(level, "JSConsole", msg);
                 }
                 return super.onConsoleMessage(consoleMessage);
+            }
+
+            @Override
+            public void onReceivedTitle(WebView view, String title) {
+                super.onReceivedTitle(view, title);
+                BrowserStateListener listener = mStateListeners.get(view);
+                if (listener != null && title != null) {
+                    listener.onTitleChanged(view, title);
+                }
+            }
+
+            @Override
+            public void onReceivedIcon(WebView view, Bitmap icon) {
+                super.onReceivedIcon(view, icon);
+                BrowserStateListener listener = mStateListeners.get(view);
+                if (listener != null && icon != null) {
+                    listener.onFaviconChanged(view, icon);
+                }
             }
         });
     }
@@ -181,23 +254,19 @@ public class BrowserManager {
         mBrowserLogBuffer.clear();
     }
 
-    public WebView getWebView() {
-        return mWebView;
+    public boolean isWebViewAvailable(WebView webView) {
+        return webView != null;
     }
 
-    public boolean isWebViewAvailable() {
-        return mWebView != null;
-    }
-
-    public String getCurrentUrl() {
-        if (mWebView == null) return "Error: WebView not initialized or active.";
+    public String getCurrentUrl(final WebView webView) {
+        if (webView == null) return "Error: WebView not initialized.";
 
         final AtomicReference<String> urlRef = new AtomicReference<>("");
         final CountDownLatch latch = new CountDownLatch(1);
 
         mMainHandler.post(() -> {
             try {
-                urlRef.set(mWebView.getUrl() != null ? mWebView.getUrl() : "");
+                urlRef.set(webView.getUrl() != null ? webView.getUrl() : "");
             } catch (Exception e) {
                 urlRef.set("");
             } finally {
@@ -212,15 +281,15 @@ public class BrowserManager {
         return urlRef.get();
     }
 
-    public String setUserAgent(final String userAgent) {
-        if (mWebView == null) return "Error: WebView not initialized or active.";
+    public String setUserAgent(final WebView webView, final String userAgent) {
+        if (webView == null) return "Error: WebView not initialized.";
 
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicReference<String> resultRef = new AtomicReference<>("");
 
         mMainHandler.post(() -> {
             try {
-                mWebView.getSettings().setUserAgentString(userAgent);
+                webView.getSettings().setUserAgentString(userAgent);
                 String msg = "User-Agent updated successfully: " + userAgent;
                 addBrowserLog("INFO", TAG, msg);
                 resultRef.set(msg);
@@ -277,21 +346,28 @@ public class BrowserManager {
         }
     }
 
-    public String navigate(final String url) {
-        if (mWebView == null) return "Error: WebView not initialized or active.";
+    public String navigate(final WebView webView, final String url) {
+        if (webView == null) return "Error: WebView not initialized.";
 
-        final String finalUrl = (!url.startsWith("http://") && !url.startsWith("https://"))
-                ? "https://" + url : url;
+        String finalUrl = url;
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            if (url.startsWith("localhost") || url.startsWith("127.0.0.1")) {
+                finalUrl = "http://" + url;
+            } else {
+                finalUrl = "https://" + url;
+            }
+        }
 
+        final String urlToLoad = finalUrl;
         mMainHandler.post(() -> {
-            addBrowserLog("INFO", TAG, "Navigating to: " + finalUrl);
-            mWebView.loadUrl(finalUrl);
+            addBrowserLog("INFO", TAG, "Navigating to: " + urlToLoad);
+            webView.loadUrl(urlToLoad);
         });
-        return "Navigating to " + finalUrl;
+        return "Navigating to " + urlToLoad;
     }
 
-    public String executeJs(final String script) {
-        if (mWebView == null) return "Error: WebView not initialized or active.";
+    public String executeJs(final WebView webView, final String script) {
+        if (webView == null) return "Error: WebView not initialized.";
 
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicReference<String> resultRef = new AtomicReference<>("");
@@ -299,7 +375,7 @@ public class BrowserManager {
         mMainHandler.post(() -> {
             try {
                 addBrowserLog("DEBUG", TAG, "Evaluating JS: " + script);
-                mWebView.evaluateJavascript(script, new ValueCallback<String>() {
+                webView.evaluateJavascript(script, new ValueCallback<String>() {
                     @Override
                     public void onReceiveValue(String value) {
                         String res = value != null ? value : "";
@@ -327,8 +403,8 @@ public class BrowserManager {
         }
     }
 
-    public String click(final String selector) {
-        if (mWebView == null) return "Error: WebView not initialized or active.";
+    public String click(final WebView webView, final String selector) {
+        if (webView == null) return "Error: WebView not initialized.";
 
         addBrowserLog("INFO", TAG, "Clicking selector: " + selector);
         String script = "(function() { " +
@@ -337,11 +413,11 @@ public class BrowserManager {
                 "  el.click(); " +
                 "  return 'Clicked successfully'; " +
                 "})();";
-        return executeJs(script);
+        return executeJs(webView, script);
     }
 
-    public String type(final String selector, final String text) {
-        if (mWebView == null) return "Error: WebView not initialized or active.";
+    public String type(final WebView webView, final String selector, final String text) {
+        if (webView == null) return "Error: WebView not initialized.";
 
         addBrowserLog("INFO", TAG, "Typing text into selector: " + selector);
         String escapedText = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n");
@@ -354,15 +430,15 @@ public class BrowserManager {
                 "  el.dispatchEvent(new Event('change', { bubbles: true })); " +
                 "  return 'Text entered successfully'; " +
                 "})();";
-        return executeJs(script);
+        return executeJs(webView, script);
     }
 
-    public JSONObject takeScreenshot(final Context context) {
+    public JSONObject takeScreenshot(final WebView webView, final Context context) {
         final JSONObject result = new JSONObject();
-        if (mWebView == null) {
+        if (webView == null) {
             try {
                 result.put("status", "error");
-                result.put("message", "WebView not initialized or active.");
+                result.put("message", "WebView not initialized.");
             } catch (Exception ignored) {}
             return result;
         }
@@ -372,14 +448,20 @@ public class BrowserManager {
         mMainHandler.post(() -> {
             try {
                 addBrowserLog("INFO", TAG, "Taking WebView screenshot.");
-                int width = mWebView.getWidth();
-                int height = mWebView.getHeight();
+                int width = webView.getWidth();
+                int height = webView.getHeight();
                 if (width <= 0) width = 1080;
                 if (height <= 0) height = 1920;
 
+                if (webView.getWidth() <= 0 || webView.getHeight() <= 0) {
+                    webView.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
+                    webView.layout(0, 0, width, height);
+                }
+
                 Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
                 Canvas canvas = new Canvas(bitmap);
-                mWebView.draw(canvas);
+                webView.draw(canvas);
 
                 ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
                 bitmap.compress(Bitmap.CompressFormat.PNG, 90, outputStream);
@@ -416,5 +498,15 @@ public class BrowserManager {
         } catch (InterruptedException ignored) {}
 
         return result;
+    }
+
+    public void closeWebView(final WebView webView) {
+        if (webView == null) return;
+        mStateListeners.remove(webView);
+        mMainHandler.post(() -> {
+            try {
+                webView.destroy();
+            } catch (Exception ignored) {}
+        });
     }
 }
