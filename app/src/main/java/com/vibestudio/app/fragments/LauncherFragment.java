@@ -4,16 +4,18 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.termux.terminal.TerminalSession;
 import com.vibestudio.app.R;
+import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
-
-import java.util.UUID;
+import com.vibestudio.app.terminal.TerminalSessionManager;
 
 public class LauncherFragment extends Fragment {
 
@@ -27,13 +29,13 @@ public class LauncherFragment extends Fragment {
         });
 
         view.findViewById(R.id.btn_launch_browser).setOnClickListener(v -> {
-            String sessionId = "browser_" + UUID.randomUUID().toString().substring(0, 8);
-            TabManager.getInstance().openTab(TabType.BROWSER, BrowserFragment.newInstance(sessionId));
+            WebView webView = BrowserManager.getInstance().createWebView(getContext());
+            TabManager.getInstance().openTab(TabType.BROWSER, BrowserFragment.newInstance(webView));
         });
 
         view.findViewById(R.id.btn_launch_terminal).setOnClickListener(v -> {
-            String sessionId = "term_" + UUID.randomUUID().toString().substring(0, 8);
-            TabManager.getInstance().openTab(TabType.TERMINAL, TerminalFragment.newInstance(sessionId));
+            TerminalSession session = TerminalSessionManager.getInstance().createSession(getContext());
+            TabManager.getInstance().openTab(TabType.TERMINAL, TerminalFragment.newInstance(session));
         });
 
         view.findViewById(R.id.btn_launch_settings).setOnClickListener(v -> {

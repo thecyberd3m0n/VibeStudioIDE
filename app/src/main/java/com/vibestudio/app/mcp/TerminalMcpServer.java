@@ -2,6 +2,7 @@ package com.vibestudio.app.mcp;
 
 import android.content.Context;
 
+import com.termux.terminal.TerminalSession;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
@@ -16,7 +17,7 @@ public class TerminalMcpServer implements McpServer {
 
     private static final String TAG = "TerminalMcpServer";
     private static final String NAME = "terminal";
-    private static final String DESCRIPTION = "Allows running shell commands in active or specific IDE terminal sessions, injecting keystrokes (such as 'n\\n', 'y\\n', ENTER, 'CTRL+C'), and inspecting terminal logs.";
+    private static final String DESCRIPTION = "Allows running shell commands in active or specific IDE terminal sessions, injecting keystrokes (such as 'n\\n', 'y\\n', ENTER, 'CTRL+C'), and inspecting terminal logs. Use 'terminal_open_tab' to explicitly create a new terminal session.";
 
     private boolean mIsActive = false;
     private final List<McpTool> mTools;
@@ -24,16 +25,20 @@ public class TerminalMcpServer implements McpServer {
     public TerminalMcpServer() {
         mTools = new ArrayList<>();
 
+        // Tool 0: terminal_open_tab
+        mTools.add(McpTool.builder("terminal_open_tab", "Open a new terminal tab for the AI agent to interact with.")
+                .build());
+
         // Tool 1: execute_command
         mTools.add(McpTool.builder("execute_command", "Execute a bash shell command in a terminal session. Useful for non-interactive commands.")
                 .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
-                .addProperty("session_id", PropertyType.STRING, "Optional target terminal session ID.", false)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 2: send_keystroke
         mTools.add(McpTool.builder("send_keystroke", "Inject raw keystrokes, responses to prompts, or control sequences into a terminal session at any time.")
                 .addProperty("keystroke", PropertyType.STRING, "The keystroke string or control sequence to send (e.g., 'n\\n', 'y\\n', 'ENTER', 'CTRL+C', 'CTRL+D').", true)
-                .addProperty("session_id", PropertyType.STRING, "Optional target terminal session ID.", false)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 3: read_terminal_output
@@ -42,7 +47,7 @@ public class TerminalMcpServer implements McpServer {
                 .addProperty("start_line", PropertyType.INTEGER, "Start line index for pagination (default: 0).", false)
                 .addProperty("tail_only", PropertyType.BOOLEAN, "If true, returns only the latest trailing lines (default: true).", false)
                 .addProperty("grep_pattern", PropertyType.STRING, "Optional search substring to filter matching terminal lines.", false)
-                .addProperty("session_id", PropertyType.STRING, "Optional target terminal session ID.", false)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
     }
 
@@ -92,7 +97,36 @@ public class TerminalMcpServer implements McpServer {
     @Override
     public McpToolResult callTool(String toolName, Map<String, Object> arguments, Context context) {
         try {
-            String sessionId = arguments != null ? getStringArg(arguments, "session_id", null) : null;
+            ToolSessionManager sessionManager = ToolSessionManager.getInstance();
+
+            if ("terminal_open_tab".equals(toolName) || "open_tab".equals(toolName)) {
+                int newSessionId = sessionManager.getOrCreateSession(ToolType.TERMINAL, context, true);
+                return McpToolResult.success("Opened new terminal tab with session_id: " + newSessionId);
+            }
+
+            int sessionIdArg = arguments != null ? getIntArg(arguments, "session_id", -1) : -1;
+            ToolSessionManager.ToolSession session;
+
+            if (sessionIdArg > 0) {
+                // Strict validation when explicit session_id is requested by the Agent
+                ToolSessionManager.SessionValidationResult validation = sessionManager.validateSession(sessionIdArg, ToolType.TERMINAL);
+                if (!validation.isValid()) {
+                    return McpToolResult.error(validation.errorMessage);
+                }
+                session = validation.session;
+            } else {
+                // Get or create active default terminal session
+                int activeSessionId = sessionManager.getOrCreateSession(ToolType.TERMINAL, context, false);
+                session = sessionManager.getSession(activeSessionId);
+                if (session == null) {
+                    return McpToolResult.error("Failed to initialize active terminal session.");
+                }
+            }
+
+            TerminalSession termSession = session.getTerminalSession();
+            if (termSession == null || !termSession.isRunning()) {
+                return McpToolResult.error("Terminal session #" + session.id + " is not running.");
+            }
 
             if ("execute_command".equals(toolName)) {
                 String command = arguments != null ? getStringArg(arguments, "command", "") : "";
@@ -100,14 +134,12 @@ public class TerminalMcpServer implements McpServer {
                     return McpToolResult.error("Missing 'command' parameter.");
                 }
 
-                boolean success = (sessionId != null && !sessionId.isEmpty())
-                        ? TerminalSessionManager.getInstance().executeCommand(sessionId, command)
-                        : TerminalSessionManager.getInstance().executeCommand(command);
+                boolean success = TerminalSessionManager.getInstance().executeCommand(termSession, command);
 
                 if (success) {
-                    return McpToolResult.success("Command dispatched to terminal session.");
+                    return McpToolResult.success("Command dispatched to terminal session #" + session.id + ".");
                 } else {
-                    return McpToolResult.error("Failed to dispatch command.");
+                    return McpToolResult.error("Failed to dispatch command to session #" + session.id + ".");
                 }
 
             } else if ("send_keystroke".equals(toolName)) {
@@ -116,12 +148,10 @@ public class TerminalMcpServer implements McpServer {
                     return McpToolResult.error("Missing 'keystroke' parameter.");
                 }
 
-                boolean success = (sessionId != null && !sessionId.isEmpty())
-                        ? TerminalSessionManager.getInstance().sendKeystroke(sessionId, keystroke)
-                        : TerminalSessionManager.getInstance().sendKeystroke(keystroke);
+                boolean success = TerminalSessionManager.getInstance().sendKeystroke(termSession, keystroke);
 
                 if (success) {
-                    return McpToolResult.success("Keystroke injected into terminal session: " + keystroke);
+                    return McpToolResult.success("Keystroke injected into terminal session #" + session.id + ": " + keystroke);
                 } else {
                     return McpToolResult.error("Failed to inject keystroke.");
                 }
@@ -132,9 +162,7 @@ public class TerminalMcpServer implements McpServer {
                 boolean tailOnly = arguments != null ? getBooleanArg(arguments, "tail_only", true) : true;
                 String grepPattern = arguments != null ? getStringArg(arguments, "grep_pattern", null) : null;
 
-                String output = (sessionId != null && !sessionId.isEmpty())
-                        ? TerminalSessionManager.getInstance().readTerminalOutput(sessionId, maxLines, startLine, tailOnly, grepPattern)
-                        : TerminalSessionManager.getInstance().readTerminalOutput(maxLines, startLine, tailOnly, grepPattern);
+                String output = TerminalSessionManager.getInstance().readTerminalOutput(termSession, maxLines, startLine, tailOnly, grepPattern);
 
                 return McpToolResult.success(output);
 

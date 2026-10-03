@@ -53,6 +53,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         LinearLayout layout = new LinearLayout(context);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(16, 16, 16, 16);
+        layout.setBackgroundColor(Color.parseColor("#1E1E1E"));
 
         mChatScroll = new ScrollView(context);
         mChatContainer = new LinearLayout(context);

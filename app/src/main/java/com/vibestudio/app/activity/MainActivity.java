@@ -6,6 +6,8 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
+import android.webkit.WebView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -14,6 +16,7 @@ import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
 
+import com.termux.terminal.TerminalSession;
 import com.vibestudio.app.R;
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.fragments.BrowserFragment;
@@ -28,7 +31,6 @@ import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
 
 import java.util.List;
-import java.util.UUID;
 
 public class MainActivity extends FragmentActivity implements TabManager.TabListener {
 
@@ -43,9 +45,6 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         setContentView(R.layout.activity_main);
 
         LogViewerService.getInstance().i("MainActivity", "MainActivity created with Tabbed Layout");
-
-        // Ensure global terminal session manager is initialized
-        TerminalSessionManager.getInstance().ensureSessionStarted(this.getApplicationContext());
 
         mTabStripContainer = findViewById(R.id.tab_strip_container);
         mBtnLauncherContainer = findViewById(R.id.btn_launcher_container);
@@ -114,22 +113,16 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         Fragment fragment = null;
 
         switch (navIndex) {
-            case 2: { // Terminal
+            case 2: // Terminal
                 type = TabType.TERMINAL;
-                String sessionId = "term_" + UUID.randomUUID().toString().substring(0, 8);
-                fragment = TerminalFragment.newInstance(sessionId);
                 break;
-            }
             case 3: // Chat
                 type = TabType.CHAT;
                 fragment = new ChatFragment();
                 break;
-            case 4: { // Browser
+            case 4: // Browser
                 type = TabType.BROWSER;
-                String sessionId = "browser_" + UUID.randomUUID().toString().substring(0, 8);
-                fragment = BrowserFragment.newInstance(sessionId);
                 break;
-            }
             case 0: // Models
             case 1: // MCP
             case 5: // Permissions
@@ -146,6 +139,29 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                 mTabManager.selectTab(tab);
                 return;
             }
+        }
+
+        // Create independent User-initiated session (unmapped in ToolSessionManager)
+        if (type == TabType.TERMINAL) {
+            TerminalSession session = TerminalSessionManager.getInstance().createSession(this);
+            mTabManager.openTab(
+                    TabType.TERMINAL,
+                    "Terminal",
+                    "💻",
+                    TerminalFragment.newInstance(session),
+                    true
+            );
+            return;
+        } else if (type == TabType.BROWSER) {
+            WebView webView = BrowserManager.getInstance().createWebView(this);
+            mTabManager.openTab(
+                    TabType.BROWSER,
+                    "Browser",
+                    "🌐",
+                    BrowserFragment.newInstance(webView),
+                    true
+            );
+            return;
         }
 
         mTabManager.openTab(type, null, null, fragment, true);
@@ -174,9 +190,9 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         Fragment frag = tab.getFragment();
 
         if (frag instanceof TerminalFragment) {
-            TerminalSessionManager.getInstance().closeSession(((TerminalFragment) frag).getSessionId());
+            TerminalSessionManager.getInstance().closeSession(((TerminalFragment) frag).getTerminalSession());
         } else if (frag instanceof BrowserFragment) {
-            BrowserManager.getInstance().closeSession(((BrowserFragment) frag).getSessionId());
+            BrowserManager.getInstance().closeWebView(((BrowserFragment) frag).getWebView());
         }
 
         if (frag != null) {
@@ -246,10 +262,19 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             View tabView = inflater.inflate(R.layout.tab_item_view, mTabStripContainer, false);
 
             TextView tvIcon = tabView.findViewById(R.id.tab_icon);
+            ImageView ivFavicon = tabView.findViewById(R.id.tab_favicon);
             TextView tvTitle = tabView.findViewById(R.id.tab_title);
             TextView tvClose = tabView.findViewById(R.id.tab_close_btn);
 
-            tvIcon.setText(tab.getIcon());
+            if (tab.getFavicon() != null) {
+                ivFavicon.setImageBitmap(tab.getFavicon());
+                ivFavicon.setVisibility(View.VISIBLE);
+                tvIcon.setVisibility(View.GONE);
+            } else {
+                tvIcon.setText(tab.getIcon());
+                tvIcon.setVisibility(View.VISIBLE);
+                ivFavicon.setVisibility(View.GONE);
+            }
             tvTitle.setText(tab.getTitle());
 
             boolean isActive = (activeTab != null && activeTab.getId().equals(tab.getId()));

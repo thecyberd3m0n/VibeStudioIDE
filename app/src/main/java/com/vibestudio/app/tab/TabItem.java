@@ -1,5 +1,6 @@
 package com.vibestudio.app.tab;
 
+import android.graphics.Bitmap;
 import androidx.fragment.app.Fragment;
 import java.util.UUID;
 
@@ -8,6 +9,7 @@ public class TabItem {
     private final TabType type;
     private String title;
     private String icon;
+    private Bitmap favicon;
     private Fragment fragment;
 
     public TabItem(TabType type, String title, String icon, Fragment fragment) {
@@ -40,6 +42,14 @@ public class TabItem {
 
     public void setIcon(String icon) {
         this.icon = icon;
+    }
+
+    public Bitmap getFavicon() {
+        return favicon;
+    }
+
+    public void setFavicon(Bitmap favicon) {
+        this.favicon = favicon;
     }
 
     public Fragment getFragment() {

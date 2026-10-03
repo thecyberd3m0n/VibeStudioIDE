@@ -16,14 +16,23 @@
     <!-- Active Indicator Bar (VS Code style top border accent) -->
     <!-- Managed via code/background state or views -->
 
-    <!-- Tab Icon -->
+    <!-- Tab Icon (Emoji) -->
     <TextView
         android:id="@+id/tab_icon"
-        android:layout_width="-2px"
-        android:layout_height="-2px"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:text="💻"
         android:textSize="14sp"
         android:textColor="#CCCCCC"/>
+
+    <!-- Tab Favicon (Image) -->
+    <ImageView
+        android:id="@+id/tab_favicon"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:visibility="gone"
+        android:scaleType="fitCenter"
+        android:contentDescription="Favicon" />
 
     <!-- Tab Title -->
     <TextView

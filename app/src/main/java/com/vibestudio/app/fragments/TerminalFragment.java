@@ -3,6 +3,8 @@ package com.vibestudio.app.fragments;
 import android.content.Context;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -19,35 +21,27 @@ import com.termux.view.TerminalView;
 import com.termux.view.TerminalViewClient;
 import com.vibestudio.app.R;
 import com.vibestudio.app.service.LogViewerService;
+import com.vibestudio.app.tab.TabItem;
+import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.terminal.TerminalSessionManager;
-
-import java.util.UUID;
 
 public class TerminalFragment extends Fragment {
 
-    private static final String ARG_SESSION_ID = "arg_session_id";
     private static final String TAG = "TerminalFragment";
 
-    private String mSessionId;
+    private TerminalSession mTerminalSession;
     private TerminalView mTerminalView;
+    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+    private Runnable mTitleUpdateRunnable;
 
-    public static TerminalFragment newInstance(String sessionId) {
-        TerminalFragment fragment = new TerminalFragment();
-        Bundle args = new Bundle();
-        args.putString(ARG_SESSION_ID, sessionId);
-        fragment.setArguments(args);
-        return fragment;
+    public static TerminalFragment newInstance() {
+        return new TerminalFragment();
     }
 
-    @Override
-    public void onCreate(@Nullable Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        if (getArguments() != null) {
-            mSessionId = getArguments().getString(ARG_SESSION_ID);
-        }
-        if (mSessionId == null) {
-            mSessionId = "term_" + UUID.randomUUID().toString().substring(0, 8);
-        }
+    public static TerminalFragment newInstance(TerminalSession session) {
+        TerminalFragment fragment = new TerminalFragment();
+        fragment.mTerminalSession = session;
+        return fragment;
     }
 
     @Nullable
@@ -64,7 +58,9 @@ public class TerminalFragment extends Fragment {
         Context context = getContext();
         if (context != null) {
             TerminalSessionManager tsm = TerminalSessionManager.getInstance();
-            tsm.createSession(context.getApplicationContext(), mSessionId);
+            if (mTerminalSession == null) {
+                mTerminalSession = tsm.createSession(context.getApplicationContext());
+            }
             attachToSession();
         }
     }
@@ -72,15 +68,46 @@ public class TerminalFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        if (mSessionId != null) {
-            TerminalSessionManager.getInstance().setActiveSessionId(mSessionId);
-        }
+        startTitlePolling();
     }
 
     @Override
     public void onPause() {
         super.onPause();
         hideSoftKeyboard();
+        stopTitlePolling();
+    }
+
+    private void startTitlePolling() {
+        if (mTitleUpdateRunnable == null) {
+            mTitleUpdateRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    updateTerminalTitle();
+                    mMainHandler.postDelayed(this, 1000);
+                }
+            };
+        }
+        mMainHandler.post(mTitleUpdateRunnable);
+    }
+
+    private void stopTitlePolling() {
+        if (mTitleUpdateRunnable != null) {
+            mMainHandler.removeCallbacks(mTitleUpdateRunnable);
+        }
+    }
+
+    private void updateTerminalTitle() {
+        if (mTerminalSession == null) return;
+        String title = mTerminalSession.getTitle();
+        if (title == null || title.isEmpty()) {
+            title = TerminalSessionManager.getInstance().getForegroundProcessName(mTerminalSession);
+        }
+        TabItem tab = TabManager.getInstance().findTabByFragment(TerminalFragment.this);
+        if (tab != null && !title.equals(tab.getTitle())) {
+            tab.setTitle(title);
+            TabManager.getInstance().notifyTabUpdated(tab);
+        }
     }
 
     private void showSoftKeyboard() {
@@ -110,10 +137,10 @@ public class TerminalFragment extends Fragment {
     }
 
     private void attachToSession() {
+        if (mTerminalSession == null) return;
         TerminalSessionManager tsm = TerminalSessionManager.getInstance();
-        TerminalSession session = tsm.getTerminalSession(mSessionId);
 
-        if (mTerminalView != null && session != null && session.isRunning()) {
+        if (mTerminalView != null && mTerminalSession.isRunning()) {
             mTerminalView.setBackgroundColor(Color.parseColor("#1E1E2E"));
             mTerminalView.setTerminalViewClient(new TerminalViewClient() {
                 @Override
@@ -185,15 +212,15 @@ public class TerminalFragment extends Fragment {
                 public void logStackTraceWithMessage(String tag, String message, Exception e) { LogViewerService.getInstance().e(TAG, message, e); }
 
                 @Override
-                public void logStackTrace(String tag, Exception e) { LogViewerService.getInstance().e(TAG, "TerminalView error", e); }
+                public void logStackTrace(String tag, Exception e) { LogViewerService.getInstance().e(TAG, "Terminal error", e); }
             });
 
-            mTerminalView.attachSession(session);
-            tsm.registerTerminalView(mSessionId, mTerminalView);
+            mTerminalView.attachSession(mTerminalSession);
+            tsm.registerTerminalView(mTerminalSession, mTerminalView);
             showSoftKeyboard();
-            LogViewerService.getInstance().i(TAG, "Attached TerminalView to session: " + mSessionId);
+            LogViewerService.getInstance().i(TAG, "Attached TerminalView to session");
         } else {
-            LogViewerService.getInstance().w(TAG, "Unable to attach TerminalView: session [" + mSessionId + "] is not running");
+            LogViewerService.getInstance().w(TAG, "Unable to attach TerminalView: session is not running");
         }
     }
 
@@ -201,12 +228,14 @@ public class TerminalFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         hideSoftKeyboard();
-        TerminalSessionManager.getInstance().unregisterTerminalView(mSessionId);
+        if (mTerminalSession != null) {
+            TerminalSessionManager.getInstance().unregisterTerminalView(mTerminalSession);
+        }
         mTerminalView = null;
     }
 
-    public String getSessionId() {
-        return mSessionId;
+    public TerminalSession getTerminalSession() {
+        return mTerminalSession;
     }
 
     public TerminalView getTerminalView() {

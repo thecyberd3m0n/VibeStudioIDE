@@ -7,6 +7,7 @@ import androidx.fragment.app.Fragment;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 public class TabManager {
     private static TabManager instance;
@@ -23,7 +24,6 @@ public class TabManager {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TabItem activeTab;
     private int sessionCounterTerminal = 0;
-    private int sessionCounterBrowser = 0;
     private int sessionCounterChat = 0;
 
     private TabManager() {}
@@ -56,6 +56,25 @@ public class TabManager {
     public TabItem findTabByType(TabType type) {
         for (TabItem tab : tabs) {
             if (tab.getType() == type) {
+                return tab;
+            }
+        }
+        return null;
+    }
+
+    public TabItem findTabByFragment(Fragment fragment) {
+        for (TabItem tab : tabs) {
+            if (tab.getFragment() == fragment) {
+                return tab;
+            }
+        }
+        return null;
+    }
+
+    public TabItem findTabByTitle(String title) {
+        if (title == null) return null;
+        for (TabItem tab : tabs) {
+            if (title.equals(tab.getTitle())) {
                 return tab;
             }
         }
@@ -104,7 +123,7 @@ public class TabManager {
     public TabItem openTab(final TabType type, final String customTitle, final String icon, final Fragment fragment, final boolean selectNewTab) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             final AtomicTabItemHolder holder = new AtomicTabItemHolder();
-            final java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            final CountDownLatch latch = new CountDownLatch(1);
             mainHandler.post(new Runnable() {
                 @Override
                 public void run() {
@@ -126,12 +145,10 @@ public class TabManager {
                     title = "Chat #" + sessionCounterChat;
                     break;
                 case TERMINAL:
-                    sessionCounterTerminal++;
-                    title = "Terminal #" + sessionCounterTerminal;
+                    title = "Terminal";
                     break;
                 case BROWSER:
-                    sessionCounterBrowser++;
-                    title = "Browser #" + sessionCounterBrowser;
+                    title = "Browser";
                     break;
                 case SETTINGS:
                     title = "Settings";
@@ -224,11 +241,28 @@ public class TabManager {
         }
     }
 
+    public void notifyTabUpdated(final TabItem tab) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    notifyTabUpdated(tab);
+                }
+            });
+            return;
+        }
+
+        if (tab != null && tabs.contains(tab)) {
+            for (TabListener listener : new ArrayList<>(listeners)) {
+                listener.onTabUpdated(tab);
+            }
+        }
+    }
+
     public void clearAll() {
         tabs.clear();
         activeTab = null;
         sessionCounterTerminal = 0;
-        sessionCounterBrowser = 0;
         sessionCounterChat = 0;
     }
 }
