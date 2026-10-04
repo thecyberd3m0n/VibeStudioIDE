@@ -38,6 +38,10 @@ public class LauncherFragment extends Fragment {
             TabManager.getInstance().openTab(TabType.TERMINAL, TerminalFragment.newInstance(session));
         });
 
+        view.findViewById(R.id.btn_launch_editor).setOnClickListener(v -> {
+            TabManager.getInstance().openTab(TabType.EDITOR, EditorFragment.newInstance());
+        });
+
         view.findViewById(R.id.btn_launch_settings).setOnClickListener(v -> {
             TabManager.getInstance().openTab(TabType.SETTINGS, new SettingsFragment());
         });

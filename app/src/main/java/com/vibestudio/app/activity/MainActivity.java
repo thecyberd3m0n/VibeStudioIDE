@@ -1,6 +1,9 @@
 package com.vibestudio.app.activity;
 
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -21,6 +24,7 @@ import com.vibestudio.app.R;
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.fragments.ChatFragment;
+import com.vibestudio.app.fragments.EditorFragment;
 import com.vibestudio.app.fragments.LauncherFragment;
 import com.vibestudio.app.fragments.SettingsFragment;
 import com.vibestudio.app.fragments.TerminalFragment;
@@ -30,14 +34,32 @@ import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
 
+import java.io.File;
 import java.util.List;
 
 public class MainActivity extends FragmentActivity implements TabManager.TabListener {
+
+    public static final String ACTION_EDIT_FILE = "com.vibestudio.app.ACTION_EDIT_FILE";
+    public static final String EXTRA_FILE_PATH = "file_path";
 
     private LinearLayout mTabStripContainer;
     private View mBtnLauncherContainer;
     private TabManager mTabManager;
     private LauncherFragment mLauncherFragment;
+
+    private final BroadcastReceiver mEditFileReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            LogViewerService.getInstance().i("MainActivity", "mEditFileReceiver received broadcast: " + intent);
+            if (intent != null) {
+                String filePath = intent.getStringExtra(EXTRA_FILE_PATH);
+                LogViewerService.getInstance().i("MainActivity", "Broadcast file_path extra: " + filePath);
+                if (filePath != null && !filePath.isEmpty()) {
+                    openFileInEditor(filePath);
+                }
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,6 +67,11 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         setContentView(R.layout.activity_main);
 
         LogViewerService.getInstance().i("MainActivity", "MainActivity created with Tabbed Layout");
+        if (getIntent() != null) {
+            String initialFilePath = getIntent().getStringExtra(EXTRA_FILE_PATH);
+            android.util.Log.i("EditCmd", "onCreate Intent received with file_path: " + initialFilePath);
+            LogViewerService.getInstance().i("MainActivity", "[EDIT_INTENT_RECEIVED] onCreate intent file_path: " + initialFilePath);
+        }
 
         mTabStripContainer = findViewById(R.id.tab_strip_container);
         mBtnLauncherContainer = findViewById(R.id.btn_launcher_container);
@@ -53,6 +80,13 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         mTabManager.addListener(this);
 
         mLauncherFragment = new LauncherFragment();
+
+        // Register edit file broadcast receiver
+        IntentFilter filter = new IntentFilter(ACTION_EDIT_FILE);
+        registerReceiver(mEditFileReceiver, filter);
+
+        // Handle intent if MainActivity was launched with ACTION_EDIT_FILE or extra
+        handleIntent(getIntent());
 
         // Big circle launcher button switches view directly to launcher (without creating a tab)
         mBtnLauncherContainer.setOnClickListener(v -> {
@@ -69,8 +103,63 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        String fp = intent != null ? intent.getStringExtra(EXTRA_FILE_PATH) : null;
+        android.util.Log.i("EditCmd", "onNewIntent received with file_path: " + fp);
+        LogViewerService.getInstance().i("MainActivity", "[EDIT_INTENT_RECEIVED] onNewIntent received: " + intent + " file_path: " + fp);
+        setIntent(intent);
+        handleIntent(intent);
+    }
+
+    private void handleIntent(Intent intent) {
+        if (intent != null) {
+            String filePath = intent.getStringExtra(EXTRA_FILE_PATH);
+            android.util.Log.i("EditCmd", "Intent received/handled in MainActivity with file_path: " + filePath);
+            LogViewerService.getInstance().i("MainActivity", "[EDIT_INTENT_RECEIVED] Intent handled with file_path: " + filePath);
+            if (filePath != null && !filePath.isEmpty()) {
+                openFileInEditor(filePath);
+            } else {
+                LogViewerService.getInstance().w("MainActivity", "[EDIT_INTENT_RECEIVED] Intent extra 'file_path' was empty or null.");
+            }
+        }
+    }
+
+    public void openFileInEditor(String filePath) {
+        LogViewerService.getInstance().i("MainActivity", "openFileInEditor called for: " + filePath);
+        File file = new File(filePath);
+        String fileName = file.getName();
+
+        // Check if a tab with this file path is already open
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == TabType.EDITOR && tab.getFragment() instanceof EditorFragment) {
+                EditorFragment ef = (EditorFragment) tab.getFragment();
+                if (filePath.equals(ef.getFilePath())) {
+                    LogViewerService.getInstance().i("MainActivity", "Found existing Editor tab for: " + filePath + ", selecting tab");
+                    mTabManager.selectTab(tab);
+                    return;
+                }
+            }
+        }
+
+        // Open a new tab for this file
+        LogViewerService.getInstance().i("MainActivity", "Opening new Editor tab for: " + fileName + " (" + filePath + ")");
+        EditorFragment fragment = EditorFragment.newInstance(filePath);
+        mTabManager.openTab(
+                TabType.EDITOR,
+                fileName,
+                "📝",
+                fragment,
+                true
+        );
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
+        try {
+            unregisterReceiver(mEditFileReceiver);
+        } catch (IllegalArgumentException ignored) {}
         mTabManager.removeListener(this);
     }
 
@@ -123,6 +212,10 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             case 4: // Browser
                 type = TabType.BROWSER;
                 break;
+            case 7: // Editor
+                type = TabType.EDITOR;
+                fragment = EditorFragment.newInstance();
+                break;
             case 0: // Models
             case 1: // MCP
             case 5: // Permissions
@@ -159,6 +252,15 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                     "Browser",
                     "🌐",
                     BrowserFragment.newInstance(webView),
+                    true
+            );
+            return;
+        } else if (type == TabType.EDITOR) {
+            mTabManager.openTab(
+                    TabType.EDITOR,
+                    null,
+                    "📝",
+                    EditorFragment.newInstance(),
                     true
             );
             return;
@@ -230,10 +332,12 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             ft.hide(mLauncherFragment);
         }
 
+        Fragment target = activeTab.getFragment();
+
         for (TabItem tab : mTabManager.getTabs()) {
             Fragment f = tab.getFragment();
             if (f != null && f.isAdded()) {
-                if (tab == activeTab) {
+                if (f == target) {
                     ft.show(f);
                 } else {
                     ft.hide(f);
@@ -241,11 +345,8 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             }
         }
 
-        Fragment target = activeTab.getFragment();
         if (!target.isAdded()) {
             ft.add(R.id.content_frame, target, activeTab.getId());
-        } else {
-            ft.show(target);
         }
 
         ft.commitAllowingStateLoss();

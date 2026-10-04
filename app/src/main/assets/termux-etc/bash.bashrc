@@ -18,3 +18,22 @@ fi
 alias ls='ls --color=auto'
 alias ll='ls -la'
 alias grep='grep --color=auto'
+
+# Edit command to open files in Editor tab via MainActivity
+edit() {
+    if [ -z "$1" ]; then
+        echo "[EDIT_CMD] Error: No file specified."
+        echo "Usage: edit <file_path>"
+        return 1
+    fi
+    local file_path
+    if [[ "$1" = /* ]]; then
+        file_path="$1"
+    else
+        file_path="$(pwd)/$1"
+    fi
+    echo "[EDIT_CMD] Before sending intent: Requesting to edit file: $file_path"
+    log -p i -t EditCmd "Before throwing intent to MainActivity for file: $file_path"
+    am start -n com.vibestudio.app/.activity.MainActivity --es file_path "$file_path" -f 0x20000000
+    echo "[EDIT_CMD] Intent sent successfully for file: $file_path"
+}

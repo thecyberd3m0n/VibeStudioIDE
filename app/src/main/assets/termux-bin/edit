@@ -1,0 +1,16 @@
+#!/system/bin/sh
+if [ -z "$1" ]; then
+    echo "[EDIT_CMD] Error: No file specified."
+    echo "Usage: edit <file_path>"
+    exit 1
+fi
+
+case "$1" in
+    /*) FILE_PATH="$1" ;;
+    *)  FILE_PATH="$(pwd)/$1" ;;
+esac
+
+echo "[EDIT_CMD] Before sending intent: Requesting to edit file: $FILE_PATH"
+log -p i -t EditCmd "Before throwing intent to MainActivity for file: $FILE_PATH"
+am start -n com.vibestudio.app/.activity.MainActivity --es file_path "$FILE_PATH" -f 0x20000000
+echo "[EDIT_CMD] Intent sent successfully for file: $FILE_PATH"

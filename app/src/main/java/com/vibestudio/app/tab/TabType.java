@@ -5,6 +5,7 @@ public enum TabType {
     CHAT("Assistant Chat", "💬"),
     BROWSER("Browser", "🌐"),
     TERMINAL("Terminal", "💻"),
+    EDITOR("Editor", "📝"),
     SETTINGS("Settings", "⚙️");
 
     private final String defaultTitle;

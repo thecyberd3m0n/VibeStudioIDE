@@ -50,4 +50,7 @@
     <item name="tag_unhandled_key_event_manager" type="id"/>
     <item name="tag_unhandled_key_listeners" type="id"/>
     <item name="tag_window_insets_animation_callback" type="id"/>
+    <item name="fragment_container_view_tag" type="id"/>
+    <item name="special_effects_controller_view_tag" type="id"/>
+    <item name="visible_removing_fragment_view_tag" type="id"/>
 </resources>

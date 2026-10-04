@@ -18,6 +18,8 @@ import android.view.inputmethod.InputMethodManager;
 
 import androidx.annotation.Nullable;
 
+import com.vibestudio.app.util.FontUtils;
+
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.InterruptedIOException;
@@ -44,7 +46,7 @@ public class InteractiveTerminalView extends View {
     private int mPromptColor = Color.parseColor("#A6E3A1");
     private int mCursorColor = Color.parseColor("#F5C2E7");
     private float mTextSizeSp = 13f;
-    private Typeface mFontFamily = Typeface.MONOSPACE;
+    private Typeface mFontFamily;
     private float mLineSpacing = 1.3f;
 
     private final List<TermLine> mLines = new ArrayList<>();
@@ -80,6 +82,7 @@ public class InteractiveTerminalView extends View {
         setFocusable(true);
         setFocusableInTouchMode(true);
         setBackgroundColor(mTerminalBackgroundColor);
+        mFontFamily = FontUtils.getMonospaceTypeface(getContext());
         mTextPaint.setColor(mTextColor);
         mTextPaint.setTypeface(mFontFamily);
         mCursorPaint.setColor(mCursorColor);

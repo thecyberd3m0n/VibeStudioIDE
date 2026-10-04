@@ -18,6 +18,7 @@ echo "=== Resolving dependencies via Maven ==="
 rm -rf libs/deps
 mkdir -p libs/deps
 mvn dependency:copy-dependencies -DoutputDirectory=libs/deps -q
+rm -f libs/deps/collection-1.0.0.jar
 
 # 3. Extract classes.jar and resources from all AAR files in libs/deps
 echo "=== Extracting classes.jar and resources from AAR dependencies ==="
@@ -76,7 +77,7 @@ mkdir -p bin obj compiled_res gen_r
 aapt2 compile --dir app/src/main/res -o compiled_res/
 
 # Compile selected AAR resources safely
-for aar_name in drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4; do
+for aar_name in drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4 editor-0.24.6; do
     if [ -d "build/extracted_aars/${aar_name}/res" ]; then
         aapt2 compile --dir "build/extracted_aars/${aar_name}/res" -o compiled_res/ 2>/dev/null || true
     fi

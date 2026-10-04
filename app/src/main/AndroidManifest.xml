@@ -33,7 +33,8 @@
         <activity 
             android:name=".activity.MainActivity" 
             android:label="VibeStudio" 
-            android:exported="false"
+            android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize" />
 
         <activity 

@@ -400,6 +400,8 @@ public class OnboardingActivity extends Activity {
                     // Deploy environment configuration files from app assets
                     appendLog("[libtermux] Deploying termux-etc configuration files from assets...");
                     deployAssetDirectory("termux-etc", new File(usrDir, "etc"));
+                    deployAssetDirectory("termux-bin", new File(usrDir, "bin"));
+                    new File(usrDir, "bin/edit").setExecutable(true, false);
 
                     appendLog("[libtermux] Storing LibTermux settings in database...");
                     mDbHelper.setSetting("env_prefix", usrDir.getAbsolutePath());

@@ -25,6 +25,7 @@ public class TabManager {
     private TabItem activeTab;
     private int sessionCounterTerminal = 0;
     private int sessionCounterChat = 0;
+    private int sessionCounterEditor = 0;
 
     private TabManager() {}
 
@@ -150,6 +151,10 @@ public class TabManager {
                 case BROWSER:
                     title = "Browser";
                     break;
+                case EDITOR:
+                    sessionCounterEditor++;
+                    title = "Editor #" + sessionCounterEditor;
+                    break;
                 case SETTINGS:
                     title = "Settings";
                     break;
@@ -264,5 +269,6 @@ public class TabManager {
         activeTab = null;
         sessionCounterTerminal = 0;
         sessionCounterChat = 0;
+        sessionCounterEditor = 0;
     }
 }
