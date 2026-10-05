@@ -18,6 +18,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.vibestudio.app.R;
+import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
@@ -55,6 +56,7 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
             mWebView = BrowserManager.getInstance().createWebView(context);
         }
 
+        LogViewerService.getInstance().i("BrowserFragment", "onCreateView: mWebView=" + mWebView);
         if (mWebView != null) {
             if (mWebView.getParent() != null) {
                 ((ViewGroup) mWebView.getParent()).removeView(mWebView);
@@ -136,6 +138,59 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
                     }
                 });
             }
+        }
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        LogViewerService.getInstance().i("BrowserFragment", "onStart called for " + this);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        LogViewerService.getInstance().i("BrowserFragment", "onResume called, mWebView=" + (mWebView != null));
+        if (mWebView != null) {
+            mWebView.post(() -> {
+                if (mWebView != null) {
+                    boolean attached = mWebView.isAttachedToWindow();
+                    int w = mWebView.getWidth();
+                    int h = mWebView.getHeight();
+                    String url = mWebView.getUrl();
+                    LogViewerService.getInstance().i("BrowserFragment", "mWebView.post inside onResume: attached=" + attached + ", size=" + w + "x" + h + ", url=" + url);
+                    mWebView.onResume();
+                    mWebView.invalidate();
+                    mWebView.requestLayout();
+                }
+            });
+        }
+    }
+
+    @Override
+    public void onPause() {
+        LogViewerService.getInstance().i("BrowserFragment", "onPause called");
+        super.onPause();
+    }
+
+    @Override
+    public void onStop() {
+        LogViewerService.getInstance().i("BrowserFragment", "onStop called");
+        super.onStop();
+    }
+
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        LogViewerService.getInstance().i("BrowserFragment", "onHiddenChanged: hidden=" + hidden);
+        if (mWebView != null && !hidden) {
+            mWebView.post(() -> {
+                if (mWebView != null) {
+                    mWebView.onResume();
+                    mWebView.invalidate();
+                    mWebView.requestLayout();
+                }
+            });
         }
     }
 

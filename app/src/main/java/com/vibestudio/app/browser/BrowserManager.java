@@ -96,8 +96,8 @@ public class BrowserManager {
 
     private WebView createWebViewInternal(Context context) {
         try {
-            Context appContext = context.getApplicationContext();
-            WebView webView = new WebView(appContext);
+            LogViewerService.getInstance().i("BrowserManager", "createWebViewInternal with context: " + context);
+            WebView webView = new WebView(context);
             
             ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
