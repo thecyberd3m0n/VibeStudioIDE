@@ -11,6 +11,8 @@ import com.libtermux.TermuxConfig;
 import com.libtermux.LogLevel;
 import com.libtermux.bootstrap.InstallState;
 
+import android.widget.Toast;
+import com.vibestudio.app.util.IntentUtils;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
@@ -147,15 +149,22 @@ public class OnboardingActivity extends Activity {
         try {
             mDbHelper = new DatabaseHelper(this);
 
+            Intent launchIntent = getIntent();
+            boolean isShareOrView = IntentUtils.isShareOrViewIntent(launchIntent);
+
             if (mDbHelper.isEnvInitialized()) {
                 String storedPrefix = mDbHelper.getSetting("env_prefix");
                 File expectedUsrDir = new File(getFilesDir(), "usr");
                 if (storedPrefix != null && new File(storedPrefix).getAbsolutePath().equals(expectedUsrDir.getAbsolutePath())) {
-                    navigateToMain();
+                    navigateToMain(launchIntent);
                     return;
                 }
                 // Invalid or legacy path (e.g., libtermux/usr), invalidate readiness flag so onboarding completes migration
                 mDbHelper.setEnvInitialized(false);
+            }
+
+            if (isShareOrView) {
+                Toast.makeText(this, "VibeStudio Browser is not ready", Toast.LENGTH_SHORT).show();
             }
 
             setContentView(R.layout.activity_onboarding);
@@ -691,8 +700,37 @@ public class OnboardingActivity extends Activity {
         return modified;
     }
 
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (IntentUtils.isShareOrViewIntent(intent)) {
+            if (mDbHelper != null && mDbHelper.isEnvInitialized()) {
+                navigateToMain(intent);
+            } else {
+                Toast.makeText(this, "VibeStudio Browser is not ready", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
     private void navigateToMain() {
+        navigateToMain(getIntent());
+    }
+
+    private void navigateToMain(Intent originalIntent) {
         Intent intent = new Intent(OnboardingActivity.this, MainActivity.class);
+        if (originalIntent != null) {
+            if (originalIntent.getAction() != null) {
+                intent.setAction(originalIntent.getAction());
+            }
+            if (originalIntent.getData() != null) {
+                intent.setData(originalIntent.getData());
+            }
+            if (originalIntent.getExtras() != null) {
+                intent.putExtras(originalIntent.getExtras());
+            }
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         startActivity(intent);
         finish();
     }
