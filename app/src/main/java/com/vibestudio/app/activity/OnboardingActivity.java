@@ -150,7 +150,7 @@ public class OnboardingActivity extends Activity {
             mDbHelper = new DatabaseHelper(this);
 
             Intent launchIntent = getIntent();
-            boolean isShareOrView = IntentUtils.isShareOrViewIntent(launchIntent);
+            boolean isViewIntent = IntentUtils.isViewIntent(launchIntent);
 
             if (mDbHelper.isEnvInitialized()) {
                 String storedPrefix = mDbHelper.getSetting("env_prefix");
@@ -163,7 +163,7 @@ public class OnboardingActivity extends Activity {
                 mDbHelper.setEnvInitialized(false);
             }
 
-            if (isShareOrView) {
+            if (isViewIntent) {
                 Toast.makeText(this, "VibeStudio Browser is not ready", Toast.LENGTH_SHORT).show();
             }
 
@@ -704,7 +704,7 @@ public class OnboardingActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        if (IntentUtils.isShareOrViewIntent(intent)) {
+        if (IntentUtils.isViewIntent(intent)) {
             if (mDbHelper != null && mDbHelper.isEnvInitialized()) {
                 navigateToMain(intent);
             } else {
