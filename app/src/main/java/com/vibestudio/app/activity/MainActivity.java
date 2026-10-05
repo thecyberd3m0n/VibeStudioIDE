@@ -94,17 +94,29 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         FragmentManager fm = getSupportFragmentManager();
         FragmentTransaction ft = fm.beginTransaction();
 
-        // Hide all active tab fragments
+        // Re-instantiate launcher overlay if added to another FragmentManager
+        if (mLauncherFragment.isAdded() && mLauncherFragment.getFragmentManager() != fm) {
+            mLauncherFragment = new LauncherFragment();
+        }
+
+        // Hide all tabs
         for (TabItem tab : mTabManager.getTabs()) {
             Fragment f = tab.getFragment();
-            if (f != null && f.isAdded()) {
+            if (f != null && f.isAdded() && f.getFragmentManager() == fm) {
+                ft.hide(f);
+            }
+        }
+
+        // Also hide any fragments attached to fm that are not launcher overlay
+        for (Fragment f : fm.getFragments()) {
+            if (f != null && f.isAdded() && f != mLauncherFragment && f.getFragmentManager() == fm) {
                 ft.hide(f);
             }
         }
 
         if (!mLauncherFragment.isAdded()) {
             ft.add(R.id.content_frame, mLauncherFragment, "launcher_overlay");
-        } else {
+        } else if (mLauncherFragment.getFragmentManager() == fm) {
             ft.show(mLauncherFragment);
         }
 
@@ -184,6 +196,10 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                     ft.add(R.id.content_frame, f, tab.getId());
                     ft.hide(f);
                     ft.commitAllowingStateLoss();
+                } else if (f.getFragmentManager() == fm) {
+                    FragmentTransaction ft = fm.beginTransaction();
+                    ft.hide(f);
+                    ft.commitAllowingStateLoss();
                 }
             }
         }
@@ -200,10 +216,12 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         }
 
         if (frag != null) {
-            getSupportFragmentManager()
-                    .beginTransaction()
-                    .remove(frag)
-                    .commitAllowingStateLoss();
+            FragmentManager fm = getSupportFragmentManager();
+            if (frag.getFragmentManager() == fm) {
+                fm.beginTransaction()
+                        .remove(frag)
+                        .commitAllowingStateLoss();
+            }
         }
         renderTabs();
         if (mTabManager.getTabs().isEmpty()) {
@@ -230,14 +248,16 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         FragmentTransaction ft = fm.beginTransaction();
 
         // Always hide launcher overlay when displaying active tab fragment
-        if (mLauncherFragment != null && mLauncherFragment.isAdded()) {
+        if (mLauncherFragment != null && mLauncherFragment.isAdded() && mLauncherFragment.getFragmentManager() == fm) {
             ft.hide(mLauncherFragment);
         }
 
+        Fragment target = activeTab.getFragment();
+
         for (TabItem tab : mTabManager.getTabs()) {
             Fragment f = tab.getFragment();
-            if (f != null && f.isAdded()) {
-                if (tab == activeTab) {
+            if (f != null && f.isAdded() && f.getFragmentManager() == fm) {
+                if (f == target) {
                     ft.show(f);
                 } else {
                     ft.hide(f);
@@ -245,10 +265,19 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             }
         }
 
-        Fragment target = activeTab.getFragment();
+        for (Fragment f : fm.getFragments()) {
+            if (f != null && f.isAdded() && f != mLauncherFragment && f.getFragmentManager() == fm) {
+                if (f == target) {
+                    ft.show(f);
+                } else {
+                    ft.hide(f);
+                }
+            }
+        }
+
         if (!target.isAdded()) {
             ft.add(R.id.content_frame, target, activeTab.getId());
-        } else {
+        } else if (target.getFragmentManager() == fm) {
             ft.show(target);
         }
 
