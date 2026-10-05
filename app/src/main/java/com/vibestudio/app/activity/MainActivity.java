@@ -1,5 +1,7 @@
 package com.vibestudio.app.activity;
 
+import android.content.Intent;
+import com.vibestudio.app.util.IntentUtils;
 import android.content.Context;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -66,6 +68,8 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         } else {
             showLauncherOverlay();
         }
+
+        handleIncomingIntent(getIntent());
     }
 
     @Override
@@ -303,6 +307,38 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             });
 
             mTabStripContainer.addView(tabView);
+        }
+    }
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingIntent(intent);
+    }
+
+    private void handleIncomingIntent(Intent intent) {
+        if (intent == null) return;
+        String url = IntentUtils.extractUrlFromIntent(intent);
+        if (url != null && !url.isEmpty()) {
+            intent.setAction(null);
+            intent.setData(null);
+            openBrowserTabWithUrl(url);
+        }
+    }
+
+    public void openBrowserTabWithUrl(String url) {
+        WebView webView = BrowserManager.getInstance().createWebView(this);
+        if (webView != null) {
+            if (url != null && !url.isEmpty()) {
+                BrowserManager.getInstance().navigate(webView, url);
+            }
+            mTabManager.openTab(
+                    TabType.BROWSER,
+                    "Browser",
+                    "🌐",
+                    BrowserFragment.newInstance(webView),
+                    true
+            );
         }
     }
 }
