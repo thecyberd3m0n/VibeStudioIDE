@@ -1,5 +1,10 @@
 # VibeStudio IDE
 
+## Demo Videos
+
+- [Vibe 1 Demo Video](docs/vibe1.mp4)
+- [Vibe 2 Demo Video](docs/vibe2.mp4)
+
 **VibeStudio IDE** is a native Android application designed to provide a lightweight, self-contained AI-driven development environment directly on mobile devices.
 
 ---
