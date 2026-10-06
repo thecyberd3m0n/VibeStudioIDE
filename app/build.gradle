@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace 'com.vibestudio.app'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.vibestudio.app"

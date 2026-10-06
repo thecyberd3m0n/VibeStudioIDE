@@ -33,6 +33,7 @@ import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
+import com.vibestudio.app.util.IntentUtils;
 
 import java.io.File;
 import java.util.List;
@@ -100,29 +101,8 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         } else {
             showLauncherOverlay();
         }
-    }
 
-    @Override
-    protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
-        String fp = intent != null ? intent.getStringExtra(EXTRA_FILE_PATH) : null;
-        android.util.Log.i("EditCmd", "onNewIntent received with file_path: " + fp);
-        LogViewerService.getInstance().i("MainActivity", "[EDIT_INTENT_RECEIVED] onNewIntent received: " + intent + " file_path: " + fp);
-        setIntent(intent);
-        handleIntent(intent);
-    }
-
-    private void handleIntent(Intent intent) {
-        if (intent != null) {
-            String filePath = intent.getStringExtra(EXTRA_FILE_PATH);
-            android.util.Log.i("EditCmd", "Intent received/handled in MainActivity with file_path: " + filePath);
-            LogViewerService.getInstance().i("MainActivity", "[EDIT_INTENT_RECEIVED] Intent handled with file_path: " + filePath);
-            if (filePath != null && !filePath.isEmpty()) {
-                openFileInEditor(filePath);
-            } else {
-                LogViewerService.getInstance().w("MainActivity", "[EDIT_INTENT_RECEIVED] Intent extra 'file_path' was empty or null.");
-            }
-        }
+        handleIncomingIntent(getIntent());
     }
 
     public void openFileInEditor(String filePath) {
@@ -173,23 +153,49 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         }
     }
 
+    private void handleIntent(Intent intent) {
+        if (intent != null) {
+            String filePath = intent.getStringExtra(EXTRA_FILE_PATH);
+            android.util.Log.i("EditCmd", "Intent received/handled in MainActivity with file_path: " + filePath);
+            LogViewerService.getInstance().i("MainActivity", "[EDIT_INTENT_RECEIVED] Intent handled with file_path: " + filePath);
+            if (filePath != null && !filePath.isEmpty()) {
+                openFileInEditor(filePath);
+            } else {
+                LogViewerService.getInstance().w("MainActivity", "[EDIT_INTENT_RECEIVED] Intent extra 'file_path' was empty or null.");
+            }
+        }
+    }
+
+
     private void showLauncherOverlay() {
         mTabManager.clearActiveSelection();
 
         FragmentManager fm = getSupportFragmentManager();
         FragmentTransaction ft = fm.beginTransaction();
 
-        // Hide all active tab fragments
+        // Re-instantiate launcher overlay if added to another FragmentManager
+        if (mLauncherFragment.isAdded() && mLauncherFragment.getFragmentManager() != fm) {
+            mLauncherFragment = new LauncherFragment();
+        }
+
+        // Hide all tabs
         for (TabItem tab : mTabManager.getTabs()) {
             Fragment f = tab.getFragment();
-            if (f != null && f.isAdded()) {
+            if (f != null && f.isAdded() && f.getFragmentManager() == fm) {
+                ft.hide(f);
+            }
+        }
+
+        // Also hide any fragments attached to fm that are not launcher overlay
+        for (Fragment f : fm.getFragments()) {
+            if (f != null && f.isAdded() && f != mLauncherFragment && f.getFragmentManager() == fm) {
                 ft.hide(f);
             }
         }
 
         if (!mLauncherFragment.isAdded()) {
             ft.add(R.id.content_frame, mLauncherFragment, "launcher_overlay");
-        } else {
+        } else if (mLauncherFragment.getFragmentManager() == fm) {
             ft.show(mLauncherFragment);
         }
 
@@ -282,6 +288,10 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                     ft.add(R.id.content_frame, f, tab.getId());
                     ft.hide(f);
                     ft.commitAllowingStateLoss();
+                } else if (f.getFragmentManager() == fm) {
+                    FragmentTransaction ft = fm.beginTransaction();
+                    ft.hide(f);
+                    ft.commitAllowingStateLoss();
                 }
             }
         }
@@ -298,10 +308,12 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         }
 
         if (frag != null) {
-            getSupportFragmentManager()
-                    .beginTransaction()
-                    .remove(frag)
-                    .commitAllowingStateLoss();
+            FragmentManager fm = getSupportFragmentManager();
+            if (frag.getFragmentManager() == fm) {
+                fm.beginTransaction()
+                        .remove(frag)
+                        .commitAllowingStateLoss();
+            }
         }
         renderTabs();
         if (mTabManager.getTabs().isEmpty()) {
@@ -328,7 +340,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         FragmentTransaction ft = fm.beginTransaction();
 
         // Always hide launcher overlay when displaying active tab fragment
-        if (mLauncherFragment != null && mLauncherFragment.isAdded()) {
+        if (mLauncherFragment != null && mLauncherFragment.isAdded() && mLauncherFragment.getFragmentManager() == fm) {
             ft.hide(mLauncherFragment);
         }
 
@@ -336,7 +348,17 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         for (TabItem tab : mTabManager.getTabs()) {
             Fragment f = tab.getFragment();
-            if (f != null && f.isAdded()) {
+            if (f != null && f.isAdded() && f.getFragmentManager() == fm) {
+                if (f == target) {
+                    ft.show(f);
+                } else {
+                    ft.hide(f);
+                }
+            }
+        }
+
+        for (Fragment f : fm.getFragments()) {
+            if (f != null && f.isAdded() && f != mLauncherFragment && f.getFragmentManager() == fm) {
                 if (f == target) {
                     ft.show(f);
                 } else {
@@ -347,6 +369,8 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         if (!target.isAdded()) {
             ft.add(R.id.content_frame, target, activeTab.getId());
+        } else if (target.getFragmentManager() == fm) {
+            ft.show(target);
         }
 
         ft.commitAllowingStateLoss();
@@ -404,6 +428,38 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             });
 
             mTabStripContainer.addView(tabView);
+        }
+    }
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingIntent(intent);
+    }
+
+    private void handleIncomingIntent(Intent intent) {
+        if (intent == null) return;
+        String url = IntentUtils.extractUrlFromIntent(intent);
+        if (url != null && !url.isEmpty()) {
+            intent.setAction(null);
+            intent.setData(null);
+            openBrowserTabWithUrl(url);
+        }
+    }
+
+    public void openBrowserTabWithUrl(String url) {
+        WebView webView = BrowserManager.getInstance().createWebView(this);
+        if (webView != null) {
+            if (url != null && !url.isEmpty()) {
+                BrowserManager.getInstance().navigate(webView, url);
+            }
+            mTabManager.openTab(
+                    TabType.BROWSER,
+                    "Browser",
+                    "🌐",
+                    BrowserFragment.newInstance(webView),
+                    true
+            );
         }
     }
 }
