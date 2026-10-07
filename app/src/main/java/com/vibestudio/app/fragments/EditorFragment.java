@@ -2,10 +2,14 @@ package com.vibestudio.app.fragments;
 
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.os.Looper;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -31,9 +35,13 @@ public class EditorFragment extends Fragment {
     private static final String ARG_FILE_PATH = "file_path";
 
     private CodeEditor mCodeEditor;
+    private TextView mTvFilePath;
+    private Button mBtnSave;
     private String mFilePath;
+    private String mSavedContent = "";
     private boolean mIsLoading = false;
     private boolean mIsSaving = false;
+    private boolean mIsModified = false;
 
     public static EditorFragment newInstance() {
         return new EditorFragment();
@@ -41,6 +49,7 @@ public class EditorFragment extends Fragment {
 
     public static EditorFragment newInstance(String filePath) {
         EditorFragment fragment = new EditorFragment();
+        fragment.mFilePath = filePath;
         Bundle args = new Bundle();
         args.putString(ARG_FILE_PATH, filePath);
         fragment.setArguments(args);
@@ -60,6 +69,16 @@ public class EditorFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_editor, container, false);
         mCodeEditor = view.findViewById(R.id.code_editor);
+        mTvFilePath = view.findViewById(R.id.tv_file_path);
+        mBtnSave = view.findViewById(R.id.btn_save);
+
+        if (mBtnSave != null) {
+            mBtnSave.setOnClickListener(v -> performSave());
+        }
+
+        updateFilePathUI();
+        updateSaveButtonState(false);
+
         if (mCodeEditor != null) {
             Typeface monoTypeface = FontUtils.getMonospaceTypeface(getContext());
             mCodeEditor.setTypefaceText(monoTypeface);
@@ -73,19 +92,65 @@ public class EditorFragment extends Fragment {
             }
 
             mCodeEditor.subscribeEvent(ContentChangeEvent.class, (event, unsubscribe) -> {
-                if (!mIsLoading && !mIsSaving && mFilePath != null && mCodeEditor != null) {
-                    saveFileContent(mFilePath, mCodeEditor.getText().toString());
+                if (!mIsLoading && !mIsSaving && mCodeEditor != null) {
+                    String current = mCodeEditor.getText().toString();
+                    boolean modified = mFilePath != null && !mFilePath.isEmpty() && !current.equals(mSavedContent);
+                    runOnMainThread(() -> updateSaveButtonState(modified));
                 }
             });
         }
         return view;
     }
 
+    private void runOnMainThread(Runnable runnable) {
+        if (getActivity() != null) {
+            getActivity().runOnUiThread(runnable);
+        } else if (Looper.myLooper() == Looper.getMainLooper()) {
+            runnable.run();
+        }
+    }
+
+    private void updateFilePathUI() {
+        if (mTvFilePath != null) {
+            if (mFilePath != null && !mFilePath.isEmpty()) {
+                mTvFilePath.setText(mFilePath);
+            } else {
+                mTvFilePath.setText("No file open");
+            }
+        }
+    }
+
+    private void updateSaveButtonState(boolean modified) {
+        mIsModified = modified;
+        if (mBtnSave != null) {
+            mBtnSave.setEnabled(modified);
+            mBtnSave.setAlpha(modified ? 1.0f : 0.4f);
+        }
+    }
+
+    public void performSave() {
+        if (mFilePath != null && !mFilePath.isEmpty() && mCodeEditor != null) {
+            String currentContent = mCodeEditor.getText().toString();
+            saveFileContent(mFilePath, currentContent);
+            if (getContext() != null) {
+                String fileName = new File(mFilePath).getName();
+                Toast.makeText(getContext(), "Saved " + fileName, Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
     public void loadFileContent(String filePath) {
         this.mFilePath = filePath;
+        updateFilePathUI();
+
         File file = new File(filePath);
         if (!file.exists()) {
             LogViewerService.getInstance().w(TAG, "File does not exist: " + filePath);
+            mSavedContent = "";
+            if (mCodeEditor != null) {
+                mCodeEditor.setText("");
+            }
+            updateSaveButtonState(false);
             return;
         }
 
@@ -101,9 +166,11 @@ public class EditorFragment extends Fragment {
                 content.append(line);
                 first = false;
             }
+            mSavedContent = content.toString();
             if (mCodeEditor != null) {
-                mCodeEditor.setText(content.toString());
+                mCodeEditor.setText(mSavedContent);
             }
+            updateSaveButtonState(false);
         } catch (IOException e) {
             Log.e(TAG, "Error reading file: " + filePath, e);
             LogViewerService.getInstance().e(TAG, "Failed to load file: " + filePath + " - " + e.getMessage());
@@ -122,6 +189,8 @@ public class EditorFragment extends Fragment {
 
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
             writer.write(content);
+            mSavedContent = content;
+            updateSaveButtonState(false);
         } catch (IOException e) {
             Log.e(TAG, "Error writing file: " + filePath, e);
             LogViewerService.getInstance().e(TAG, "Failed to save file: " + filePath + " - " + e.getMessage());
@@ -138,9 +207,15 @@ public class EditorFragment extends Fragment {
         return mCodeEditor;
     }
 
+    public boolean isModified() {
+        return mIsModified;
+    }
+
     @Override
     public void onDestroyView() {
         super.onDestroyView();
         mCodeEditor = null;
+        mTvFilePath = null;
+        mBtnSave = null;
     }
 }
