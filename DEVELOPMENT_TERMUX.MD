@@ -10,6 +10,10 @@ This guide explains how to build, test, and run VibeStudio on Android via Termux
   `./install_dependencies_termux.sh`
 - **Build APK**:
   `./build.sh`
+- **Run Unit Tests**:
+  `./test.sh`
+- **Run Instrumentation Tests**:
+  `./test-shizuku.sh`
 - **Run / Install APK (Simplest Way)**:
   `termux-open bin/VibeStudio.apk`
 
@@ -17,7 +21,14 @@ Executing `termux-open bin/VibeStudio.apk` opens the Android Package Installer d
 
 ---
 
-## 2. Debugging APK Installation Issues on Android
+## 2. Testing Guidelines
+
+- **Unit Tests**: Executed via `./test.sh` (unit test runner).
+- **Instrumentation Tests**: Executed **only** via `./test-shizuku.sh`. Do not attempt to run instrumentation tests through other scripts or gradlew directly.
+
+---
+
+## 3. Debugging APK Installation Issues on Android
 
 When Android Package Installer throws generic errors like *"Pakiet wygląda na nieprawidłowy"* (*Package appears to be invalid*), use the following steps to diagnose the exact system root cause:
 
@@ -48,6 +59,6 @@ When Android Package Installer throws generic errors like *"Pakiet wygląda na n
 
 ---
 
-## 3. Submodule & Architecture Rules
+## 4. Submodule & Architecture Rules
 
 - **Do NOT modify submodules directly** (e.g., `libtermux-android`). All fixes, keyboard event translations, view wrappings, or custom behaviors MUST be implemented inside app workspace code (`app/src/...`), using custom subclasses, view wrappers, or delegating event listeners, without modifying external submodule libraries.
