@@ -17,7 +17,7 @@ import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
 
-public class LauncherFragment extends Fragment {
+public class  LauncherFragment extends Fragment {
 
     @Nullable
     @Override

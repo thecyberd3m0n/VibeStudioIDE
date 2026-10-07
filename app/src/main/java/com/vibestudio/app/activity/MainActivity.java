@@ -1,11 +1,10 @@
 package com.vibestudio.app.activity;
 
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -48,20 +47,6 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
     private TabManager mTabManager;
     private LauncherFragment mLauncherFragment;
 
-    private final BroadcastReceiver mEditFileReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            LogViewerService.getInstance().i("MainActivity", "mEditFileReceiver received broadcast: " + intent);
-            if (intent != null) {
-                String filePath = intent.getStringExtra(EXTRA_FILE_PATH);
-                LogViewerService.getInstance().i("MainActivity", "Broadcast file_path extra: " + filePath);
-                if (filePath != null && !filePath.isEmpty()) {
-                    openFileInEditor(filePath);
-                }
-            }
-        }
-    };
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -70,7 +55,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         LogViewerService.getInstance().i("MainActivity", "MainActivity created with Tabbed Layout");
         if (getIntent() != null) {
             String initialFilePath = getIntent().getStringExtra(EXTRA_FILE_PATH);
-            android.util.Log.i("EditCmd", "onCreate Intent received with file_path: " + initialFilePath);
+            Log.i("EditCmd", "onCreate Intent received with file_path: " + initialFilePath);
             LogViewerService.getInstance().i("MainActivity", "[EDIT_INTENT_RECEIVED] onCreate intent file_path: " + initialFilePath);
         }
 
@@ -82,9 +67,9 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         mLauncherFragment = new LauncherFragment();
 
-        // Register edit file broadcast receiver
-        IntentFilter filter = new IntentFilter(ACTION_EDIT_FILE);
-        registerReceiver(mEditFileReceiver, filter);
+        TerminalSessionManager.getInstance().setSessionEventListener(filePath -> {
+            runOnUiThread(() -> openFileInEditor(filePath));
+        });
 
         // Handle intent if MainActivity was launched with ACTION_EDIT_FILE or extra
         handleIntent(getIntent());
@@ -137,9 +122,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        try {
-            unregisterReceiver(mEditFileReceiver);
-        } catch (IllegalArgumentException ignored) {}
+        TerminalSessionManager.getInstance().setSessionEventListener(null);
         mTabManager.removeListener(this);
     }
 

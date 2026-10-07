@@ -177,7 +177,39 @@ public final class TerminalSession extends TerminalOutput {
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {
-        if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count);
+        if (mShellPid > 0) {
+            int lastWritePos = offset;
+            for (int i = 0; i < count; i++) {
+                byte b = data[offset + i];
+                if (b == '\r' || b == '\n') {
+                    if (mEmulator != null) {
+                        int cursorRow = mEmulator.getCursorRow();
+                        String currentLine = mEmulator.getScreen().getSelectedText(0, cursorRow, mEmulator.mColumns, cursorRow).trim();
+                        int editIdx = currentLine.lastIndexOf("edit ");
+                        if (editIdx >= 0) {
+                            String cmd = currentLine.substring(editIdx);
+                            if (cmd.startsWith("edit ")) {
+                                String file = cmd.substring(5).trim();
+                                if (!file.isEmpty()) {
+                                    int len = (offset + i) - lastWritePos;
+                                    if (len > 0) {
+                                        mTerminalToProcessIOQueue.write(data, lastWritePos, len);
+                                    }
+                                    mTerminalToProcessIOQueue.write(new byte[]{3}, 0, 1); // Ctrl+C
+                                    mClient.onFileEditRequested(this, file);
+                                    lastWritePos = offset + i + 1;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            int remaining = (offset + count) - lastWritePos;
+            if (remaining > 0) {
+                mTerminalToProcessIOQueue.write(data, lastWritePos, remaining);
+            }
+        }
     }
 
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
@@ -288,6 +320,11 @@ public final class TerminalSession extends TerminalOutput {
     @Override
     public void onColorsChanged() {
         mClient.onColorsChanged(this);
+    }
+
+    @Override
+    public void onFileEditRequested(String filePath) {
+        mClient.onFileEditRequested(this, filePath);
     }
 
     public int getPid() {

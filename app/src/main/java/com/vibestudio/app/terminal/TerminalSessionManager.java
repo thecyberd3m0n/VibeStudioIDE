@@ -20,16 +20,26 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 
 public class TerminalSessionManager {
+
+    public interface SessionEventListener {
+        void onFileEditRequested(String filePath);
+    }
 
     private static final String TAG = "TerminalSessionManager";
     private static TerminalSessionManager sInstance;
 
     private final Map<TerminalSession, TerminalView> mViews = new WeakHashMap<>();
+    private SessionEventListener mSessionEventListener;
 
     private TerminalSessionManager() {}
+
+    public void setSessionEventListener(SessionEventListener listener) {
+        mSessionEventListener = listener;
+    }
 
     public static synchronized TerminalSessionManager getInstance() {
         if (sInstance == null) {
@@ -167,7 +177,14 @@ public class TerminalSessionManager {
                 public void logStackTraceWithMessage(String tag, String message, Exception e) { LogViewerService.getInstance().e(TAG, message, e); }
                 @Override
                 public void logStackTrace(String tag, Exception e) { LogViewerService.getInstance().e(TAG, "Terminal error", e); }
-            };
+
+            @Override
+            public void onFileEditRequested(TerminalSession session, String filePath) {
+                if (mSessionEventListener != null) {
+                    mSessionEventListener.onFileEditRequested(filePath);
+                }
+            }
+        };
 
             LogViewerService.getInstance().i(TAG, "Creating TerminalSession Shell: " + shellPath);
             TerminalSession session = new TerminalSession(
@@ -199,6 +216,10 @@ public class TerminalSessionManager {
         if (session != null) {
             mViews.remove(session);
         }
+    }
+
+    public synchronized Set<TerminalSession> getSessions() {
+        return mViews.keySet();
     }
 
     public String getForegroundProcessName(TerminalSession session) {
