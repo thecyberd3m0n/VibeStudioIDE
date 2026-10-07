@@ -62,28 +62,14 @@ fi
 
 echo "Shizuku ADB session verified: $SHIZUKU_ID"
 
-# Save original display and lock settings
-ORIG_TIMEOUT=$(shk_run "settings get system screen_off_timeout" | tr -d '\r\n')
-ORIG_STAY_ON=$(shk_run "settings get global stay_on_while_plugged_in" | tr -d '\r\n')
-ORIG_LOCKSCREEN=$(shk_run "settings get secure lockscreen.disabled" | tr -d '\r\n')
-
 cleanup() {
-    echo "=== Cleaning up: Restoring display and lock screen settings ==="
-    # shk_run "svc power stayon false"
-    if [ -n "$ORIG_TIMEOUT" ] && [ "$ORIG_TIMEOUT" != "null" ]; then
-        shk_run "settings put system screen_off_timeout $ORIG_TIMEOUT"
-    fi
-    if [ -n "$ORIG_STAY_ON" ] && [ "$ORIG_STAY_ON" != "null" ]; then
-        shk_run "settings put global stay_on_while_plugged_in $ORIG_STAY_ON"
-    fi
-    if [ -n "$ORIG_LOCKSCREEN" ] && [ "$ORIG_LOCKSCREEN" != "null" ]; then
-        shk_run "settings put secure lockscreen.disabled $ORIG_LOCKSCREEN"
-    fi
+    echo "=== Cleaning up: Ensuring screen remains awake and unlocked ==="
+    shk_run "input keyevent 224"
+    shk_run "wm dismiss-keyguard"
 }
 trap cleanup EXIT INT TERM
 
 echo "=== Preventing Screen Lock during Test Run ==="
-shk_run "svc power stayon true"
 shk_run "settings put system screen_off_timeout 2147483647"
 shk_run "settings put global stay_on_while_plugged_in 15"
 shk_run "settings put secure lockscreen.disabled 1"
