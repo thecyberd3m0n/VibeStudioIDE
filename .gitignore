@@ -28,3 +28,7 @@ local.properties
 .artifacts/
 .cache/
 obj_test/
+
+obj_test_apk/
+gen_test_r/
+compiled_test_res/
