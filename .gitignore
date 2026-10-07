@@ -27,3 +27,4 @@ libtermux-android/bootstrap-*/src/main/jniLibs/
 local.properties
 .artifacts/
 .cache/
+obj_test/
