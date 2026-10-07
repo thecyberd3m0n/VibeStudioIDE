@@ -5,7 +5,9 @@ import android.content.Context;
 import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.chat.provider.AiProvider;
+import com.vibestudio.app.chat.provider.ClaudeAiProvider;
 import com.vibestudio.app.chat.provider.GeminiAiProvider;
+import com.vibestudio.app.chat.provider.OpenAiProvider;
 import com.vibestudio.app.db.DatabaseHelper;
 
 import java.util.ArrayList;
@@ -27,6 +29,8 @@ public class AiRouter {
 
     public AiRouter() {
         registerProvider(new GeminiAiProvider());
+        registerProvider(new OpenAiProvider());
+        registerProvider(new ClaudeAiProvider());
     }
 
     public static synchronized AiRouter getInstance() {

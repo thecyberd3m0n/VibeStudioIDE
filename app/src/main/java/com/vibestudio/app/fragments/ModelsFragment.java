@@ -214,89 +214,97 @@ public class ModelsFragment extends Fragment {
                 noKeyWarning.setPadding(12, 12, 12, 12);
                 modelsContainer.addView(noKeyWarning);
             } else {
-                // Requirement 3: Non-traditional radio buttons (custom model cards)
                 List<String> availableModels = provider.getAvailableModels();
-                String currentActiveModel = router.getActiveModelName(pName);
+                if (availableModels.isEmpty()) {
+                    TextView noModelsNotice = new TextView(context);
+                    noModelsNotice.setText("ℹ️ No models configured yet for " + pName + ".");
+                    noModelsNotice.setTextColor(Color.parseColor("#A0A0B0"));
+                    noModelsNotice.setTextSize(13);
+                    noModelsNotice.setPadding(12, 12, 12, 12);
+                    modelsContainer.addView(noModelsNotice);
+                } else {
+                    String currentActiveModel = router.getActiveModelName(pName);
 
-                for (final String modelName : availableModels) {
-                    final boolean isSelectedModel = isProviderActive && modelName.equalsIgnoreCase(currentActiveModel);
+                    for (final String modelName : availableModels) {
+                        final boolean isSelectedModel = isProviderActive && modelName.equalsIgnoreCase(currentActiveModel);
 
-                    final LinearLayout modelRow = new LinearLayout(context);
-                    modelRow.setOrientation(LinearLayout.HORIZONTAL);
-                    modelRow.setGravity(Gravity.CENTER_VERTICAL);
-                    modelRow.setPadding(20, 16, 20, 16);
+                        final LinearLayout modelRow = new LinearLayout(context);
+                        modelRow.setOrientation(LinearLayout.HORIZONTAL);
+                        modelRow.setGravity(Gravity.CENTER_VERTICAL);
+                        modelRow.setPadding(20, 16, 20, 16);
 
-                    GradientDrawable modelBg = new GradientDrawable();
-                    if (isSelectedModel) {
-                        modelBg.setColor(Color.parseColor("#25383C"));
-                        modelBg.setStroke(2, Color.parseColor("#03DAC6"));
-                    } else {
-                        modelBg.setColor(Color.parseColor("#181824"));
-                        modelBg.setStroke(1, Color.parseColor("#2E2E3E"));
-                    }
-                    modelBg.setCornerRadius(10f);
-                    modelRow.setBackground(modelBg);
-
-                    LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
-                    rowParams.setMargins(0, 8, 0, 8);
-                    modelRow.setLayoutParams(rowParams);
-
-                    // Custom Radio Icon (Checkmark / Circle chip)
-                    TextView selectionBadge = new TextView(context);
-                    if (isSelectedModel) {
-                        selectionBadge.setText("✔");
-                        selectionBadge.setTextColor(Color.parseColor("#03DAC6"));
-                    } else {
-                        selectionBadge.setText("○");
-                        selectionBadge.setTextColor(Color.parseColor("#6E6E80"));
-                    }
-                    selectionBadge.setTextSize(16);
-                    selectionBadge.setTypeface(null, Typeface.BOLD);
-                    selectionBadge.setPadding(0, 0, 16, 0);
-
-                    // Model Name
-                    TextView modelTitle = new TextView(context);
-                    modelTitle.setText(modelName);
-                    modelTitle.setTextSize(14);
-                    modelTitle.setTextColor(Color.parseColor(isSelectedModel ? "#03DAC6" : "#E0E0E0"));
-                    if (isSelectedModel) {
-                        modelTitle.setTypeface(null, Typeface.BOLD);
-                    }
-                    LinearLayout.LayoutParams titleTextParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f);
-                    modelTitle.setLayoutParams(titleTextParams);
-
-                    // Active Label Chip
-                    if (isSelectedModel) {
-                        TextView activeChip = new TextView(context);
-                        activeChip.setText("ACTIVE");
-                        activeChip.setTextSize(10);
-                        activeChip.setTypeface(null, Typeface.BOLD);
-                        activeChip.setTextColor(Color.parseColor("#03DAC6"));
-                        activeChip.setPadding(12, 4, 12, 4);
-
-                        GradientDrawable chipBg = new GradientDrawable();
-                        chipBg.setColor(Color.parseColor("#102A29"));
-                        chipBg.setCornerRadius(8f);
-                        activeChip.setBackground(chipBg);
-
-                        modelRow.addView(selectionBadge);
-                        modelRow.addView(modelTitle);
-                        modelRow.addView(activeChip);
-                    } else {
-                        modelRow.addView(selectionBadge);
-                        modelRow.addView(modelTitle);
-                    }
-
-                    modelRow.setOnClickListener(new View.OnClickListener() {
-                        @Override
-                        public void onClick(View v) {
-                            AiRouter.getInstance().saveActiveSelection(context, pName, modelName);
-                            Toast.makeText(context, "Active model set: " + pName + " - " + modelName, Toast.LENGTH_SHORT).show();
-                            renderProviderCards(context);
+                        GradientDrawable modelBg = new GradientDrawable();
+                        if (isSelectedModel) {
+                            modelBg.setColor(Color.parseColor("#25383C"));
+                            modelBg.setStroke(2, Color.parseColor("#03DAC6"));
+                        } else {
+                            modelBg.setColor(Color.parseColor("#181824"));
+                            modelBg.setStroke(1, Color.parseColor("#2E2E3E"));
                         }
-                    });
+                        modelBg.setCornerRadius(10f);
+                        modelRow.setBackground(modelBg);
 
-                    modelsContainer.addView(modelRow);
+                        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+                        rowParams.setMargins(0, 8, 0, 8);
+                        modelRow.setLayoutParams(rowParams);
+
+                        // Custom Radio Icon (Checkmark / Circle chip)
+                        TextView selectionBadge = new TextView(context);
+                        if (isSelectedModel) {
+                            selectionBadge.setText("✔");
+                            selectionBadge.setTextColor(Color.parseColor("#03DAC6"));
+                        } else {
+                            selectionBadge.setText("○");
+                            selectionBadge.setTextColor(Color.parseColor("#6E6E80"));
+                        }
+                        selectionBadge.setTextSize(16);
+                        selectionBadge.setTypeface(null, Typeface.BOLD);
+                        selectionBadge.setPadding(0, 0, 16, 0);
+
+                        // Model Name
+                        TextView modelTitle = new TextView(context);
+                        modelTitle.setText(modelName);
+                        modelTitle.setTextSize(14);
+                        modelTitle.setTextColor(Color.parseColor(isSelectedModel ? "#03DAC6" : "#E0E0E0"));
+                        if (isSelectedModel) {
+                            modelTitle.setTypeface(null, Typeface.BOLD);
+                        }
+                        LinearLayout.LayoutParams titleTextParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f);
+                        modelTitle.setLayoutParams(titleTextParams);
+
+                        // Active Label Chip
+                        if (isSelectedModel) {
+                            TextView activeChip = new TextView(context);
+                            activeChip.setText("ACTIVE");
+                            activeChip.setTextSize(10);
+                            activeChip.setTypeface(null, Typeface.BOLD);
+                            activeChip.setTextColor(Color.parseColor("#03DAC6"));
+                            activeChip.setPadding(12, 4, 12, 4);
+
+                            GradientDrawable chipBg = new GradientDrawable();
+                            chipBg.setColor(Color.parseColor("#102A29"));
+                            chipBg.setCornerRadius(8f);
+                            activeChip.setBackground(chipBg);
+
+                            modelRow.addView(selectionBadge);
+                            modelRow.addView(modelTitle);
+                            modelRow.addView(activeChip);
+                        } else {
+                            modelRow.addView(selectionBadge);
+                            modelRow.addView(modelTitle);
+                        }
+
+                        modelRow.setOnClickListener(new View.OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                AiRouter.getInstance().saveActiveSelection(context, pName, modelName);
+                                Toast.makeText(context, "Active model set: " + pName + " - " + modelName, Toast.LENGTH_SHORT).show();
+                                renderProviderCards(context);
+                            }
+                        });
+
+                        modelsContainer.addView(modelRow);
+                    }
                 }
             }
 

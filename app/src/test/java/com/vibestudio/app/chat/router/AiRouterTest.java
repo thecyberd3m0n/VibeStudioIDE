@@ -43,16 +43,21 @@ public class AiRouterTest {
 
     @Test
     public void testRegisterAndGetProviders() {
+        List<AiProvider> initialProviders = mRouter.getProviders();
+        assertEquals(3, initialProviders.size());
+
         AiProvider mockProvider1 = new MockAiProvider("Gemini");
-        AiProvider mockProvider2 = new MockAiProvider("OpenAI");
+        AiProvider mockProvider2 = new MockAiProvider("CustomProvider");
 
         mRouter.registerProvider(mockProvider1);
         mRouter.registerProvider(mockProvider2);
 
         List<AiProvider> providers = mRouter.getProviders();
-        assertEquals(2, providers.size());
+        assertEquals(4, providers.size());
         assertEquals("Gemini", mRouter.getProvider("Gemini").getName());
         assertEquals("OpenAI", mRouter.getProvider("OpenAI").getName());
+        assertEquals("Claude", mRouter.getProvider("Claude").getName());
+        assertEquals("CustomProvider", mRouter.getProvider("CustomProvider").getName());
         assertNull(mRouter.getProvider("NonExistent"));
     }
 
