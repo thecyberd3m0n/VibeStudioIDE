@@ -11,5 +11,9 @@ public interface AiProvider {
 
     String getName();
 
-    AiResponse generateContent(Context context, String apiKey, String systemInstruction, List<ChatMessage> history);
+    List<String> getAvailableModels();
+
+    String getDefaultModel();
+
+    AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history);
 }

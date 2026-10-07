@@ -16,22 +16,33 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 
 public class GeminiAiProvider implements AiProvider {
 
     private static final String TAG = "GeminiAiProvider";
 
-    private static final String[] CANDIDATE_MODELS = new String[] {
-            "gemini-flash-latest",
-            "gemini-pro-latest",
+    private static final List<String> MODELS = Arrays.asList(
             "gemini-2.5-flash",
-            "gemini-2.5-pro"
-    };
+            "gemini-2.5-pro",
+            "gemini-flash-latest",
+            "gemini-pro-latest"
+    );
 
     @Override
     public String getName() {
         return "Gemini";
+    }
+
+    @Override
+    public List<String> getAvailableModels() {
+        return MODELS;
+    }
+
+    @Override
+    public String getDefaultModel() {
+        return "gemini-2.5-flash";
     }
 
     public static String loadBaseSystemInstruction(Context context) {
@@ -52,23 +63,17 @@ public class GeminiAiProvider implements AiProvider {
     }
 
     @Override
-    public AiResponse generateContent(Context context, String apiKey, String systemInstruction, List<ChatMessage> history) {
+    public AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history) {
         if (apiKey == null || apiKey.trim().isEmpty()) {
             return AiResponse.error(401, "Error: Gemini API Key is missing or empty.");
         }
 
-        String rawResponse = "";
-        int statusCode = 500;
+        String targetModel = (selectedModel != null && !selectedModel.trim().isEmpty())
+                ? selectedModel.trim()
+                : getDefaultModel();
 
-        for (String model : CANDIDATE_MODELS) {
-            rawResponse = executeHttpRequest(apiKey.trim(), model, systemInstruction, history);
-            statusCode = extractStatusCode(rawResponse);
-
-            if (statusCode != 404) {
-                break;
-            }
-            LogViewerService.getInstance().w(TAG, "Model " + model + " returned 404, attempting next fallback model...");
-        }
+        String rawResponse = executeHttpRequest(apiKey.trim(), targetModel, systemInstruction, history);
+        int statusCode = extractStatusCode(rawResponse);
 
         if (statusCode >= 200 && statusCode < 300) {
             String content = parseGeminiResponse(rawResponse);

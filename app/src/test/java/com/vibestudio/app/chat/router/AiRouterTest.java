@@ -17,6 +17,7 @@ import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,13 +57,16 @@ public class AiRouterTest {
     }
 
     @Test
-    public void testSetAndGetActiveProviderName() {
+    public void testSetAndGetActiveProviderAndModel() {
         mRouter.setActiveProviderName("Gemini");
         assertEquals("Gemini", mRouter.getActiveProviderName());
+
+        mRouter.setActiveModelName("Gemini", "gemini-2.5-pro");
+        assertEquals("gemini-2.5-pro", mRouter.getActiveModelName("Gemini"));
     }
 
     @Test
-    public void testRouteToActiveProvider() {
+    public void testRouteToActiveProviderWithSelectedModel() {
         MockAiProvider geminiProvider = new MockAiProvider("Gemini");
         MockAiProvider openAiProvider = new MockAiProvider("OpenAI");
 
@@ -70,6 +74,7 @@ public class AiRouterTest {
         mRouter.registerProvider(openAiProvider);
 
         mRouter.setActiveProviderName("Gemini");
+        mRouter.setActiveModelName("Gemini", "gemini-2.5-pro");
 
         List<ChatMessage> history = new ArrayList<>();
         history.add(new ChatMessage("User", "Hello", true));
@@ -77,7 +82,7 @@ public class AiRouterTest {
         AiResponse response = mRouter.generateContent(mContext, "test-api-key", "system instruction", history);
 
         assertNotNull(response);
-        assertEquals("Response from Gemini", response.getContent());
+        assertEquals("Response from Gemini using model gemini-2.5-pro", response.getContent());
     }
 
     @Test(expected = IllegalStateException.class)
@@ -88,13 +93,15 @@ public class AiRouterTest {
     }
 
     @Test
-    public void testPersistAndLoadActiveProviderFromDatabase() {
-        mRouter.saveActiveProvider(mContext, "OpenAI");
+    public void testPersistAndLoadActiveSelectionFromDatabase() {
+        mRouter.saveActiveSelection(mContext, "OpenAI", "gpt-4o");
         assertEquals("OpenAI", mRouter.getActiveProviderName());
+        assertEquals("gpt-4o", mRouter.getActiveModelName("OpenAI"));
 
         AiRouter newRouterInstance = new AiRouter();
-        newRouterInstance.loadActiveProvider(mContext);
+        newRouterInstance.loadActiveState(mContext);
         assertEquals("OpenAI", newRouterInstance.getActiveProviderName());
+        assertEquals("gpt-4o", newRouterInstance.getActiveModelName("OpenAI"));
     }
 
     @Test
@@ -103,6 +110,15 @@ public class AiRouterTest {
         ShadowDatabaseHelperForRouter.sApiKeys.put("Gemini", "gemini-secret-key");
 
         assertEquals("gemini-secret-key", mRouter.getActiveApiKey(mContext));
+    }
+
+    @Test
+    public void testNonApiKeyProviderDefaultsToDisabledStateInModels() {
+        MockAiProvider mockProvider = new MockAiProvider("Anthropic");
+        mRouter.registerProvider(mockProvider);
+        mRouter.setActiveProviderName("Anthropic");
+
+        assertNull(mRouter.getActiveApiKey(mContext));
     }
 
     private static class MockAiProvider implements AiProvider {
@@ -118,8 +134,18 @@ public class AiRouterTest {
         }
 
         @Override
-        public AiResponse generateContent(Context context, String apiKey, String systemInstruction, List<ChatMessage> history) {
-            return AiResponse.success("Response from " + mName);
+        public List<String> getAvailableModels() {
+            return Arrays.asList(mName.toLowerCase() + "-default", mName.toLowerCase() + "-pro");
+        }
+
+        @Override
+        public String getDefaultModel() {
+            return mName.toLowerCase() + "-default";
+        }
+
+        @Override
+        public AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history) {
+            return AiResponse.success("Response from " + mName + " using model " + selectedModel);
         }
     }
 

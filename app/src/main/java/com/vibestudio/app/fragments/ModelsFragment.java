@@ -25,10 +25,13 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.vibestudio.app.chat.provider.AiProvider;
 import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.db.DatabaseHelper;
 import com.vibestudio.app.mcp.GeminiValidator;
 import com.vibestudio.app.service.LogViewerService;
+
+import java.util.List;
 
 public class ModelsFragment extends Fragment {
 
@@ -37,8 +40,7 @@ public class ModelsFragment extends Fragment {
     private static final int WRAP_CONTENT = -2;
 
     private DatabaseHelper mDbHelper;
-    private TextView mStatusTextView;
-    private RadioGroup mProviderRadioGroup;
+    private LinearLayout mCardsContainer;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -55,80 +57,13 @@ public class ModelsFragment extends Fragment {
         if (context == null) return null;
 
         ScrollView scrollView = new ScrollView(context);
-        final LinearLayout mainContainer = new LinearLayout(context);
-        mainContainer.setOrientation(LinearLayout.VERTICAL);
+        mCardsContainer = new LinearLayout(context);
+        mCardsContainer.setOrientation(LinearLayout.VERTICAL);
+        mCardsContainer.setPadding(16, 16, 16, 16);
 
-        AiRouter.getInstance().loadActiveProvider(context);
-        String activeProvider = AiRouter.getInstance().getActiveProviderName();
+        scrollView.addView(mCardsContainer);
 
-        TextView selectorTitle = new TextView(context);
-        selectorTitle.setText("Active AI Provider");
-        selectorTitle.setTextColor(Color.parseColor("#FFFFFF"));
-        selectorTitle.setTextSize(16);
-        selectorTitle.setTypeface(null, Typeface.BOLD);
-        selectorTitle.setPadding(16, 16, 16, 8);
-        mainContainer.addView(selectorTitle);
-
-        mProviderRadioGroup = new RadioGroup(context);
-        mProviderRadioGroup.setOrientation(RadioGroup.VERTICAL);
-        mProviderRadioGroup.setPadding(16, 0, 16, 16);
-
-        final RadioButton geminiRadio = new RadioButton(context);
-        geminiRadio.setText("Google Gemini");
-        geminiRadio.setTextColor(Color.parseColor("#BB86FC"));
-        geminiRadio.setId(View.generateViewId());
-        if ("Gemini".equalsIgnoreCase(activeProvider)) {
-            geminiRadio.setChecked(true);
-        }
-
-        mProviderRadioGroup.addView(geminiRadio);
-        mainContainer.addView(mProviderRadioGroup);
-
-        mProviderRadioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(RadioGroup group, int checkedId) {
-                if (checkedId == geminiRadio.getId()) {
-                    AiRouter.getInstance().saveActiveProvider(context, "Gemini");
-                    updateStatusView("Gemini");
-                    Toast.makeText(context, "Active provider set to Gemini", Toast.LENGTH_SHORT).show();
-                }
-            }
-        });
-
-        final String provider = "Gemini";
-
-        LinearLayout card = createCard(context);
-
-        TextView name = new TextView(context);
-        name.setText("Google Gemini 1.5 Pro");
-        name.setTextColor(Color.parseColor("#BB86FC"));
-        name.setTextSize(18);
-        name.setTypeface(null, Typeface.BOLD);
-
-        TextView desc = new TextView(context);
-        desc.setText("Google • High performance multimodal reasoning and long-context AI");
-        desc.setTextColor(Color.parseColor("#B0B0B0"));
-        desc.setTextSize(14);
-        desc.setPadding(0, 8, 0, 8);
-
-        mStatusTextView = new TextView(context);
-        mStatusTextView.setTextSize(12);
-
-        card.addView(name);
-        card.addView(desc);
-        card.addView(mStatusTextView);
-
-        card.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showApiKeyDialog(context, provider);
-            }
-        });
-
-        mainContainer.addView(card);
-        scrollView.addView(mainContainer);
-
-        updateStatusView(provider);
+        renderProviderCards(context);
 
         return scrollView;
     }
@@ -137,35 +72,123 @@ public class ModelsFragment extends Fragment {
     public void onResume() {
         super.onResume();
         if (getContext() != null) {
-            AiRouter.getInstance().loadActiveProvider(getContext());
-        }
-        updateStatusView("Gemini");
-    }
-
-    private void updateStatusView(String provider) {
-        if (mStatusTextView == null) return;
-
-        String savedKey = mDbHelper != null ? mDbHelper.getApiKey(provider) : null;
-        if (!TextUtils.isEmpty(savedKey)) {
-            mStatusTextView.setText("Status: Configured (API Key set) • Click to edit");
-            mStatusTextView.setTextColor(Color.parseColor("#03DAC6"));
-            LogViewerService.getInstance().d(TAG, provider + " API Key loaded from SQLite db");
-        } else {
-            mStatusTextView.setText("Status: Not configured (Click to set Gemini API Key)");
-            mStatusTextView.setTextColor(Color.parseColor("#FFB74D"));
-            LogViewerService.getInstance().d(TAG, provider + " API Key is not set in SQLite db");
+            renderProviderCards(getContext());
         }
     }
 
-    private LinearLayout createCard(Context context) {
-        LinearLayout card = new LinearLayout(context);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackgroundColor(Color.parseColor("#1E1E1E"));
-        card.setPadding(24, 24, 24, 24);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
-        params.setMargins(16, 16, 16, 0);
-        card.setLayoutParams(params);
-        return card;
+    private void renderProviderCards(final Context context) {
+        if (mCardsContainer == null) return;
+        mCardsContainer.removeAllViews();
+
+        AiRouter router = AiRouter.getInstance();
+        router.loadActiveState(context);
+
+        List<AiProvider> providers = router.getProviders();
+        String activeProviderName = router.getActiveProviderName();
+
+        for (final AiProvider provider : providers) {
+            final String pName = provider.getName();
+            final String apiKey = mDbHelper != null ? mDbHelper.getApiKey(pName) : null;
+            final boolean hasApiKey = !TextUtils.isEmpty(apiKey);
+            final boolean isProviderActive = pName.equalsIgnoreCase(activeProviderName);
+
+            // Collapsible Provider Card Container
+            final LinearLayout card = new LinearLayout(context);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setBackgroundColor(Color.parseColor("#1E1E1E"));
+            card.setPadding(24, 24, 24, 24);
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+            cardParams.setMargins(0, 0, 0, 24);
+            card.setLayoutParams(cardParams);
+
+            // Provider Header Row (Title + Status Indicator + Expand/ApiKey button)
+            LinearLayout headerRow = new LinearLayout(context);
+            headerRow.setOrientation(LinearLayout.HORIZONTAL);
+            headerRow.setLayoutParams(new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+
+            TextView providerTitle = new TextView(context);
+            providerTitle.setText(pName);
+            providerTitle.setTextColor(Color.parseColor("#BB86FC"));
+            providerTitle.setTextSize(18);
+            providerTitle.setTypeface(null, Typeface.BOLD);
+            LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f);
+            providerTitle.setLayoutParams(titleParams);
+
+            TextView apiKeyStatus = new TextView(context);
+            if (hasApiKey) {
+                apiKeyStatus.setText("● API Key Configured");
+                apiKeyStatus.setTextColor(Color.parseColor("#03DAC6"));
+            } else {
+                apiKeyStatus.setText("● Missing API Key (Non-working)");
+                apiKeyStatus.setTextColor(Color.parseColor("#CF6679"));
+            }
+            apiKeyStatus.setTextSize(12);
+            apiKeyStatus.setPadding(12, 0, 12, 0);
+
+            Button btnKey = new Button(context);
+            btnKey.setText(hasApiKey ? "Edit Key" : "Set Key");
+            btnKey.setTextSize(11);
+            btnKey.setBackgroundColor(Color.parseColor("#2D2D2D"));
+            btnKey.setTextColor(Color.parseColor("#FFFFFF"));
+            btnKey.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    showApiKeyDialog(context, pName);
+                }
+            });
+
+            headerRow.addView(providerTitle);
+            headerRow.addView(apiKeyStatus);
+            headerRow.addView(btnKey);
+
+            card.addView(headerRow);
+
+            // Models Collapsible Section
+            final LinearLayout modelsContainer = new LinearLayout(context);
+            modelsContainer.setOrientation(LinearLayout.VERTICAL);
+            modelsContainer.setPadding(16, 16, 16, 8);
+
+            List<String> availableModels = provider.getAvailableModels();
+            String currentActiveModel = router.getActiveModelName(pName);
+
+            RadioGroup modelRadioGroup = new RadioGroup(context);
+            modelRadioGroup.setOrientation(RadioGroup.VERTICAL);
+
+            for (final String modelName : availableModels) {
+                RadioButton rb = new RadioButton(context);
+                boolean isSelectedModel = isProviderActive && modelName.equalsIgnoreCase(currentActiveModel);
+
+                if (hasApiKey) {
+                    rb.setText(modelName + (isSelectedModel ? " (Active)" : ""));
+                    rb.setTextColor(Color.parseColor(isSelectedModel ? "#03DAC6" : "#E0E0E0"));
+                    rb.setEnabled(true);
+                } else {
+                    rb.setText(modelName + " (Disabled - API Key required)");
+                    rb.setTextColor(Color.parseColor("#CF6679"));
+                    rb.setEnabled(false);
+                }
+
+                rb.setChecked(isSelectedModel);
+
+                rb.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (hasApiKey) {
+                            AiRouter.getInstance().saveActiveSelection(context, pName, modelName);
+                            Toast.makeText(context, "Active model set to: " + pName + " - " + modelName, Toast.LENGTH_SHORT).show();
+                            renderProviderCards(context);
+                        }
+                    }
+                });
+
+                modelRadioGroup.addView(rb);
+            }
+
+            modelsContainer.addView(modelRadioGroup);
+            card.addView(modelsContainer);
+
+            mCardsContainer.addView(card);
+        }
     }
 
     private void showApiKeyDialog(final Context context, final String provider) {
@@ -224,7 +247,6 @@ public class ModelsFragment extends Fragment {
                     return;
                 }
 
-                // Show loading indicator & disable inputs
                 progressBar.setVisibility(View.VISIBLE);
                 errorTextView.setVisibility(View.GONE);
                 input.setEnabled(false);
@@ -239,7 +261,7 @@ public class ModelsFragment extends Fragment {
                             mDbHelper.saveApiKey(provider, key);
                             LogViewerService.getInstance().i(TAG, provider + " API Key validated and saved to SQLite DB.");
                         }
-                        updateStatusView(provider);
+                        renderProviderCards(context);
                         Toast.makeText(context, provider + " API Key validated & saved!", Toast.LENGTH_SHORT).show();
                         dialog.dismiss();
                     }

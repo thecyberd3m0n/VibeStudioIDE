@@ -16,12 +16,14 @@ import java.util.Map;
 public class AiRouter {
 
     private static final String SETTING_ACTIVE_PROVIDER = "active_ai_provider";
+    private static final String SETTING_ACTIVE_MODEL_PREFIX = "active_ai_model_";
     public static final String DEFAULT_PROVIDER = "Gemini";
 
     private static AiRouter sInstance;
 
     private final Map<String, AiProvider> mProviders = new LinkedHashMap<>();
     private String mActiveProviderName = DEFAULT_PROVIDER;
+    private final Map<String, String> mActiveModelPerProvider = new LinkedHashMap<>();
 
     public AiRouter() {
         registerProvider(new GeminiAiProvider());
@@ -56,24 +58,70 @@ public class AiRouter {
         this.mActiveProviderName = providerName;
     }
 
-    public void loadActiveProvider(Context context) {
-        if (context == null) return;
-        DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
-        String active = dbHelper.getSetting(SETTING_ACTIVE_PROVIDER);
-        if (active != null && !active.trim().isEmpty()) {
-            mActiveProviderName = active.trim();
-        } else {
-            mActiveProviderName = DEFAULT_PROVIDER;
+    public String getActiveModelName(String providerName) {
+        String selected = mActiveModelPerProvider.get(providerName);
+        if (selected != null) return selected;
+        AiProvider provider = getProvider(providerName);
+        return (provider != null) ? provider.getDefaultModel() : null;
+    }
+
+    public void setActiveModelName(String providerName, String modelName) {
+        if (providerName != null && modelName != null) {
+            mActiveModelPerProvider.put(providerName, modelName);
         }
     }
 
-    public void saveActiveProvider(Context context, String providerName) {
+    public void loadActiveState(Context context) {
+        if (context == null) return;
+        DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
+        String activeProv = dbHelper.getSetting(SETTING_ACTIVE_PROVIDER);
+        if (activeProv != null && !activeProv.trim().isEmpty()) {
+            mActiveProviderName = activeProv.trim();
+        } else {
+            mActiveProviderName = DEFAULT_PROVIDER;
+        }
+
+        // Restore active model for active provider
+        String savedActiveModel = dbHelper.getSetting(SETTING_ACTIVE_MODEL_PREFIX + mActiveProviderName);
+        if (savedActiveModel != null && !savedActiveModel.trim().isEmpty()) {
+            mActiveModelPerProvider.put(mActiveProviderName, savedActiveModel.trim());
+        }
+
+        for (AiProvider provider : mProviders.values()) {
+            String pName = provider.getName();
+            String savedModel = dbHelper.getSetting(SETTING_ACTIVE_MODEL_PREFIX + pName);
+            if (savedModel != null && !savedModel.trim().isEmpty()) {
+                mActiveModelPerProvider.put(pName, savedModel.trim());
+            } else if (!mActiveModelPerProvider.containsKey(pName)) {
+                mActiveModelPerProvider.put(pName, provider.getDefaultModel());
+            }
+        }
+    }
+
+    public void saveActiveSelection(Context context, String providerName, String modelName) {
         if (providerName == null || providerName.trim().isEmpty()) return;
         mActiveProviderName = providerName.trim();
+        if (modelName != null && !modelName.trim().isEmpty()) {
+            mActiveModelPerProvider.put(mActiveProviderName, modelName.trim());
+        }
+
         if (context != null) {
             DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
             dbHelper.setSetting(SETTING_ACTIVE_PROVIDER, mActiveProviderName);
+            if (modelName != null) {
+                dbHelper.setSetting(SETTING_ACTIVE_MODEL_PREFIX + mActiveProviderName, modelName.trim());
+            }
         }
+    }
+
+    // Retain loadActiveProvider for backwards compatibility
+    public void loadActiveProvider(Context context) {
+        loadActiveState(context);
+    }
+
+    // Retain saveActiveProvider for backwards compatibility
+    public void saveActiveProvider(Context context, String providerName) {
+        saveActiveSelection(context, providerName, getActiveModelName(providerName));
     }
 
     public String getActiveApiKey(Context context) {
@@ -88,6 +136,7 @@ public class AiRouter {
         if (activeProvider == null) {
             throw new IllegalStateException("Active provider '" + mActiveProviderName + "' is not registered in AiRouter");
         }
-        return activeProvider.generateContent(context, apiKey, systemInstruction, history);
+        String selectedModel = getActiveModelName(mActiveProviderName);
+        return activeProvider.generateContent(context, apiKey, selectedModel, systemInstruction, history);
     }
 }
