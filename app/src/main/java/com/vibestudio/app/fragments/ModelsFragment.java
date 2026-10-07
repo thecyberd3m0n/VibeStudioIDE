@@ -15,6 +15,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -23,6 +25,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.db.DatabaseHelper;
 import com.vibestudio.app.mcp.GeminiValidator;
 import com.vibestudio.app.service.LogViewerService;
@@ -35,6 +38,7 @@ public class ModelsFragment extends Fragment {
 
     private DatabaseHelper mDbHelper;
     private TextView mStatusTextView;
+    private RadioGroup mProviderRadioGroup;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -53,6 +57,43 @@ public class ModelsFragment extends Fragment {
         ScrollView scrollView = new ScrollView(context);
         final LinearLayout mainContainer = new LinearLayout(context);
         mainContainer.setOrientation(LinearLayout.VERTICAL);
+
+        AiRouter.getInstance().loadActiveProvider(context);
+        String activeProvider = AiRouter.getInstance().getActiveProviderName();
+
+        TextView selectorTitle = new TextView(context);
+        selectorTitle.setText("Active AI Provider");
+        selectorTitle.setTextColor(Color.parseColor("#FFFFFF"));
+        selectorTitle.setTextSize(16);
+        selectorTitle.setTypeface(null, Typeface.BOLD);
+        selectorTitle.setPadding(16, 16, 16, 8);
+        mainContainer.addView(selectorTitle);
+
+        mProviderRadioGroup = new RadioGroup(context);
+        mProviderRadioGroup.setOrientation(RadioGroup.VERTICAL);
+        mProviderRadioGroup.setPadding(16, 0, 16, 16);
+
+        final RadioButton geminiRadio = new RadioButton(context);
+        geminiRadio.setText("Google Gemini");
+        geminiRadio.setTextColor(Color.parseColor("#BB86FC"));
+        geminiRadio.setId(View.generateViewId());
+        if ("Gemini".equalsIgnoreCase(activeProvider)) {
+            geminiRadio.setChecked(true);
+        }
+
+        mProviderRadioGroup.addView(geminiRadio);
+        mainContainer.addView(mProviderRadioGroup);
+
+        mProviderRadioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(RadioGroup group, int checkedId) {
+                if (checkedId == geminiRadio.getId()) {
+                    AiRouter.getInstance().saveActiveProvider(context, "Gemini");
+                    updateStatusView("Gemini");
+                    Toast.makeText(context, "Active provider set to Gemini", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
 
         final String provider = "Gemini";
 
@@ -95,6 +136,9 @@ public class ModelsFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
+        if (getContext() != null) {
+            AiRouter.getInstance().loadActiveProvider(getContext());
+        }
         updateStatusView("Gemini");
     }
 

@@ -55,7 +55,7 @@ EXTRA_PKGS=${EXTRA_PKGS#:}
 
 # Deduplicate conflicting jars
 rm -f libs/deps/annotation-1.1.0.jar libs/deps/annotation-1.0.0.jar libs/deps/annotation-1.2.0.jar libs/deps/annotation-1.6.0.jar 2>/dev/null || true
-rm -f libs/deps/kotlin-stdlib-jdk7-*.jar libs/deps/kotlin-stdlib-jdk8-*.jar libs/deps/kotlin-stdlib-common-*.jar 2>/dev/null || true
+rm -f libs/deps/kotlin-stdlib-jdk7-*.jar libs/deps/kotlin-stdlib-jdk8-*.jar libs/deps/kotlin-stdlib-common-*.jar libs/deps/listenablefuture-*.jar 2>/dev/null || true
 
 # 3. Compile Android Resources (AAPT2)
 echo "=== Compiling Android resources ==="

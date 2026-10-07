@@ -1,0 +1,151 @@
+package com.vibestudio.app.chat.router;
+
+import android.content.Context;
+
+import com.vibestudio.app.chat.model.AiResponse;
+import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.chat.provider.AiProvider;
+import com.vibestudio.app.db.DatabaseHelper;
+
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+
+@RunWith(RobolectricTestRunner.class)
+@Config(manifest = Config.NONE, shadows = {AiRouterTest.ShadowDatabaseHelperForRouter.class})
+public class AiRouterTest {
+
+    private Context mContext;
+    private AiRouter mRouter;
+
+    @Before
+    public void setUp() {
+        ShadowDatabaseHelperForRouter.sSettings.clear();
+        ShadowDatabaseHelperForRouter.sApiKeys.clear();
+        mContext = RuntimeEnvironment.getApplication();
+        mRouter = new AiRouter();
+    }
+
+    @Test
+    public void testRegisterAndGetProviders() {
+        AiProvider mockProvider1 = new MockAiProvider("Gemini");
+        AiProvider mockProvider2 = new MockAiProvider("OpenAI");
+
+        mRouter.registerProvider(mockProvider1);
+        mRouter.registerProvider(mockProvider2);
+
+        List<AiProvider> providers = mRouter.getProviders();
+        assertEquals(2, providers.size());
+        assertEquals("Gemini", mRouter.getProvider("Gemini").getName());
+        assertEquals("OpenAI", mRouter.getProvider("OpenAI").getName());
+        assertNull(mRouter.getProvider("NonExistent"));
+    }
+
+    @Test
+    public void testSetAndGetActiveProviderName() {
+        mRouter.setActiveProviderName("Gemini");
+        assertEquals("Gemini", mRouter.getActiveProviderName());
+    }
+
+    @Test
+    public void testRouteToActiveProvider() {
+        MockAiProvider geminiProvider = new MockAiProvider("Gemini");
+        MockAiProvider openAiProvider = new MockAiProvider("OpenAI");
+
+        mRouter.registerProvider(geminiProvider);
+        mRouter.registerProvider(openAiProvider);
+
+        mRouter.setActiveProviderName("Gemini");
+
+        List<ChatMessage> history = new ArrayList<>();
+        history.add(new ChatMessage("User", "Hello", true));
+
+        AiResponse response = mRouter.generateContent(mContext, "test-api-key", "system instruction", history);
+
+        assertNotNull(response);
+        assertEquals("Response from Gemini", response.getContent());
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void testRouteWithoutActiveProviderThrowsException() {
+        mRouter.setActiveProviderName("NonExistentProvider");
+        List<ChatMessage> history = new ArrayList<>();
+        mRouter.generateContent(mContext, "test-api-key", "system instruction", history);
+    }
+
+    @Test
+    public void testPersistAndLoadActiveProviderFromDatabase() {
+        mRouter.saveActiveProvider(mContext, "OpenAI");
+        assertEquals("OpenAI", mRouter.getActiveProviderName());
+
+        AiRouter newRouterInstance = new AiRouter();
+        newRouterInstance.loadActiveProvider(mContext);
+        assertEquals("OpenAI", newRouterInstance.getActiveProviderName());
+    }
+
+    @Test
+    public void testGetApiKeyForActiveProvider() {
+        mRouter.saveActiveProvider(mContext, "Gemini");
+        ShadowDatabaseHelperForRouter.sApiKeys.put("Gemini", "gemini-secret-key");
+
+        assertEquals("gemini-secret-key", mRouter.getActiveApiKey(mContext));
+    }
+
+    private static class MockAiProvider implements AiProvider {
+        private final String mName;
+
+        MockAiProvider(String name) {
+            mName = name;
+        }
+
+        @Override
+        public String getName() {
+            return mName;
+        }
+
+        @Override
+        public AiResponse generateContent(Context context, String apiKey, String systemInstruction, List<ChatMessage> history) {
+            return AiResponse.success("Response from " + mName);
+        }
+    }
+
+    @Implements(DatabaseHelper.class)
+    public static class ShadowDatabaseHelperForRouter {
+        static final Map<String, String> sSettings = new HashMap<>();
+        static final Map<String, String> sApiKeys = new HashMap<>();
+
+        @Implementation
+        public String getSetting(String key) {
+            return sSettings.get(key);
+        }
+
+        @Implementation
+        public void setSetting(String key, String value) {
+            sSettings.put(key, value);
+        }
+
+        @Implementation
+        public String getApiKey(String provider) {
+            return sApiKeys.get(provider);
+        }
+
+        @Implementation
+        public void saveApiKey(String provider, String key) {
+            sApiKeys.put(provider, key);
+        }
+    }
+}
