@@ -46,7 +46,7 @@ EXTRA_PKGS=${EXTRA_PKGS#:}
 
 # Deduplicate conflicting jars
 rm -f libs/deps/annotation-1.1.0.jar libs/deps/annotation-1.0.0.jar libs/deps/annotation-1.2.0.jar libs/deps/annotation-1.6.0.jar
-rm -f libs/deps/kotlin-stdlib-jdk7-*.jar libs/deps/kotlin-stdlib-jdk8-*.jar libs/deps/kotlin-stdlib-common-*.jar
+rm -f libs/deps/kotlin-stdlib-jdk7-*.jar libs/deps/kotlin-stdlib-jdk8-*.jar libs/deps/kotlin-stdlib-common-*.jar libs/deps/listenablefuture-*.jar
 
 # Build Classpath for Kotlin / Java
 CLASSPATH="libs/android.jar"

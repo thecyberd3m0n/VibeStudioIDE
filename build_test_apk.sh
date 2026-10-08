@@ -56,6 +56,28 @@ aapt2 link -o bin/test.unsigned.apk \
   --version-name 1.0 \
   --java gen_test_r
 
+# 4.5 Ensure AndroidX Test dependencies are downloaded and extracted into libs/deps
+echo "=== Ensuring AndroidX Test dependencies ==="
+mkdir -p libs/deps build/test_aars
+
+download_and_extract_test_aar() {
+    local url="$1"
+    local jar_name="$2"
+    if [ ! -f "libs/deps/${jar_name}" ]; then
+        local aar_name=$(basename "$url")
+        curl -sL "$url" -o "build/test_aars/${aar_name}"
+        unzip -q -o "build/test_aars/${aar_name}" classes.jar -d build/test_aars/
+        mv build/test_aars/classes.jar "libs/deps/${jar_name}"
+    fi
+}
+
+download_and_extract_test_aar "https://dl.google.com/dl/android/maven2/androidx/test/runner/1.5.2/runner-1.5.2.aar" "runner-1.5.2.jar"
+download_and_extract_test_aar "https://dl.google.com/dl/android/maven2/androidx/test/monitor/1.6.1/monitor-1.6.1.aar" "androidx-test-monitor-1.6.1.jar"
+download_and_extract_test_aar "https://dl.google.com/dl/android/maven2/androidx/test/core/1.5.0/core-1.5.0.aar" "androidx-test-core-1.5.0.jar"
+download_and_extract_test_aar "https://dl.google.com/dl/android/maven2/androidx/test/annotation/1.0.1/annotation-1.0.1.aar" "androidx-test-annotation-1.0.1.jar"
+download_and_extract_test_aar "https://dl.google.com/dl/android/maven2/androidx/test/ext/junit/1.1.5/junit-1.1.5.aar" "ext-junit-1.1.5.jar"
+download_and_extract_test_aar "https://dl.google.com/dl/android/maven2/androidx/test/services/storage/1.4.2/storage-1.4.2.aar" "androidx-test-storage-1.4.2.jar"
+
 # 5. Build Classpath for Instrumentation Test compilation
 TEST_COMPILE_CLASSPATH="libs/android.jar:obj:libs/libtermux.jar"
 for j in libs/deps/*.jar; do
@@ -76,8 +98,8 @@ echo "=== Converting Test Bytecode & Dependencies to DEX (d8) ==="
 jar cvf bin/test_classes.jar -C obj_test_apk . > /dev/null
 
 TEST_DEX_LIBS="bin/test_classes.jar"
-# Include test runner, monitor, ext junit, hamcrest, etc.
-for lib in runner-1.5.2.jar androidx-test-monitor-1.6.1.jar androidx-test-core-1.5.0.jar androidx-test-annotation-1.0.1.jar ext-junit-1.1.5.jar junit-4.13.2.jar hamcrest-core-1.3.jar androidx-test-storage-1.4.2.jar; do
+# Include test runner, monitor, core, annotation, ext junit, junit, hamcrest, storage, etc.
+for lib in runner-1.5.2.jar androidx-test-monitor-1.6.1.jar androidx-test-core-1.5.0.jar androidx-test-annotation-1.0.1.jar ext-junit-1.1.5.jar junit-4.13.2.jar hamcrest-core-1.3.jar androidx-test-storage-1.4.2.jar kotlin-stdlib-2.1.0.jar; do
     if [ -f "libs/deps/$lib" ]; then
         TEST_DEX_LIBS="$TEST_DEX_LIBS libs/deps/$lib"
     fi

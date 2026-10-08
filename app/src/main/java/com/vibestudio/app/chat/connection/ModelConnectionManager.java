@@ -2,7 +2,7 @@ package com.vibestudio.app.chat.connection;
 
 import android.content.Context;
 
-import com.vibestudio.app.db.DatabaseHelper;
+import com.vibestudio.app.chat.router.AiRouter;
 
 public class ModelConnectionManager {
 
@@ -19,9 +19,9 @@ public class ModelConnectionManager {
 
     public String getApiKey(Context context) {
         if (context == null) return null;
-        DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
-        String apiKey = dbHelper.getApiKey("Gemini");
-        return (apiKey != null) ? apiKey.trim() : null;
+        AiRouter router = AiRouter.getInstance();
+        router.loadActiveProvider(context);
+        return router.getActiveApiKey(context);
     }
 
     public boolean isConnectedAndConfigured(Context context) {
@@ -30,9 +30,16 @@ public class ModelConnectionManager {
     }
 
     public String getConnectionStatusMessage(Context context) {
+        AiRouter router = AiRouter.getInstance();
+        router.loadActiveProvider(context);
+        String providerName = router.getActiveProviderName();
+        String modelName = router.getActiveModelName(providerName);
         if (isConnectedAndConfigured(context)) {
-            return "Connected to Gemini AI Provider";
+            if (modelName != null && !modelName.isEmpty()) {
+                return "Connected to " + providerName + " (" + modelName + ")";
+            }
+            return "Connected to " + providerName + " AI Provider";
         }
-        return "Error: Gemini API Key is not configured. Please set your API Key in Models setting.";
+        return "Error: " + providerName + " API Key is not configured. Please set your API Key in Models setting.";
     }
 }
