@@ -33,7 +33,11 @@ public class ModelConnectionManager {
         AiRouter router = AiRouter.getInstance();
         router.loadActiveProvider(context);
         String providerName = router.getActiveProviderName();
+        String modelName = router.getActiveModelName(providerName);
         if (isConnectedAndConfigured(context)) {
+            if (modelName != null && !modelName.isEmpty()) {
+                return "Connected to " + providerName + " (" + modelName + ")";
+            }
             return "Connected to " + providerName + " AI Provider";
         }
         return "Error: " + providerName + " API Key is not configured. Please set your API Key in Models setting.";

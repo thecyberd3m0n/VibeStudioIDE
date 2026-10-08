@@ -209,7 +209,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
             return;
         }
 
-        // Standard User / Assistant Message Card
+        // Standard User / Assistant / Error Message Card
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(18, 14, 18, 14);
@@ -217,7 +217,11 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
         params.setMargins(0, 0, 0, 16);
 
-        if (msg.isUser()) {
+        if (msg.isError() || msg.getType() == ChatMessage.MessageType.ERROR) {
+            params.gravity = Gravity.LEFT;
+            params.width = MATCH_PARENT;
+            card.setBackgroundResource(R.drawable.bg_error_card);
+        } else if (msg.isUser()) {
             params.gravity = Gravity.RIGHT;
             card.setBackgroundColor(Color.parseColor("#3700B3"));
         } else {
@@ -228,14 +232,24 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
 
         TextView tvSender = new TextView(context);
         tvSender.setText(msg.getSender());
-        tvSender.setTextColor(msg.isUser() ? Color.parseColor("#03DAC6") : Color.parseColor("#BB86FC"));
+        if (msg.isError() || msg.getType() == ChatMessage.MessageType.ERROR) {
+            tvSender.setTextColor(Color.parseColor("#CF6679"));
+        } else if (msg.isUser()) {
+            tvSender.setTextColor(Color.parseColor("#03DAC6"));
+        } else {
+            tvSender.setTextColor(Color.parseColor("#BB86FC"));
+        }
         tvSender.setTextSize(12);
         tvSender.setTypeface(null, Typeface.BOLD);
         tvSender.setTextIsSelectable(true);
 
         TextView tvText = new TextView(context);
         tvText.setText(msg.getText());
-        tvText.setTextColor(Color.parseColor("#FFFFFF"));
+        if (msg.isError() || msg.getType() == ChatMessage.MessageType.ERROR) {
+            tvText.setTextColor(Color.parseColor("#FFB4AB"));
+        } else {
+            tvText.setTextColor(Color.parseColor("#FFFFFF"));
+        }
         tvText.setTextSize(14);
         tvText.setPadding(0, 4, 0, 0);
         tvText.setTextIsSelectable(true);

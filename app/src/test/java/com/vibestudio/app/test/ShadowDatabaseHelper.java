@@ -16,7 +16,7 @@ public class ShadowDatabaseHelper {
 
     @Implementation
     public boolean isEnvInitialized() {
-        return false;
+        return "true".equals(getSetting("env_initialized"));
     }
 
     @Implementation
@@ -30,7 +30,13 @@ public class ShadowDatabaseHelper {
     }
 
     @Implementation
+    public void setSetting(String key, String value) {
+        SETTINGS.put(key, value);
+    }
+
+    @Implementation
     public void setEnvInitialized(boolean value) {
+        setSetting("env_initialized", value ? "true" : "false");
     }
 
     @Implementation

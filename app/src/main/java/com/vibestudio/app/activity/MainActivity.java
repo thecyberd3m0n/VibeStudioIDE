@@ -21,6 +21,7 @@ import androidx.fragment.app.FragmentTransaction;
 import com.termux.terminal.TerminalSession;
 import com.vibestudio.app.R;
 import com.vibestudio.app.browser.BrowserManager;
+import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.fragments.ChatFragment;
 import com.vibestudio.app.fragments.LauncherFragment;
@@ -55,6 +56,9 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         mTabManager.addListener(this);
 
         mLauncherFragment = new LauncherFragment();
+
+        // Gather models for all configured providers on MainActivity start
+        AiRouter.getInstance().gatherModelsForConfiguredProviders(this, null);
 
         // Big circle launcher button switches view directly to launcher (without creating a tab)
         mBtnLauncherContainer.setOnClickListener(v -> {
@@ -338,6 +342,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             mTabStripContainer.addView(tabView);
         }
     }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);

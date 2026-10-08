@@ -7,6 +7,7 @@ import android.widget.TextView;
 
 import androidx.fragment.app.FragmentActivity;
 
+import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.db.DatabaseHelper;
 import com.vibestudio.app.test.ShadowDatabaseHelper;
 
@@ -34,8 +35,9 @@ public class ModelsFragmentTest {
     }
 
     @Test
-    public void testModelsFragmentHidesModelsWhenNoApiKey() {
+    public void testModelsFragmentHidesModelsAndBudgetWhenNoApiKey() {
         mDbHelper.saveApiKey("Gemini", "");
+        AiRouter.getInstance().setTokenBudget(RuntimeEnvironment.application, "Gemini", 100000);
 
         ModelsFragment fragment = new ModelsFragment();
         mActivity.getSupportFragmentManager().beginTransaction()
@@ -49,21 +51,20 @@ public class ModelsFragmentTest {
         Button keyBtn = findButtonWithText(root, "🔑");
         Assert.assertNotNull("Key icon button 🔑 should exist", keyBtn);
 
-        // Find toggle button ▼ or ▲
-        Button toggleBtn = findButtonWithTextContaining(root, "▼");
-        if (toggleBtn == null) {
-            toggleBtn = findButtonWithTextContaining(root, "▲");
-        }
-        Assert.assertNotNull("Collapse toggle button should exist", toggleBtn);
-
         // Models should not be rendered when no API key
-        TextView modelText = findTextViewWithTextContaining(root, "gemini-2.5-flash");
+        TextView modelText = findTextViewWithTextContaining(root, "gemini-1.5-flash");
         Assert.assertNull("Model should not be displayed when API key is missing", modelText);
+
+        // Budget should not be rendered when no API key
+        TextView budgetText = findTextViewWithTextContaining(root, "tokens used");
+        Assert.assertNull("Budget bar should not be shown when API key is missing", budgetText);
     }
 
     @Test
-    public void testModelsFragmentDisplaysCustomModelsWhenApiKeyPresent() {
+    public void testModelsFragmentDisplaysCustomModelsAndBudgetWhenApiKeyPresent() {
         mDbHelper.saveApiKey("Gemini", "test_key_123");
+        AiRouter.getInstance().setTokenBudget(RuntimeEnvironment.application, "Gemini", 100000);
+        AiRouter.getInstance().addUsedTokens(RuntimeEnvironment.application, "Gemini", 500);
 
         ModelsFragment fragment = new ModelsFragment();
         mActivity.getSupportFragmentManager().beginTransaction()
@@ -73,8 +74,32 @@ public class ModelsFragmentTest {
         View root = fragment.getView();
         Assert.assertNotNull("Fragment view should not be null", root);
 
-        TextView modelText = findTextViewWithTextContaining(root, "gemini-2.5-flash");
+        TextView modelText = findTextViewWithTextContaining(root, "gemini-1.5-flash");
         Assert.assertNotNull("Model should be displayed when API key is present", modelText);
+
+        TextView budgetText = findTextViewWithTextContaining(root, "tokens used");
+        Assert.assertNotNull("Budget bar should be shown when API key is present and budget is set", budgetText);
+    }
+
+    @Test
+    public void testClickingProviderTitleTriggersApiKeyDialogWhenNoKey() {
+        mDbHelper.saveApiKey("Gemini", "");
+
+        ModelsFragment fragment = new ModelsFragment();
+        mActivity.getSupportFragmentManager().beginTransaction()
+                .add(android.R.id.content, fragment)
+                .commitNow();
+
+        View root = fragment.getView();
+        Assert.assertNotNull("Fragment view should not be null", root);
+
+        TextView titleView = findTextViewWithTextContaining(root, "Gemini");
+        Assert.assertNotNull("Provider title should exist", titleView);
+
+        titleView.performClick();
+
+        android.app.AlertDialog dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog();
+        Assert.assertNotNull("AlertDialog for API key entry should be shown on title click when key is missing", dialog);
     }
 
     private Button findButtonWithText(View view, String text) {
@@ -87,22 +112,6 @@ public class ModelsFragmentTest {
             ViewGroup vg = (ViewGroup) view;
             for (int i = 0; i < vg.getChildCount(); i++) {
                 Button res = findButtonWithText(vg.getChildAt(i), text);
-                if (res != null) return res;
-            }
-        }
-        return null;
-    }
-
-    private Button findButtonWithTextContaining(View view, String text) {
-        if (view instanceof Button) {
-            Button b = (Button) view;
-            if (b.getText() != null && b.getText().toString().contains(text)) {
-                return b;
-            }
-        } else if (view instanceof ViewGroup) {
-            ViewGroup vg = (ViewGroup) view;
-            for (int i = 0; i < vg.getChildCount(); i++) {
-                Button res = findButtonWithTextContaining(vg.getChildAt(i), text);
                 if (res != null) return res;
             }
         }
