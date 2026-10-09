@@ -17,6 +17,8 @@ import androidx.fragment.app.Fragment;
 
 import com.vibestudio.app.R;
 import com.vibestudio.app.service.LogViewerService;
+import com.vibestudio.app.tab.TabItem;
+import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.util.FontUtils;
 
 import java.io.BufferedReader;
@@ -94,7 +96,9 @@ public class EditorFragment extends Fragment {
             mCodeEditor.subscribeEvent(ContentChangeEvent.class, (event, unsubscribe) -> {
                 if (!mIsLoading && !mIsSaving && mCodeEditor != null) {
                     String current = mCodeEditor.getText().toString();
-                    boolean modified = mFilePath != null && !mFilePath.isEmpty() && !current.equals(mSavedContent);
+                    boolean modified = (mFilePath != null && !mFilePath.isEmpty())
+                            ? !current.equals(mSavedContent)
+                            : !current.isEmpty();
                     runOnMainThread(() -> updateSaveButtonState(modified));
                 }
             });
@@ -126,6 +130,31 @@ public class EditorFragment extends Fragment {
             mBtnSave.setEnabled(modified);
             mBtnSave.setAlpha(modified ? 1.0f : 0.4f);
         }
+
+        updateTabTitleWithStar(modified);
+    }
+
+    private void updateTabTitleWithStar(boolean modified) {
+        TabItem tab = TabManager.getInstance().findTabByFragment(this);
+        if (tab == null) return;
+
+        String baseTitle = getBaseTitle(tab);
+        String targetTitle = modified ? baseTitle + " *" : baseTitle;
+
+        if (!targetTitle.equals(tab.getTitle())) {
+            TabManager.getInstance().updateTabTitle(tab, targetTitle);
+        }
+    }
+
+    private String getBaseTitle(TabItem tab) {
+        if (mFilePath != null && !mFilePath.isEmpty()) {
+            return new File(mFilePath).getName();
+        }
+        String currentTitle = tab.getTitle();
+        if (currentTitle != null && currentTitle.endsWith(" *")) {
+            return currentTitle.substring(0, currentTitle.length() - 2);
+        }
+        return currentTitle != null ? currentTitle : "Editor";
     }
 
     public void performSave() {
