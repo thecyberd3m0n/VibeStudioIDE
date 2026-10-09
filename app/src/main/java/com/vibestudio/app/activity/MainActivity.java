@@ -24,6 +24,7 @@ import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.fragments.ChatFragment;
 import com.vibestudio.app.fragments.EditorFragment;
+import com.vibestudio.app.fragments.FilesFragment;
 import com.vibestudio.app.fragments.LauncherFragment;
 import com.vibestudio.app.fragments.SettingsFragment;
 import com.vibestudio.app.fragments.TerminalFragment;
@@ -37,7 +38,7 @@ import com.vibestudio.app.util.IntentUtils;
 import java.io.File;
 import java.util.List;
 
-public class MainActivity extends FragmentActivity implements TabManager.TabListener {
+public class MainActivity extends FragmentActivity implements TabManager.TabListener, FilesFragment.FileSelectionListener {
 
     public static final String ACTION_EDIT_FILE = "com.vibestudio.app.ACTION_EDIT_FILE";
     public static final String EXTRA_FILE_PATH = "file_path";
@@ -88,6 +89,13 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         }
 
         handleIncomingIntent(getIntent());
+    }
+
+    @Override
+    public void onFileSelected(File file) {
+        if (file != null) {
+            openFileInEditor(file.getAbsolutePath());
+        }
     }
 
     public void openFileInEditor(String filePath) {
@@ -148,7 +156,6 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             }
         }
     }
-
 
     private void showLauncherOverlay() {
         mTabManager.clearActiveSelection();
@@ -262,7 +269,6 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
     public void onTabAdded(TabItem tab) {
         renderTabs();
         if (tab.getFragment() != null) {
-            // Background tabs (not currently active) are added as hidden. Active tabs are handled in displayTabFragment via onTabSelected.
             if (mTabManager.getActiveTab() != tab) {
                 FragmentManager fm = getSupportFragmentManager();
                 Fragment f = tab.getFragment();
@@ -413,6 +419,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             mTabStripContainer.addView(tabView);
         }
     }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);

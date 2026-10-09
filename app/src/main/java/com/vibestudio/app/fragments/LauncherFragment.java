@@ -24,6 +24,10 @@ public class  LauncherFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_launcher, container, false);
 
+        view.findViewById(R.id.btn_launch_files).setOnClickListener(v -> {
+            TabManager.getInstance().openTab(TabType.FILES, new FilesFragment());
+        });
+
         view.findViewById(R.id.btn_launch_chat).setOnClickListener(v -> {
             TabManager.getInstance().openTab(TabType.CHAT, new ChatFragment());
         });

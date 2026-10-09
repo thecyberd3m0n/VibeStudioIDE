@@ -63,7 +63,59 @@
 
         <!-- Grid / List of Launcher Options -->
 
-        <!-- Option 1: Assistant Chat -->
+        <!-- Option 1: File Manager -->
+        <LinearLayout
+            android:id="@+id/btn_launch_files"
+            android:layout_width="-1px"
+            android:layout_height="-2px"
+            android:orientation="horizontal"
+            android:background="#1E1E28"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp"
+            android:gravity="center_vertical"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:text="📁"
+                android:textSize="24sp"
+                android:gravity="center"
+                android:background="#2A2A38"/>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="-2px"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:paddingLeft="16dp">
+
+                <TextView
+                    android:layout_width="-2px"
+                    android:layout_height="-2px"
+                    android:text="Open File Manager"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:layout_width="-2px"
+                    android:layout_height="-2px"
+                    android:text="Browse Termux workspace files and directories"
+                    android:textColor="#8E8E93"
+                    android:textSize="12sp"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="-2px"
+                android:layout_height="-2px"
+                android:text="➔"
+                android:textColor="#BB86FC"
+                android:textSize="18sp"/>
+        </LinearLayout>
+
+        <!-- Option 2: Assistant Chat -->
         <LinearLayout
             android:id="@+id/btn_launch_chat"
             android:layout_width="match_parent"
@@ -115,7 +167,7 @@
                 android:textSize="18sp"/>
         </LinearLayout>
 
-        <!-- Option 2: Browser -->
+        <!-- Option 3: Browser -->
         <LinearLayout
             android:id="@+id/btn_launch_browser"
             android:layout_width="match_parent"
@@ -167,7 +219,7 @@
                 android:textSize="18sp"/>
         </LinearLayout>
 
-        <!-- Option 3: Terminal -->
+        <!-- Option 4: Terminal -->
         <LinearLayout
             android:id="@+id/btn_launch_terminal"
             android:layout_width="match_parent"

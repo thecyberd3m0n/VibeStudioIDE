@@ -49,6 +49,10 @@ public class TerminalSessionManager {
     }
 
     public synchronized TerminalSession createSession(final Context context) {
+        return createSession(context, null);
+    }
+
+    public synchronized TerminalSession createSession(final Context context, String initialCwd) {
         if (context == null) return null;
 
         try {
@@ -102,7 +106,7 @@ public class TerminalSessionManager {
                     "TERMUX_PKG_NO_MIRROR_SELECT=1"
             };
 
-            String cwd = homeDir.getAbsolutePath();
+            String cwd = (initialCwd != null && new File(initialCwd).isDirectory()) ? initialCwd : homeDir.getAbsolutePath();
             String[] args = bashFile.exists() ? new String[]{"-bash"} : new String[]{shellPath};
 
             TerminalSessionClient sessionClient = new TerminalSessionClient() {
