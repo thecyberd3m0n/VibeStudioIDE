@@ -13,11 +13,11 @@ if [ ! -f "libs/android.jar" ]; then
     rm -f libs/platform-30.zip
 fi
 
-# 2. Download dependencies via Maven
+# 2. Download dependencies via Maven (only compile scope)
 echo "=== Resolving dependencies via Maven ==="
 rm -rf libs/deps
 mkdir -p libs/deps
-mvn dependency:copy-dependencies -DoutputDirectory=libs/deps -q
+mvn dependency:copy-dependencies -DoutputDirectory=libs/deps -DincludeScope=compile -q
 rm -f libs/deps/collection-1.0.0.jar
 
 # 3. Extract classes.jar and resources from all AAR files in libs/deps
@@ -47,6 +47,7 @@ EXTRA_PKGS=${EXTRA_PKGS#:}
 
 # Deduplicate conflicting jars
 rm -f libs/deps/annotation-1.1.0.jar libs/deps/annotation-1.0.0.jar libs/deps/annotation-1.2.0.jar libs/deps/annotation-1.6.0.jar
+rm -f libs/deps/listenablefuture-*.jar
 rm -f libs/deps/kotlin-stdlib-jdk7-*.jar libs/deps/kotlin-stdlib-jdk8-*.jar libs/deps/kotlin-stdlib-common-*.jar
 
 # Build Classpath for Kotlin / Java
