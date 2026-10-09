@@ -12,6 +12,7 @@ import android.webkit.WebView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
@@ -23,6 +24,7 @@ import com.vibestudio.app.R;
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.fragments.ChatFragment;
+import com.vibestudio.app.fragments.FilesFragment;
 import com.vibestudio.app.fragments.LauncherFragment;
 import com.vibestudio.app.fragments.SettingsFragment;
 import com.vibestudio.app.fragments.TerminalFragment;
@@ -32,9 +34,10 @@ import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
 
+import java.io.File;
 import java.util.List;
 
-public class MainActivity extends FragmentActivity implements TabManager.TabListener {
+public class MainActivity extends FragmentActivity implements TabManager.TabListener, FilesFragment.FileSelectionListener {
 
     private LinearLayout mTabStripContainer;
     private View mBtnLauncherContainer;
@@ -78,6 +81,12 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         mTabManager.removeListener(this);
     }
 
+    @Override
+    public void onFileSelected(File file) {
+        Toast.makeText(this, "Opening file: " + file.getName(), Toast.LENGTH_SHORT).show();
+        // Here, when Editor tab/branch is merged, you can open file in Editor tab
+    }
+
     public void hideSoftKeyboard() {
         View currentFocus = getCurrentFocus();
         if (currentFocus != null) {
@@ -94,29 +103,21 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         FragmentManager fm = getSupportFragmentManager();
         FragmentTransaction ft = fm.beginTransaction();
 
-        // Re-instantiate launcher overlay if added to another FragmentManager
-        if (mLauncherFragment.isAdded() && mLauncherFragment.getFragmentManager() != fm) {
-            mLauncherFragment = new LauncherFragment();
-        }
-
         // Hide all tabs
         for (TabItem tab : mTabManager.getTabs()) {
             Fragment f = tab.getFragment();
-            if (f != null && f.isAdded() && f.getFragmentManager() == fm) {
+            if (f != null && f.isAdded()) {
                 ft.hide(f);
             }
         }
 
-        // Also hide any fragments attached to fm that are not launcher overlay
-        for (Fragment f : fm.getFragments()) {
-            if (f != null && f.isAdded() && f != mLauncherFragment && f.getFragmentManager() == fm) {
-                ft.hide(f);
-            }
+        if (mLauncherFragment == null) {
+            mLauncherFragment = new LauncherFragment();
         }
 
         if (!mLauncherFragment.isAdded()) {
             ft.add(R.id.content_frame, mLauncherFragment, "launcher_overlay");
-        } else if (mLauncherFragment.getFragmentManager() == fm) {
+        } else {
             ft.show(mLauncherFragment);
         }
 
@@ -196,7 +197,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                     ft.add(R.id.content_frame, f, tab.getId());
                     ft.hide(f);
                     ft.commitAllowingStateLoss();
-                } else if (f.getFragmentManager() == fm) {
+                } else {
                     FragmentTransaction ft = fm.beginTransaction();
                     ft.hide(f);
                     ft.commitAllowingStateLoss();
@@ -217,7 +218,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         if (frag != null) {
             FragmentManager fm = getSupportFragmentManager();
-            if (frag.getFragmentManager() == fm) {
+            if (frag.isAdded()) {
                 fm.beginTransaction()
                         .remove(frag)
                         .commitAllowingStateLoss();
@@ -248,7 +249,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         FragmentTransaction ft = fm.beginTransaction();
 
         // Always hide launcher overlay when displaying active tab fragment
-        if (mLauncherFragment != null && mLauncherFragment.isAdded() && mLauncherFragment.getFragmentManager() == fm) {
+        if (mLauncherFragment != null && mLauncherFragment.isAdded()) {
             ft.hide(mLauncherFragment);
         }
 
@@ -256,17 +257,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         for (TabItem tab : mTabManager.getTabs()) {
             Fragment f = tab.getFragment();
-            if (f != null && f.isAdded() && f.getFragmentManager() == fm) {
-                if (f == target) {
-                    ft.show(f);
-                } else {
-                    ft.hide(f);
-                }
-            }
-        }
-
-        for (Fragment f : fm.getFragments()) {
-            if (f != null && f.isAdded() && f != mLauncherFragment && f.getFragmentManager() == fm) {
+            if (f != null && f.isAdded()) {
                 if (f == target) {
                     ft.show(f);
                 } else {
@@ -277,7 +268,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         if (!target.isAdded()) {
             ft.add(R.id.content_frame, target, activeTab.getId());
-        } else if (target.getFragmentManager() == fm) {
+        } else {
             ft.show(target);
         }
 
@@ -338,6 +329,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             mTabStripContainer.addView(tabView);
         }
     }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
