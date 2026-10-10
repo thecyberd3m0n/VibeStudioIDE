@@ -15,6 +15,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.vibestudio.app.editor.TextMateManager;
 import com.vibestudio.app.R;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.tab.TabItem;
@@ -84,10 +85,7 @@ public class EditorFragment extends Fragment {
         updateSaveButtonState(false);
 
         if (mCodeEditor != null) {
-            SchemeDarcula darkScheme = new SchemeDarcula();
-            darkScheme.setColor(EditorColorScheme.WHOLE_BACKGROUND, 0xFF1E1E2E);
-            darkScheme.setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, 0xFF181825);
-            mCodeEditor.setColorScheme(darkScheme);
+            TextMateManager.getInstance().applyLanguageAndTheme(getContext(), mCodeEditor, mFilePath);
 
             Typeface monoTypeface = FontUtils.getMonospaceTypeface(getContext());
             mCodeEditor.setTypefaceText(monoTypeface);
@@ -178,6 +176,9 @@ public class EditorFragment extends Fragment {
     public void loadFileContent(String filePath) {
         this.mFilePath = filePath;
         updateFilePathUI();
+        if (mCodeEditor != null && getContext() != null) {
+            TextMateManager.getInstance().applyLanguageAndTheme(getContext(), mCodeEditor, mFilePath);
+        }
 
         File file = new File(filePath);
         if (!file.exists()) {
