@@ -119,7 +119,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         mFlContentContainer = view.findViewById(R.id.fl_content_container);
         mTvEmptyState = view.findViewById(R.id.tv_empty_state);
 
-        mBtnNewFolder.setOnClickListener(v -> showCreateFolderDialog());
+        mBtnNewFolder.setOnClickListener(v -> showAddMenu(v));
 
         loadDirectory(mCurrentDir);
 
@@ -353,6 +353,67 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         }
     }
 
+    private void showAddMenu(View anchor) {
+        if (getContext() == null) return;
+        Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault);
+        PopupMenu popup = new PopupMenu(themedContext, anchor);
+
+        popup.getMenu().add(0, 0, 0, "New File");
+        popup.getMenu().add(0, 1, 1, "New Directory");
+
+        popup.setOnMenuItemClickListener(menuItem -> {
+            if (menuItem.getItemId() == 0) {
+                showCreateFileDialog();
+                return true;
+            } else if (menuItem.getItemId() == 1) {
+                showCreateFolderDialog();
+                return true;
+            }
+            return false;
+        });
+        popup.show();
+    }
+
+    private void showCreateFileDialog() {
+        if (getContext() == null) return;
+        Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(themedContext);
+        builder.setTitle("Create New File");
+
+        final EditText input = new EditText(themedContext);
+        input.setHint("File name");
+        input.setTextColor(0xFFFFFFFF);
+        input.setHintTextColor(0x88FFFFFF);
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        builder.setView(input);
+
+        builder.setPositiveButton("Create", (dialog, which) -> {
+            String fileName = input.getText().toString().trim();
+            if (!fileName.isEmpty()) {
+                File newFile = new File(mCurrentDir, fileName);
+                if (newFile.exists()) {
+                    Toast.makeText(getContext(), "File already exists", Toast.LENGTH_SHORT).show();
+                } else {
+                    try {
+                        if (newFile.createNewFile()) {
+                            Toast.makeText(getContext(), "File created", Toast.LENGTH_SHORT).show();
+                            loadDirectory(mCurrentDir);
+                            if (mSelectionListener != null) {
+                                mSelectionListener.onFileSelected(newFile);
+                            }
+                        } else {
+                            Toast.makeText(getContext(), "Failed to create file", Toast.LENGTH_SHORT).show();
+                        }
+                    } catch (IOException e) {
+                        Toast.makeText(getContext(), "Error creating file: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+        });
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
+
     private void showCreateFolderDialog() {
         if (getContext() == null) return;
         Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
@@ -375,7 +436,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 } else {
                     if (newDir.mkdirs()) {
                         Toast.makeText(getContext(), "Directory created", Toast.LENGTH_SHORT).show();
-                        loadDirectory(mCurrentDir);
+                        navigateToDirectory(newDir, true);
                     } else {
                         Toast.makeText(getContext(), "Failed to create directory", Toast.LENGTH_SHORT).show();
                     }
