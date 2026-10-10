@@ -41,6 +41,7 @@ import com.termux.terminal.KeyHandler;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.textselection.TextSelectionCursorController;
+import com.vibestudio.app.util.FontUtils;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
 public final class TerminalView extends View {
@@ -137,7 +138,7 @@ public final class TerminalView extends View {
         super(context, attributes);
         if (mRenderer == null) {
             int defaultTextSize = (int) (12 * context.getResources().getDisplayMetrics().density);
-            mRenderer = new TerminalRenderer(defaultTextSize, Typeface.MONOSPACE);
+            mRenderer = new TerminalRenderer(defaultTextSize, FontUtils.getMonospaceTypeface(getContext()));
         }
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
 
@@ -516,7 +517,7 @@ public final class TerminalView extends View {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
-        mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
+        mRenderer = new TerminalRenderer(textSize, mRenderer == null ? FontUtils.getMonospaceTypeface(getContext()) : mRenderer.mTypeface);
         updateSize();
     }
 

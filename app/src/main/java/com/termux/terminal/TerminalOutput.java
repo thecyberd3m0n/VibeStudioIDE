@@ -29,4 +29,7 @@ public abstract class TerminalOutput {
 
     public abstract void onColorsChanged();
 
+    /** Notify the terminal client that a file edit has been requested. */
+    public abstract void onFileEditRequested(String filePath);
+
 }

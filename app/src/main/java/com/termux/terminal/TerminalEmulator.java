@@ -2148,6 +2148,12 @@ public final class TerminalEmulator {
                 break;
             case 119: // Reset highlight color.
                 break;
+            case 777: // Custom OSC for VibeStudio
+                if (textParameter.startsWith("edit;")) {
+                    String filePath = textParameter.substring(5);
+                    mSession.onFileEditRequested(filePath);
+                }
+                break;
             default:
                 unknownParameter(value);
                 break;

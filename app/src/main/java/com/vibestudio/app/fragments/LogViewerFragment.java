@@ -20,6 +20,7 @@ import androidx.fragment.app.Fragment;
 
 import com.vibestudio.app.R;
 import com.vibestudio.app.service.LogViewerService;
+import com.vibestudio.app.util.FontUtils;
 
 public class LogViewerFragment extends Fragment implements LogViewerService.OnLogListener {
 
@@ -34,16 +35,21 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         View view = inflater.inflate(R.layout.fragment_log_viewer, container, false);
 
         mTvLogContent = view.findViewById(R.id.tv_log_content);
+        if (mTvLogContent != null) {
+            mTvLogContent.setTypeface(FontUtils.getMonospaceTypeface(getContext()));
+        }
         mScrollView = view.findViewById(R.id.log_scroll_view);
         Button btnCopy = view.findViewById(R.id.btn_copy_logs);
         Button btnClear = view.findViewById(R.id.btn_clear_logs);
 
         mLogService = LogViewerService.getInstance();
-        mTvLogContent.setText(mLogService.getAllLogs());
+        if (mTvLogContent != null) {
+            mTvLogContent.setText(mLogService.getAllLogs());
+        }
 
         btnCopy.setOnClickListener(v -> {
             Context context = getContext();
-            if (context != null) {
+            if (context != null && mTvLogContent != null) {
                 ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
                 ClipData clip = ClipData.newPlainText("VibeStudio Logs", mTvLogContent.getText().toString());
                 if (clipboard != null) {
@@ -63,7 +69,9 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         super.onStart();
         if (mLogService != null) {
             mLogService.addListener(this);
-            mTvLogContent.setText(mLogService.getAllLogs());
+            if (mTvLogContent != null) {
+                mTvLogContent.setText(mLogService.getAllLogs());
+            }
             scrollToBottom();
         }
     }

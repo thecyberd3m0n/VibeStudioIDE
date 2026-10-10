@@ -2,9 +2,11 @@ package com.vibestudio.app.tab;
 
 public enum TabType {
     LAUNCHER("Launcher", "📱"),
+    FILES("Files", "📁"),
     CHAT("Assistant Chat", "💬"),
     BROWSER("Browser", "🌐"),
     TERMINAL("Terminal", "💻"),
+    EDITOR("Editor", "📝"),
     SETTINGS("Settings", "⚙️");
 
     private final String defaultTitle;

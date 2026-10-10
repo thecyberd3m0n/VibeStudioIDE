@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="-1px"
-    android:layout_height="-1px"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
     android:background="#121212"
     android:fillViewport="true">
 
     <LinearLayout
-        android:layout_width="-1px"
-        android:layout_height="-2px"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:orientation="vertical"
         android:padding="24dp"
         android:gravity="center_horizontal">
 
         <!-- Header / Logo banner -->
         <LinearLayout
-            android:layout_width="-1px"
-            android:layout_height="-2px"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingBottom="24dp">
@@ -32,22 +32,22 @@
 
             <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="-2px"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
                 android:paddingLeft="16dp">
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="VibeStudio Launcher"
                     android:textColor="#03DAC6"
                     android:textSize="22sp"
                     android:textStyle="bold"/>
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Select a tool to start a new session"
                     android:textColor="#A0A0A0"
                     android:textSize="13sp"/>
@@ -56,18 +56,70 @@
 
         <!-- Divider -->
         <View
-            android:layout_width="-1px"
+            android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="#2C2C38"
             android:layout_marginBottom="24dp"/>
 
         <!-- Grid / List of Launcher Options -->
 
-        <!-- Option 1: Assistant Chat -->
+        <!-- Option 1: File Manager -->
+        <LinearLayout
+            android:id="@+id/btn_launch_files"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:background="#1E1E28"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp"
+            android:gravity="center_vertical"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:text="📁"
+                android:textSize="24sp"
+                android:gravity="center"
+                android:background="#2A2A38"/>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:paddingLeft="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Open File Manager"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Browse Termux workspace files and directories"
+                    android:textColor="#8E8E93"
+                    android:textSize="12sp"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="➔"
+                android:textColor="#BB86FC"
+                android:textSize="18sp"/>
+        </LinearLayout>
+
+        <!-- Option 2: Assistant Chat -->
         <LinearLayout
             android:id="@+id/btn_launch_chat"
-            android:layout_width="-1px"
-            android:layout_height="-2px"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:background="#1E1E28"
             android:padding="16dp"
@@ -86,40 +138,40 @@
 
             <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="-2px"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
                 android:paddingLeft="16dp">
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Open Assistant Chat"
                     android:textColor="#FFFFFF"
                     android:textSize="16sp"
                     android:textStyle="bold"/>
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Start an AI workspace chat session with local tools"
                     android:textColor="#8E8E93"
                     android:textSize="12sp"/>
             </LinearLayout>
 
             <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="➔"
                 android:textColor="#BB86FC"
                 android:textSize="18sp"/>
         </LinearLayout>
 
-        <!-- Option 2: Browser -->
+        <!-- Option 3: Browser -->
         <LinearLayout
             android:id="@+id/btn_launch_browser"
-            android:layout_width="-1px"
-            android:layout_height="-2px"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:background="#1E1E28"
             android:padding="16dp"
@@ -138,40 +190,40 @@
 
             <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="-2px"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
                 android:paddingLeft="16dp">
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Open Browser"
                     android:textColor="#FFFFFF"
                     android:textSize="16sp"
                     android:textStyle="bold"/>
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Launch integrated web view with AI browser MCP"
                     android:textColor="#8E8E93"
                     android:textSize="12sp"/>
             </LinearLayout>
 
             <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="➔"
                 android:textColor="#BB86FC"
                 android:textSize="18sp"/>
         </LinearLayout>
 
-        <!-- Option 3: Terminal -->
+        <!-- Option 4: Terminal -->
         <LinearLayout
             android:id="@+id/btn_launch_terminal"
-            android:layout_width="-1px"
-            android:layout_height="-2px"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:background="#1E1E28"
             android:padding="16dp"
@@ -190,40 +242,40 @@
 
             <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="-2px"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
                 android:paddingLeft="16dp">
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Open Terminal"
                     android:textColor="#FFFFFF"
                     android:textSize="16sp"
                     android:textStyle="bold"/>
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Open local terminal session with full PTY/shell support"
                     android:textColor="#8E8E93"
                     android:textSize="12sp"/>
             </LinearLayout>
 
             <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="➔"
                 android:textColor="#BB86FC"
                 android:textSize="18sp"/>
         </LinearLayout>
 
-        <!-- Option 4: Settings -->
+        <!-- Option 5: Settings -->
         <LinearLayout
             android:id="@+id/btn_launch_settings"
-            android:layout_width="-1px"
-            android:layout_height="-2px"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:background="#1E1E28"
             android:padding="16dp"
@@ -242,30 +294,30 @@
 
             <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="-2px"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
                 android:paddingLeft="16dp">
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Settings"
                     android:textColor="#FFFFFF"
                     android:textSize="16sp"
                     android:textStyle="bold"/>
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Configure AI models, permissions, logs &amp; system options"
                     android:textColor="#8E8E93"
                     android:textSize="12sp"/>
             </LinearLayout>
 
             <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="➔"
                 android:textColor="#BB86FC"
                 android:textSize="18sp"/>

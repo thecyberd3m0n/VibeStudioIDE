@@ -7,6 +7,8 @@ import com.vibestudio.app.view.BaseToolMessageView;
 import com.vibestudio.app.view.BrowserLogsToolMessage;
 import com.vibestudio.app.view.BrowserToolMessage;
 import com.vibestudio.app.view.CustomStatusToolMessage;
+import com.vibestudio.app.view.EditorToolMessage;
+import com.vibestudio.app.view.FileToolMessage;
 import com.vibestudio.app.view.TerminalToolMessage;
 
 public class ToolMessageFactory {
@@ -39,6 +41,14 @@ public class ToolMessageFactory {
                 CustomStatusToolMessage statusView = new CustomStatusToolMessage(context);
                 statusView.bind(msg);
                 return statusView;
+            } else if (text.contains("file_") || text.contains("\"file\"") || text.contains("\"file_")) {
+                FileToolMessage fileView = new FileToolMessage(context);
+                fileView.bind(msg);
+                return fileView;
+            } else if (text.contains("editor_") || text.contains("\"editor\"") || text.contains("\"editor_")) {
+                EditorToolMessage editorView = new EditorToolMessage(context);
+                editorView.bind(msg);
+                return editorView;
             } else if (text.contains("browser_") || text.contains("\"browser\"")) {
                 if (text.contains("read_browser_logs") || text.contains("browser_logs")) {
                     BrowserLogsToolMessage logsView = new BrowserLogsToolMessage(context);

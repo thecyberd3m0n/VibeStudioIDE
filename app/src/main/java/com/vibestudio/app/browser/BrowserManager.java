@@ -250,9 +250,6 @@ public class BrowserManager {
         return sb.toString();
     }
 
-    public synchronized void clearBrowserLogs() {
-        mBrowserLogBuffer.clear();
-    }
 
     public boolean isWebViewAvailable(WebView webView) {
         return webView != null;
@@ -425,7 +422,9 @@ public class BrowserManager {
                 "  var el = document.querySelector('" + selector.replace("'", "\\'") + "'); " +
                 "  if (!el) return 'Element not found: " + selector.replace("'", "\\'") + "'; " +
                 "  el.focus(); " +
-                "  el.value = '" + escapedText + "'; " +
+                "  var nativeSetter = (Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value') || {}).set " +
+                "    || (Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value') || {}).set; " +
+                "  if (nativeSetter) { nativeSetter.call(el, '" + escapedText + "'); } else { el.value = '" + escapedText + "'; } " +
                 "  el.dispatchEvent(new Event('input', { bubbles: true })); " +
                 "  el.dispatchEvent(new Event('change', { bubbles: true })); " +
                 "  return 'Text entered successfully'; " +

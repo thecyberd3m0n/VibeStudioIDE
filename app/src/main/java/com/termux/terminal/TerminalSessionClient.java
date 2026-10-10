@@ -48,4 +48,5 @@ public interface TerminalSessionClient {
 
     void logStackTrace(String tag, Exception e);
 
+    void onFileEditRequested(@NonNull TerminalSession session, String filePath);
 }

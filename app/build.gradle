@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace 'com.vibestudio.app'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.vibestudio.app"
@@ -57,7 +57,9 @@ dependencies {
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'io.modelcontextprotocol.sdk:mcp:2.0.0'
-// Point to the core library module inside your submodule
+    implementation 'io.github.rosemoe:editor:0.24.6'
+    implementation 'io.github.rosemoe:language-textmate:0.24.6'
+
     implementation project(':core')
     implementation project(':terminal-view')
     implementation project(':bootstrap-arm64')

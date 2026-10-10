@@ -12,6 +12,7 @@ import androidx.fragment.app.FragmentActivity;
 
 import com.vibestudio.app.activity.MainActivity;
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.util.FontUtils;
 
 public abstract class BaseToolMessageView extends LinearLayout {
 
@@ -36,6 +37,8 @@ public abstract class BaseToolMessageView extends LinearLayout {
         containerParams.setMargins(0, 8, 0, 8);
         setLayoutParams(containerParams);
 
+        Typeface monoTypeface = FontUtils.getMonospaceTypeface(context);
+
         // --- HEADER LAYOUT ---
         mHeaderLayout = new LinearLayout(context);
         mHeaderLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -52,7 +55,7 @@ public abstract class BaseToolMessageView extends LinearLayout {
         mTvHeaderTitle.setText(getHeaderTitle());
         mTvHeaderTitle.setTextColor(Color.parseColor("#CCCCCC"));
         mTvHeaderTitle.setTextSize(13);
-        mTvHeaderTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        mTvHeaderTitle.setTypeface(monoTypeface, Typeface.BOLD);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1.0f);
         mTvHeaderTitle.setLayoutParams(titleParams);
 
@@ -76,7 +79,7 @@ public abstract class BaseToolMessageView extends LinearLayout {
         mTvBodyContent = new TextView(context);
         mTvBodyContent.setTextColor(Color.parseColor("#A0A0A0"));
         mTvBodyContent.setTextSize(12);
-        mTvBodyContent.setTypeface(Typeface.MONOSPACE);
+        mTvBodyContent.setTypeface(monoTypeface);
         mTvBodyContent.setTextIsSelectable(false); // Disables internal text-selection touch stealing so body click fires
 
         mBodyLayout.addView(mTvBodyContent);

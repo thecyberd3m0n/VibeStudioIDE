@@ -1,10 +1,10 @@
 package com.vibestudio.app.activity;
 
-import android.content.Intent;
-import com.vibestudio.app.util.IntentUtils;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -24,6 +24,8 @@ import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.fragments.ChatFragment;
+import com.vibestudio.app.fragments.EditorFragment;
+import com.vibestudio.app.fragments.FilesFragment;
 import com.vibestudio.app.fragments.LauncherFragment;
 import com.vibestudio.app.fragments.SettingsFragment;
 import com.vibestudio.app.fragments.TerminalFragment;
@@ -32,10 +34,12 @@ import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
+import com.vibestudio.app.util.IntentUtils;
 
+import java.io.File;
 import java.util.List;
 
-public class MainActivity extends FragmentActivity implements TabManager.TabListener {
+public class MainActivity extends FragmentActivity implements TabManager.TabListener, FilesFragment.FileSelectionListener {
 
     private LinearLayout mTabStripContainer;
     private View mBtnLauncherContainer;
@@ -57,6 +61,11 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         mLauncherFragment = new LauncherFragment();
 
+
+        TerminalSessionManager.getInstance().setSessionEventListener(filePath -> {
+            runOnUiThread(() -> openFileInEditor(filePath));
+        });
+
         // Gather models for all configured providers on MainActivity start
         AiRouter.getInstance().gatherModelsForConfiguredProviders(this, null);
 
@@ -77,8 +86,45 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
     }
 
     @Override
+    public void onFileSelected(File file) {
+        if (file != null) {
+            openFileInEditor(file.getAbsolutePath());
+        }
+    }
+
+    public void openFileInEditor(String filePath) {
+        LogViewerService.getInstance().i("MainActivity", "openFileInEditor called for: " + filePath);
+        File file = new File(filePath);
+        String fileName = file.getName();
+
+        // Check if a tab with this file path is already open
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == TabType.EDITOR && tab.getFragment() instanceof EditorFragment) {
+                EditorFragment ef = (EditorFragment) tab.getFragment();
+                if (filePath.equals(ef.getFilePath())) {
+                    LogViewerService.getInstance().i("MainActivity", "Found existing Editor tab for: " + filePath + ", selecting tab");
+                    mTabManager.selectTab(tab);
+                    return;
+                }
+            }
+        }
+
+        // Open a new tab for this file
+        LogViewerService.getInstance().i("MainActivity", "Opening new Editor tab for: " + fileName + " (" + filePath + ")");
+        EditorFragment fragment = EditorFragment.newInstance(filePath);
+        mTabManager.openTab(
+                TabType.EDITOR,
+                fileName,
+                "📝",
+                fragment,
+                true
+        );
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
+        TerminalSessionManager.getInstance().setSessionEventListener(null);
         mTabManager.removeListener(this);
     }
 
@@ -143,6 +189,10 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             case 4: // Browser
                 type = TabType.BROWSER;
                 break;
+            case 7: // Editor
+                type = TabType.EDITOR;
+                fragment = EditorFragment.newInstance();
+                break;
             case 0: // Models
             case 1: // MCP
             case 5: // Permissions
@@ -182,6 +232,15 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                     true
             );
             return;
+        } else if (type == TabType.EDITOR) {
+            mTabManager.openTab(
+                    TabType.EDITOR,
+                    null,
+                    "📝",
+                    EditorFragment.newInstance(),
+                    true
+            );
+            return;
         }
 
         mTabManager.openTab(type, null, null, fragment, true);
@@ -191,7 +250,6 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
     public void onTabAdded(TabItem tab) {
         renderTabs();
         if (tab.getFragment() != null) {
-            // Background tabs (not currently active) are added as hidden. Active tabs are handled in displayTabFragment via onTabSelected.
             if (mTabManager.getActiveTab() != tab) {
                 FragmentManager fm = getSupportFragmentManager();
                 Fragment f = tab.getFragment();
