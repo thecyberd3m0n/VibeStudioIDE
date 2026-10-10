@@ -15,6 +15,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentManager;
@@ -84,6 +85,24 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         } else {
             showLauncherOverlay();
         }
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                TabItem activeTab = mTabManager.getActiveTab();
+                if (activeTab != null) {
+                    List<TabItem> tabs = mTabManager.getTabs();
+                    int index = tabs.indexOf(activeTab);
+                    if (index > 0) {
+                        mTabManager.selectTab(tabs.get(index - 1));
+                    } else {
+                        showLauncherOverlay();
+                    }
+                } else {
+                    finish();
+                }
+            }
+        });
 
         handleIncomingIntent(getIntent());
     }
