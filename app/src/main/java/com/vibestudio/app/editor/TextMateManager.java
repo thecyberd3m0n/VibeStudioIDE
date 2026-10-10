@@ -9,6 +9,7 @@ import io.github.rosemoe.sora.langs.textmate.TextMateLanguage;
 import io.github.rosemoe.sora.langs.textmate.registry.FileProviderRegistry;
 import io.github.rosemoe.sora.langs.textmate.registry.GrammarRegistry;
 import io.github.rosemoe.sora.langs.textmate.registry.ThemeRegistry;
+import io.github.rosemoe.sora.langs.textmate.registry.model.ThemeModel;
 import io.github.rosemoe.sora.langs.textmate.registry.provider.AssetsFileResolver;
 import io.github.rosemoe.sora.widget.CodeEditor;
 
@@ -117,29 +118,47 @@ public class TextMateManager {
 
             InputStream themeStream = appContext.getAssets().open("textmate/themes/darcula.json");
             IThemeSource themeSource = IThemeSource.fromInputStream(themeStream, "darcula.json", StandardCharsets.UTF_8);
-            ThemeRegistry.getInstance().loadTheme(themeSource);
-            ThemeRegistry.getInstance().setTheme("darcula");
+            
+            ThemeRegistry themeRegistry = ThemeRegistry.getInstance();
+            themeRegistry.loadTheme(themeSource);
+            themeRegistry.setTheme("darcula");
+
+            ThemeModel currentTheme = themeRegistry.getCurrentThemeModel();
+            if (currentTheme != null) {
+                GrammarRegistry.getInstance().setTheme(currentTheme);
+            }
 
             GrammarRegistry.getInstance().loadGrammars("textmate/languages.json");
 
             isInitialized = true;
             Log.i(TAG, "TextMate syntax highlighting initialized successfully!");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to initialize TextMate syntax highlighting", e);
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to initialize TextMate syntax highlighting: " + t.getMessage(), t);
         }
     }
 
     public void applyLanguageAndTheme(Context context, CodeEditor editor, String filePath) {
         if (context == null || editor == null) return;
-        ensureInitialized(context);
 
         try {
+            ensureInitialized(context);
+
             if (isInitialized) {
-                TextMateColorScheme colorScheme = TextMateColorScheme.create(ThemeRegistry.getInstance());
-                editor.setColorScheme(colorScheme);
+                ThemeModel currentTheme = ThemeRegistry.getInstance().getCurrentThemeModel();
+                if (currentTheme != null) {
+                    TextMateColorScheme colorScheme = TextMateColorScheme.create(ThemeRegistry.getInstance(), currentTheme);
+                    editor.setColorScheme(colorScheme);
+                } else {
+                    editor.setColorScheme(ThemeManager.getInstance().createEditorColorScheme());
+                }
+            } else {
+                editor.setColorScheme(ThemeManager.getInstance().createEditorColorScheme());
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to apply TextMate color scheme", e);
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to apply TextMate color scheme, falling back to ThemeManager default", t);
+            try {
+                editor.setColorScheme(ThemeManager.getInstance().createEditorColorScheme());
+            } catch (Throwable ignored) {}
         }
 
         String scopeName = getScopeForFile(filePath);
@@ -149,12 +168,14 @@ public class TextMateManager {
                 editor.setEditorLanguage(language);
                 Log.i(TAG, "Applied TextMate language: " + scopeName + " for " + filePath);
                 return;
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to create TextMate language for scope: " + scopeName, e);
+            } catch (Throwable t) {
+                Log.e(TAG, "Failed to create TextMate language for scope: " + scopeName + " - " + t.getMessage(), t);
             }
         }
 
-        editor.setEditorLanguage(new EmptyLanguage());
+        try {
+            editor.setEditorLanguage(new EmptyLanguage());
+        } catch (Throwable ignored) {}
     }
 
     public String getScopeForFile(String filePath) {

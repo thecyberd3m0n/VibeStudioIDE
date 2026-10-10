@@ -1,7 +1,6 @@
 package com.vibestudio.app.fragments;
 
 import android.content.Context;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -20,6 +19,7 @@ import com.termux.terminal.TerminalSession;
 import com.termux.view.TerminalView;
 import com.termux.view.TerminalViewClient;
 import com.vibestudio.app.R;
+import com.vibestudio.app.editor.ThemeManager;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
@@ -141,7 +141,7 @@ public class TerminalFragment extends Fragment {
         TerminalSessionManager tsm = TerminalSessionManager.getInstance();
 
         if (mTerminalView != null && mTerminalSession.isRunning()) {
-            mTerminalView.setBackgroundColor(Color.parseColor("#1E1E2E"));
+            mTerminalView.setBackgroundColor(ThemeManager.getInstance().getPrimaryBackgroundColor());
             mTerminalView.setTerminalViewClient(new TerminalViewClient() {
                 @Override
                 public float onScale(float scale) { return 1.0f; }

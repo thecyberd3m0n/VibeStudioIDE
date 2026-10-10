@@ -87,6 +87,11 @@
             <artifactId>mcp</artifactId>
             <version>2.0.0</version>
         </dependency>
+                <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.10.1</version>
+        </dependency>
         <!-- Sora Editor (Rosemoe Code Editor) -->
         <dependency>
             <groupId>io.github.rosemoe</groupId>
