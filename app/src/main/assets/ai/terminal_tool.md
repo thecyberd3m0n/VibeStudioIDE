@@ -2,9 +2,12 @@
 
 The `terminal` skill provides control over the active shared terminal session in VibeStudio IDE.
 
-## Interactive Prompts & Keystroke Rules
-- **Auto-respond "No" to telemetry/analytics prompts**: When interactive CLI tools prompt for optional metrics or telemetry sharing (e.g. "share anonymous statistics? y/N", "Send telemetry? y/N"), ALWAYS auto-respond "No" (send "n\n" or "N\n").
+## Non-Interactive & Automation Best Practices
+- **Prefer Non-Interactive Flags**: Whenever possible, pass non-interactive flags or environment variables to CLI tools to bypass setup wizards (e.g., `npm create vite@latest my-app -- --template react`, `npm init -y`, `CI=true npm test`, `npx --yes ...`).
+- **Auto-respond "No" to telemetry/analytics prompts**: When interactive CLI tools prompt for optional metrics or telemetry sharing (e.g. "share anonymous statistics? y/N", "Send telemetry? y/N"), respond "n" / "N".
 - **Dedicated Session**: A dedicated terminal tab is automatically opened for you the first time you execute a command. Do NOT use `terminal_open_tab` unless you specifically need to run concurrent foreground processes (like a dev server in one tab, and testing in another).
+
+## Interactive Prompts & Keystroke Rules
 - **Inject Keystrokes On Demand**: Use the `send_keystroke` tool to send any character, keycode, arrow keys, or control sequence into the terminal session whenever a command requires input or needs to navigate interactive CLI menus:
   - Navigation Arrows: `{"tool": "send_keystroke", "args": {"keystroke": "UP"}}`, `{"keystroke": "DOWN"}`, `{"keystroke": "LEFT"}`, `{"keystroke": "RIGHT"}`
   - Special Keys: `{"keystroke": "TAB"}`, `{"keystroke": "ESC"}`, `{"keystroke": "BACKSPACE"}`, `{"keystroke": "SPACE"}`, `{"keystroke": "ENTER"}`, `{"keystroke": "PAGE_UP"}`, `{"keystroke": "PAGE_DOWN"}`, `{"keystroke": "HOME"}`, `{"keystroke": "END"}`

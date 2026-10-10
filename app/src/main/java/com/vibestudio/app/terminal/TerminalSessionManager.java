@@ -355,7 +355,7 @@ public class TerminalSessionManager {
             case "ENTER":
             case "RETURN":
             case "KEY_ENTER":
-                return "\n".getBytes(StandardCharsets.UTF_8);
+                return "\r".getBytes(StandardCharsets.UTF_8);
             case "HOME":
             case "KEY_HOME":
                 return "\u001B[H".getBytes(StandardCharsets.UTF_8);
@@ -419,7 +419,7 @@ public class TerminalSessionManager {
                    .replace("CTRL+C", "\u0003").replace("ctrl+c", "\u0003")
                    .replace("CTRL+D", "\u0004").replace("ctrl+d", "\u0004")
                    .replace("CTRL+Z", "\u001A").replace("ctrl+z", "\u001A")
-                   .replace("ENTER", "\n").replace("enter", "\n")
+                   .replace("ENTER", "\r").replace("enter", "\r")
                    .replace("UP_ARROW", "\u001B[A").replace("DOWN_ARROW", "\u001B[B")
                    .replace("LEFT_ARROW", "\u001B[D").replace("RIGHT_ARROW", "\u001B[C")
                    .replace("TAB", "\t").replace("ESC", "\u001B");
@@ -442,7 +442,7 @@ public class TerminalSessionManager {
             case 21: return "\u001B[D".getBytes(StandardCharsets.UTF_8);
             case 22: return "\u001B[C".getBytes(StandardCharsets.UTF_8);
             case 61: return "\t".getBytes(StandardCharsets.UTF_8);
-            case 66: return "\n".getBytes(StandardCharsets.UTF_8);
+            case 66: return "\r".getBytes(StandardCharsets.UTF_8);
             case 67: return "\u007F".getBytes(StandardCharsets.UTF_8);
             case 111: return "\u001B".getBytes(StandardCharsets.UTF_8);
             case 112: return "\u001B[3~".getBytes(StandardCharsets.UTF_8);

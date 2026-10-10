@@ -118,13 +118,13 @@ public class FileMcpServer implements McpServer {
     public McpToolResult callTool(String toolName, Map<String, Object> arguments, Context context) {
         try {
             if ("file_list_directory".equals(toolName)) {
-                String pathArg = getStringArg(arguments, "path", "/data/data/com.termux/files/home");
-                File dir = new File(pathArg);
+                String pathArg = getStringArg(arguments, "path", "");
+                File dir = resolveFile(pathArg, context);
                 if (!dir.exists()) {
-                    return McpToolResult.error("Directory does not exist: " + pathArg);
+                    return McpToolResult.error("Directory does not exist: " + dir.getAbsolutePath());
                 }
                 if (!dir.isDirectory()) {
-                    return McpToolResult.error("Path is not a directory: " + pathArg);
+                    return McpToolResult.error("Path is not a directory: " + dir.getAbsolutePath());
                 }
 
                 File[] children = dir.listFiles();
@@ -150,7 +150,7 @@ public class FileMcpServer implements McpServer {
                 String pathArg = getStringArg(arguments, "path", "");
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File file = new File(pathArg);
+                File file = resolveFile(pathArg, context);
                 File parent = file.getParentFile();
                 if (parent != null && !parent.exists()) {
                     parent.mkdirs();
@@ -166,7 +166,7 @@ public class FileMcpServer implements McpServer {
                 String pathArg = getStringArg(arguments, "path", "");
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File dir = new File(pathArg);
+                File dir = resolveFile(pathArg, context);
                 if (dir.exists()) {
                     return McpToolResult.error("Directory already exists: " + pathArg);
                 }
@@ -180,7 +180,7 @@ public class FileMcpServer implements McpServer {
                 String pathArg = getStringArg(arguments, "path", "");
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File target = new File(pathArg);
+                File target = resolveFile(pathArg, context);
                 if (!target.exists()) return McpToolResult.error("Path does not exist: " + pathArg);
 
                 boolean recursive = getBooleanArg(arguments, "recursive", false);
@@ -198,8 +198,8 @@ public class FileMcpServer implements McpServer {
                     return McpToolResult.error("Missing 'source' or 'destination' parameter.");
                 }
 
-                File src = new File(srcArg);
-                File dst = new File(dstArg);
+                File src = resolveFile(srcArg, context);
+                File dst = resolveFile(dstArg, context);
                 if (!src.exists()) return McpToolResult.error("Source path does not exist: " + srcArg);
 
                 File parent = dst.getParentFile();
@@ -218,8 +218,8 @@ public class FileMcpServer implements McpServer {
                     return McpToolResult.error("Missing 'source' or 'destination' parameter.");
                 }
 
-                File src = new File(srcArg);
-                File dst = new File(dstArg);
+                File src = resolveFile(srcArg, context);
+                File dst = resolveFile(dstArg, context);
                 if (!src.exists()) return McpToolResult.error("Source path does not exist: " + srcArg);
 
                 copyRecursive(src, dst);
@@ -229,7 +229,7 @@ public class FileMcpServer implements McpServer {
                 String pathArg = getStringArg(arguments, "path", "");
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File target = new File(pathArg);
+                File target = resolveFile(pathArg, context);
                 if (!target.exists()) return McpToolResult.error("Path does not exist: " + pathArg);
 
                 JSONObject info = new JSONObject();
@@ -285,6 +285,36 @@ public class FileMcpServer implements McpServer {
                 inChannel.transferTo(0, inChannel.size(), outChannel);
             }
         }
+    }
+
+    private File resolveFile(String pathArg, Context context) {
+        String homePath = null;
+        try {
+            homePath = System.getenv("HOME");
+        } catch (Exception ignored) {}
+
+        if (homePath == null || homePath.trim().isEmpty()) {
+            if (context != null) {
+                homePath = new File(context.getFilesDir(), "home").getAbsolutePath();
+            } else {
+                homePath = "/data/data/com.termux/files/home";
+            }
+        }
+
+        if (pathArg == null || pathArg.trim().isEmpty()) {
+            return new File(homePath);
+        }
+
+        String trimmed = pathArg.trim();
+        if (trimmed.startsWith("~")) {
+            trimmed = homePath + trimmed.substring(1);
+        }
+
+        File f = new File(trimmed);
+        if (!f.isAbsolute()) {
+            f = new File(homePath, trimmed);
+        }
+        return f;
     }
 
     private String getStringArg(Map<String, Object> args, String key, String defaultValue) {
