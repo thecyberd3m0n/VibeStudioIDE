@@ -29,6 +29,12 @@ if [ ! -f "libs/deps/androidx-test-monitor-1.6.1.aar" ]; then
     curl -sL "https://dl.google.com/dl/android/maven2/androidx/test/services/storage/1.4.2/storage-1.4.2.aar" -o libs/deps/androidx-test-storage-1.4.2.aar
 fi
 
+if [ ! -f "libs/deps/runner-1.5.2.aar" ]; then
+    echo "=== Downloading AndroidX Test Runner and Ext JUnit AARs ==="
+    curl -sL "https://dl.google.com/dl/android/maven2/androidx/test/ext/junit/1.1.5/junit-1.1.5.aar" -o libs/deps/ext-junit-1.1.5.aar
+    curl -sL "https://dl.google.com/dl/android/maven2/androidx/test/runner/1.5.2/runner-1.5.2.aar" -o libs/deps/runner-1.5.2.aar
+fi
+
 # 2. Extract AAR classes and collect packages for AAPT2
 echo "=== Processing AAR dependencies ==="
 EXTRA_PKGS=""
@@ -55,7 +61,7 @@ EXTRA_PKGS=${EXTRA_PKGS#:}
 
 # Deduplicate conflicting jars
 rm -f libs/deps/annotation-1.1.0.jar libs/deps/annotation-1.0.0.jar libs/deps/annotation-1.2.0.jar libs/deps/annotation-1.6.0.jar 2>/dev/null || true
-rm -f libs/deps/kotlin-stdlib-jdk7-*.jar libs/deps/kotlin-stdlib-jdk8-*.jar libs/deps/kotlin-stdlib-common-*.jar 2>/dev/null || true
+rm -f libs/deps/kotlin-stdlib-jdk7-*.jar libs/deps/kotlin-stdlib-jdk8-*.jar libs/deps/kotlin-stdlib-common-*.jar libs/deps/listenablefuture-*.jar 2>/dev/null || true
 
 # 3. Compile Android Resources (AAPT2)
 echo "=== Compiling Android resources ==="

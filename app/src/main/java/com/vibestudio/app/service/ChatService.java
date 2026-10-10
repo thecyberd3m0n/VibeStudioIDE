@@ -5,13 +5,11 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.vibestudio.app.chat.compressor.HistoryCompressor;
-import com.vibestudio.app.chat.connection.ModelConnectionManager;
 import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.chat.model.ToolCall;
 import com.vibestudio.app.chat.model.ToolResult;
-import com.vibestudio.app.chat.provider.AiProvider;
-import com.vibestudio.app.chat.provider.GeminiAiProvider;
+import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.chat.tool.ToolCallParser;
 import com.vibestudio.app.chat.tool.ToolExecutionManager;
 import com.vibestudio.app.mcp.McpClientManager;
@@ -37,14 +35,14 @@ public class ChatService {
 
     private final McpClientManager mMcpClientManager;
     private final ToolExecutionManager mToolExecutionManager;
-    private final AiProvider mAiProvider;
+    private final AiRouter mAiRouter;
     private boolean mIsLoading = false;
     private volatile boolean mStopRequested = false;
 
     private ChatService() {
         mMcpClientManager = new McpClientManager();
         mToolExecutionManager = new ToolExecutionManager(mMcpClientManager);
-        mAiProvider = new GeminiAiProvider();
+        mAiRouter = AiRouter.getInstance();
         mMessages.add(new ChatMessage("Assistant", "Hello! Welcome to VibeStudio. I am configured with lazy-loaded MCP skills. How can I assist you?", false));
     }
 
@@ -126,11 +124,14 @@ public class ChatService {
             return;
         }
 
-        String apiKey = ModelConnectionManager.getInstance().getApiKey(context);
+        mAiRouter.loadActiveProvider(context);
+        String apiKey = mAiRouter.getActiveApiKey(context);
+        String activeProviderName = mAiRouter.getActiveProviderName();
+        String activeModelName = mAiRouter.getActiveModelName(activeProviderName);
 
         if (apiKey == null || apiKey.isEmpty()) {
-            LogViewerService.getInstance().w(TAG, "No API key found in connection manager");
-            postAssistantResponse("Error: Gemini API Key is not configured. Please set your API Key in the Models tab.");
+            LogViewerService.getInstance().w(TAG, "No API key found in connection manager for provider: " + activeProviderName);
+            postErrorResponse("Error: " + activeProviderName + " API Key is not configured. Please set your API Key in the Models tab.");
             return;
         }
 
@@ -139,15 +140,16 @@ public class ChatService {
             historyCopy = new ArrayList<>(mMessages);
         }
 
-        // Compress history if token limits are exceeded (100k token threshold from gemini.sh)
+        // Compress history if token limits are exceeded
         List<ChatMessage> processedHistory = HistoryCompressor.compressIfNeeded(historyCopy);
 
-        // Build dynamic system instruction with base instructions + high level skills catalog
-        String baseInstruction = GeminiAiProvider.loadBaseSystemInstruction(context);
+        // Build dynamic system instruction with base instructions + high level skills catalog via generic AI Provider interface
+        String baseInstruction = mAiRouter.getSystemInstruction(context);
         String catalogString = mMcpClientManager.getHighLevelCatalog().toString();
         String fullSystemInstruction = baseInstruction + "\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n" + catalogString;
 
-        AiResponse response = mAiProvider.generateContent(context, apiKey, fullSystemInstruction, processedHistory);
+        LogViewerService.getInstance().i(TAG, "Generating content via " + activeProviderName + " using selected model: " + activeModelName);
+        AiResponse response = mAiRouter.generateContent(context, apiKey, fullSystemInstruction, processedHistory);
 
         if (mStopRequested) {
             LogViewerService.getInstance().i(TAG, "Agent loop stopped after model response.");
@@ -157,11 +159,11 @@ public class ChatService {
 
         if (response.isSuccess()) {
             String rawReply = response.getContent();
-            LogViewerService.getInstance().i(TAG, "AI response received successfully.");
+            LogViewerService.getInstance().i(TAG, "AI response received successfully from " + activeProviderName + " (" + activeModelName + ")");
             handlePotentialToolCall(context, rawReply);
         } else {
-            LogViewerService.getInstance().w(TAG, "AI Provider error: " + response.getErrorMessage());
-            postAssistantResponse(response.getErrorMessage());
+            LogViewerService.getInstance().w(TAG, "AI Provider (" + activeProviderName + " / " + activeModelName + ") error: " + response.getErrorMessage());
+            postErrorResponse(response.getErrorMessage());
         }
     }
 
@@ -255,6 +257,21 @@ public class ChatService {
                     mMessages.add(assistantMsg);
                     mIsLoading = false;
                     notifyMessageAdded(assistantMsg);
+                    notifyLoading(false);
+                }
+            }
+        });
+    }
+
+    private void postErrorResponse(final String errorMessage) {
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                ChatMessage errorMsg = new ChatMessage("Error", errorMessage, false, ChatMessage.MessageType.ERROR);
+                synchronized (ChatService.this) {
+                    mMessages.add(errorMsg);
+                    mIsLoading = false;
+                    notifyMessageAdded(errorMsg);
                     notifyLoading(false);
                 }
             }

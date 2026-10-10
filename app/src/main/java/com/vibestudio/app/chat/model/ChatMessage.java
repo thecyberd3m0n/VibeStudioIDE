@@ -5,7 +5,8 @@ public class ChatMessage {
     public enum MessageType {
         NORMAL,
         TOOL_CALL,
-        TOOL_RESULT
+        TOOL_RESULT,
+        ERROR
     }
 
     private final String sender;
@@ -38,5 +39,9 @@ public class ChatMessage {
 
     public MessageType getType() {
         return type;
+    }
+
+    public boolean isError() {
+        return type == MessageType.ERROR;
     }
 }
