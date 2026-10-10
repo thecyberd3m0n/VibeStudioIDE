@@ -36,8 +36,9 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 2: send_keystroke
-        mTools.add(McpTool.builder("send_keystroke", "Inject raw keystrokes, responses to prompts, or control sequences into a terminal session at any time.")
-                .addProperty("keystroke", PropertyType.STRING, "The keystroke string or control sequence to send (e.g., 'n\\n', 'y\\n', 'ENTER', 'CTRL+C', 'CTRL+D').", true)
+        mTools.add(McpTool.builder("send_keystroke", "Inject raw keystrokes, keycodes, arrow keys, control sequences, or raw characters into a terminal session.")
+                .addProperty("keystroke", PropertyType.STRING, "The keystroke string, named key ('UP', 'DOWN', 'LEFT', 'RIGHT', 'TAB', 'ESC', 'BACKSPACE', 'ENTER', 'CTRL+C', 'PAGE_UP', 'HOME', 'END', 'F1'-'F12'), or raw sequence (e.g., '\\u001b[A').", false)
+                .addProperty("key_code", PropertyType.INTEGER, "Optional Android KeyEvent keycode integer (e.g. 19 for UP, 20 for DOWN, 21 for LEFT, 22 for RIGHT, 61 for TAB, 66 for ENTER, 111 for ESC).", false)
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
 
@@ -144,14 +145,17 @@ public class TerminalMcpServer implements McpServer {
 
             } else if ("send_keystroke".equals(toolName)) {
                 String keystroke = arguments != null ? getStringArg(arguments, "keystroke", "") : "";
-                if (keystroke.isEmpty()) {
-                    return McpToolResult.error("Missing 'keystroke' parameter.");
+                int keyCode = arguments != null ? getIntArg(arguments, "key_code", -1) : -1;
+
+                if (keystroke.isEmpty() && keyCode <= 0) {
+                    return McpToolResult.error("Missing 'keystroke' or 'key_code' parameter.");
                 }
 
-                boolean success = TerminalSessionManager.getInstance().sendKeystroke(termSession, keystroke);
+                boolean success = TerminalSessionManager.getInstance().sendKeystroke(termSession, keystroke, keyCode);
 
                 if (success) {
-                    return McpToolResult.success("Keystroke injected into terminal session #" + session.id + ": " + keystroke);
+                    String info = keyCode > 0 ? "keycode: " + keyCode : keystroke;
+                    return McpToolResult.success("Keystroke injected into terminal session #" + session.id + ": " + info);
                 } else {
                     return McpToolResult.error("Failed to inject keystroke.");
                 }
