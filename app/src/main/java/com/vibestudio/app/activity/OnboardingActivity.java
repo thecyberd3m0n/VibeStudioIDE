@@ -80,39 +80,6 @@ public class OnboardingActivity extends Activity {
         }
     }
 
-    private static void cleanProfileFile(File file) {
-        if (file != null && file.exists()) {
-            try {
-                List<String> lines = Files.readAllLines(file.toPath());
-                List<String> filtered = new ArrayList<>();
-                for (String line : lines) {
-                    if (!line.contains("fallback run") && !line.contains("termux-bootstrap")) {
-                        filtered.add(line);
-                    }
-                }
-                Files.write(file.toPath(), filtered);
-            } catch (Throwable ignored) {}
-        }
-    }
-
-    private static void deleteRecursive(File fileOrDirectory) {
-        if (fileOrDirectory != null && fileOrDirectory.exists()) {
-            if (Files.isSymbolicLink(fileOrDirectory.toPath())) {
-                fileOrDirectory.delete();
-                return;
-            }
-            if (fileOrDirectory.isDirectory()) {
-                File[] children = fileOrDirectory.listFiles();
-                if (children != null) {
-                    for (File child : children) {
-                        deleteRecursive(child);
-                    }
-                }
-            }
-            fileOrDirectory.delete();
-        }
-    }
-
 
     private static final String TAG = "OnboardingActivity";
 
@@ -960,13 +927,6 @@ public class OnboardingActivity extends Activity {
         }
     }
 
-    private void createSymlinkIfNotExists(File dir, String symlinkName, String targetName) {
-        File linkFile = new File(dir, symlinkName);
-        if (!linkFile.exists()) {
-            createSymlink(dir, symlinkName, targetName);
-        }
-    }
-
     private void createSymlink(File dir, String symlinkName, String target) {
         File linkFile = new File(dir, symlinkName);
         try {
@@ -1020,29 +980,5 @@ public class OnboardingActivity extends Activity {
         } catch (Exception e) {
             LogViewerService.getInstance().w(TAG, "Failed to setup default mirrors", e);
         }
-    }
-
-    private boolean replaceBytesInFile(File file, byte[] pattern, byte[] replacement) {
-        if (pattern == null || replacement == null || pattern.length != replacement.length) return false;
-        try {
-            byte[] data = Files.readAllBytes(file.toPath());
-            boolean modified = false;
-            for (int i = 0; i <= data.length - pattern.length; i++) {
-                boolean match = true;
-                for (int j = 0; j < pattern.length; j++) {
-                    if (data[i + j] != pattern[j]) { match = false; break; }
-                }
-                if (match) {
-                    System.arraycopy(replacement, 0, data, i, replacement.length);
-                    modified = true;
-                    i += pattern.length - 1;
-                }
-            }
-            if (modified) {
-                Files.write(file.toPath(), data);
-                return true;
-            }
-        } catch (Exception ignored) {}
-        return false;
     }
 }

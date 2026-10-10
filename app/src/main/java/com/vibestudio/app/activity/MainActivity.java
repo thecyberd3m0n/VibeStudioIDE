@@ -40,9 +40,6 @@ import java.util.List;
 
 public class MainActivity extends FragmentActivity implements TabManager.TabListener, FilesFragment.FileSelectionListener {
 
-    public static final String ACTION_EDIT_FILE = "com.vibestudio.app.ACTION_EDIT_FILE";
-    public static final String EXTRA_FILE_PATH = "file_path";
-
     private LinearLayout mTabStripContainer;
     private View mBtnLauncherContainer;
     private TabManager mTabManager;
@@ -54,11 +51,6 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         setContentView(R.layout.activity_main);
 
         LogViewerService.getInstance().i("MainActivity", "MainActivity created with Tabbed Layout");
-        if (getIntent() != null) {
-            String initialFilePath = getIntent().getStringExtra(EXTRA_FILE_PATH);
-            Log.i("EditCmd", "onCreate Intent received with file_path: " + initialFilePath);
-            LogViewerService.getInstance().i("MainActivity", "[EDIT_INTENT_RECEIVED] onCreate intent file_path: " + initialFilePath);
-        }
 
         mTabStripContainer = findViewById(R.id.tab_strip_container);
         mBtnLauncherContainer = findViewById(R.id.btn_launcher_container);
@@ -71,9 +63,6 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         TerminalSessionManager.getInstance().setSessionEventListener(filePath -> {
             runOnUiThread(() -> openFileInEditor(filePath));
         });
-
-        // Handle intent if MainActivity was launched with ACTION_EDIT_FILE or extra
-        handleIntent(getIntent());
 
         // Big circle launcher button switches view directly to launcher (without creating a tab)
         mBtnLauncherContainer.setOnClickListener(v -> {
@@ -140,19 +129,6 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
             if (imm != null) {
                 imm.hideSoftInputFromWindow(currentFocus.getWindowToken(), 0);
-            }
-        }
-    }
-
-    private void handleIntent(Intent intent) {
-        if (intent != null) {
-            String filePath = intent.getStringExtra(EXTRA_FILE_PATH);
-            android.util.Log.i("EditCmd", "Intent received/handled in MainActivity with file_path: " + filePath);
-            LogViewerService.getInstance().i("MainActivity", "[EDIT_INTENT_RECEIVED] Intent handled with file_path: " + filePath);
-            if (filePath != null && !filePath.isEmpty()) {
-                openFileInEditor(filePath);
-            } else {
-                LogViewerService.getInstance().w("MainActivity", "[EDIT_INTENT_RECEIVED] Intent extra 'file_path' was empty or null.");
             }
         }
     }

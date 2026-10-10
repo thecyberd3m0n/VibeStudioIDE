@@ -250,9 +250,6 @@ public class BrowserManager {
         return sb.toString();
     }
 
-    public synchronized void clearBrowserLogs() {
-        mBrowserLogBuffer.clear();
-    }
 
     public boolean isWebViewAvailable(WebView webView) {
         return webView != null;

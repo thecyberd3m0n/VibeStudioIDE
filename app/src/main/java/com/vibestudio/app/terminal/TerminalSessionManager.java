@@ -223,9 +223,6 @@ public class TerminalSessionManager {
         }
     }
 
-    public synchronized Set<TerminalSession> getSessions() {
-        return mViews.keySet();
-    }
 
     public String getForegroundProcessName(TerminalSession session) {
         if (session == null || !session.isRunning()) return "Terminal";
@@ -278,9 +275,6 @@ public class TerminalSessionManager {
         }
     }
 
-    public synchronized boolean sendKeystroke(TerminalSession session, String keystroke) {
-        return sendKeystroke(session, keystroke, -1);
-    }
 
     public synchronized boolean sendKeystroke(TerminalSession session, String keystroke, int keyCode) {
         if (session == null || !session.isRunning()) {

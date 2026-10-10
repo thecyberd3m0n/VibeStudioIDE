@@ -1,7 +1,5 @@
 package com.vibestudio.app.activity;
-import com.vibestudio.app.R;
 import com.vibestudio.app.db.DatabaseHelper;
-import com.vibestudio.app.fragments.*;
 import com.vibestudio.app.util.FontUtils;
 
 import android.app.Activity;
