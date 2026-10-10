@@ -116,6 +116,17 @@ done
 
 d8 --min-api 24 --lib libs/android.jar --output bin/ bin/app_classes.jar $DEX_LIBS
 
+echo "=== Adding non-class resources from JAR dependencies ==="
+for j in libs/deps/*.jar; do
+    unzip -q -o "$j" -x "*.class" "META-INF/*" -d bin/res_extracted 2>/dev/null || true
+done
+if [ -d bin/res_extracted ]; then
+    cd bin/res_extracted
+    zip -q -r ../app.unsigned.apk .
+    cd ../..
+    rm -rf bin/res_extracted
+fi
+
 echo "=== Adding classes.dex to APK ==="
 # Add native libraries (e.g. libtermux.so) into lib/ in the APK
 if [ -d "app/src/main/jniLibs" ]; then
