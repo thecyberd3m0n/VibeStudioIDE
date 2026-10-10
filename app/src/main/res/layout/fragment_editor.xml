@@ -25,7 +25,7 @@
             android:singleLine="true"
             android:scrollHorizontally="true"
             android:text="No file open"
-            android:textColor="#A6ADC8"
+            android:textColor="#CDD6F4"
             android:textSize="13sp"
             android:typeface="monospace"
             android:layout_marginEnd="12dp" />
@@ -37,7 +37,7 @@
             android:text="Save"
             android:textSize="12sp"
             android:textStyle="bold"
-            android:textColor="#FFFFFF"
+            android:textColor="#11111B"
             android:background="@drawable/bg_btn_primary"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"

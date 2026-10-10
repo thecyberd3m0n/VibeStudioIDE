@@ -28,6 +28,8 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 
+import io.github.rosemoe.sora.widget.schemes.EditorColorScheme;
+import io.github.rosemoe.sora.widget.schemes.SchemeDarcula;
 import io.github.rosemoe.sora.widget.CodeEditor;
 import io.github.rosemoe.sora.event.ContentChangeEvent;
 
@@ -82,6 +84,11 @@ public class EditorFragment extends Fragment {
         updateSaveButtonState(false);
 
         if (mCodeEditor != null) {
+            SchemeDarcula darkScheme = new SchemeDarcula();
+            darkScheme.setColor(EditorColorScheme.WHOLE_BACKGROUND, 0xFF1E1E2E);
+            darkScheme.setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, 0xFF181825);
+            mCodeEditor.setColorScheme(darkScheme);
+
             Typeface monoTypeface = FontUtils.getMonospaceTypeface(getContext());
             mCodeEditor.setTypefaceText(monoTypeface);
             mCodeEditor.setTypefaceLineNumber(monoTypeface);
