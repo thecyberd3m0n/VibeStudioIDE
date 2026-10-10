@@ -1,7 +1,10 @@
 package com.vibestudio.app.fragments;
 
 import android.content.Context;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.view.ContextThemeWrapper;
 import android.view.LayoutInflater;
@@ -9,6 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
@@ -31,7 +35,10 @@ import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -50,6 +57,13 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     private ImageButton mBtnNewFolder;
     private FrameLayout mFlContentContainer;
     private TextView mTvEmptyState;
+
+    private View mLayoutBottomBar;
+    private TextView mTvBottomBarText;
+    private Button mBtnBottomBarCancel;
+    private Button mBtnBottomBarOk;
+
+    private List<Uri> mPendingSharedUris = new ArrayList<>();
 
     public interface FileSelectionListener {
         void onFileSelected(File file);
@@ -119,11 +133,158 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         mFlContentContainer = view.findViewById(R.id.fl_content_container);
         mTvEmptyState = view.findViewById(R.id.tv_empty_state);
 
+        mLayoutBottomBar = view.findViewById(R.id.layout_bottom_bar);
+        mTvBottomBarText = view.findViewById(R.id.tv_bottom_bar_text);
+        mBtnBottomBarCancel = view.findViewById(R.id.btn_bottom_bar_cancel);
+        mBtnBottomBarOk = view.findViewById(R.id.btn_bottom_bar_ok);
+
+        if (mBtnBottomBarCancel != null) {
+            mBtnBottomBarCancel.setOnClickListener(v -> cancelPendingSharedFiles());
+        }
+        if (mBtnBottomBarOk != null) {
+            mBtnBottomBarOk.setOnClickListener(v -> confirmCopyPendingSharedFiles());
+        }
+
         mBtnNewFolder.setOnClickListener(v -> showAddMenu(v));
 
         loadDirectory(mCurrentDir);
 
+        if (!mPendingSharedUris.isEmpty()) {
+            setBottomBarText("Select destination");
+            setBottomBarVisible(true);
+        }
+
         return view;
+    }
+
+    public void setBottomBarVisible(boolean visible) {
+        if (mLayoutBottomBar != null) {
+            mLayoutBottomBar.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    public boolean isBottomBarVisible() {
+        return mLayoutBottomBar != null && mLayoutBottomBar.getVisibility() == View.VISIBLE;
+    }
+
+    public void setBottomBarText(String text) {
+        if (mTvBottomBarText != null) {
+            mTvBottomBarText.setText(text);
+        }
+    }
+
+    public void setOnBottomBarCancelClickListener(View.OnClickListener listener) {
+        if (mBtnBottomBarCancel != null) {
+            mBtnBottomBarCancel.setOnClickListener(listener);
+        }
+    }
+
+    public void setOnBottomBarOkClickListener(View.OnClickListener listener) {
+        if (mBtnBottomBarOk != null) {
+            mBtnBottomBarOk.setOnClickListener(listener);
+        }
+    }
+
+    public void startPendingSharedFiles(List<Uri> uris) {
+        if (uris == null || uris.isEmpty()) return;
+        mPendingSharedUris = new ArrayList<>(uris);
+        setBottomBarText("Select destination");
+        setBottomBarVisible(true);
+    }
+
+    public void cancelPendingSharedFiles() {
+        mPendingSharedUris.clear();
+        setBottomBarVisible(false);
+    }
+
+    public void confirmCopyPendingSharedFiles() {
+        if (mPendingSharedUris.isEmpty()) {
+            setBottomBarVisible(false);
+            return;
+        }
+
+        Context context = getContext();
+        if (context == null || mCurrentDir == null) return;
+
+        int successCount = 0;
+        int failCount = 0;
+
+        for (Uri uri : mPendingSharedUris) {
+            String fileName = getFileNameFromUri(context, uri);
+            File destFile = getUniqueDestFile(mCurrentDir, fileName);
+            if (copyUriToFile(context, uri, destFile)) {
+                successCount++;
+            } else {
+                failCount++;
+            }
+        }
+
+        if (successCount > 0) {
+            Toast.makeText(context, "Copied " + successCount + " file(s) to " + mCurrentDir.getName(), Toast.LENGTH_SHORT).show();
+            loadDirectory(mCurrentDir);
+        } else if (failCount > 0) {
+            Toast.makeText(context, "Failed to copy file(s)", Toast.LENGTH_SHORT).show();
+        }
+
+        mPendingSharedUris.clear();
+        setBottomBarVisible(false);
+    }
+
+    private File getUniqueDestFile(File dir, String fileName) {
+        File file = new File(dir, fileName);
+        if (!file.exists()) return file;
+
+        String nameWithoutExt = fileName;
+        String ext = "";
+        int dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex > 0) {
+            nameWithoutExt = fileName.substring(0, dotIndex);
+            ext = fileName.substring(dotIndex);
+        }
+
+        int count = 1;
+        while (file.exists()) {
+            file = new File(dir, nameWithoutExt + "_" + count + ext);
+            count++;
+        }
+        return file;
+    }
+
+    private String getFileNameFromUri(Context context, Uri uri) {
+        String fileName = null;
+        if (uri != null && "content".equals(uri.getScheme())) {
+            try (Cursor cursor = context.getContentResolver().query(uri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    if (nameIndex != -1) {
+                        fileName = cursor.getString(nameIndex);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        if (fileName == null && uri != null) {
+            fileName = uri.getLastPathSegment();
+        }
+        if (fileName == null || fileName.trim().isEmpty()) {
+            fileName = "shared_file_" + System.currentTimeMillis();
+        }
+        return fileName;
+    }
+
+    private boolean copyUriToFile(Context context, Uri uri, File destFile) {
+        try (InputStream in = context.getContentResolver().openInputStream(uri);
+             OutputStream out = new FileOutputStream(destFile)) {
+            if (in == null) return false;
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 
     private boolean isWithinRootDir(File file) {

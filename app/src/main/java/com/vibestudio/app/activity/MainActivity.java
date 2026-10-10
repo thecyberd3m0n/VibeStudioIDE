@@ -2,6 +2,8 @@ package com.vibestudio.app.activity;
 
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
+import java.util.ArrayList;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.util.Log;
@@ -26,6 +28,7 @@ import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.fragments.ChatFragment;
 import com.vibestudio.app.fragments.EditorFragment;
 import com.vibestudio.app.fragments.FilesFragment;
+import com.vibestudio.app.fragments.ImageViewerFragment;
 import com.vibestudio.app.fragments.LauncherFragment;
 import com.vibestudio.app.fragments.SettingsFragment;
 import com.vibestudio.app.fragments.TerminalFragment;
@@ -88,11 +91,52 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
     @Override
     public void onFileSelected(File file) {
         if (file != null) {
-            openFileInEditor(file.getAbsolutePath());
+            if (isImageFile(file)) {
+                openImageInViewer(file.getAbsolutePath());
+            } else {
+                openFileInEditor(file.getAbsolutePath());
+            }
         }
     }
 
+    public static boolean isImageFile(File file) {
+        if (file == null || !file.exists() || file.isDirectory()) return false;
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg")
+                || name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".bmp")
+                || name.endsWith(".ico") || name.endsWith(".svg");
+    }
+
+    public void openImageInViewer(String filePath) {
+        LogViewerService.getInstance().i("MainActivity", "openImageInViewer called for: " + filePath);
+        File file = new File(filePath);
+        String fileName = file.getName();
+
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == TabType.IMAGE && tab.getFragment() instanceof ImageViewerFragment) {
+                ImageViewerFragment ivf = (ImageViewerFragment) tab.getFragment();
+                if (filePath.equals(ivf.getFilePath())) {
+                    mTabManager.selectTab(tab);
+                    return;
+                }
+            }
+        }
+
+        ImageViewerFragment fragment = ImageViewerFragment.newInstance(filePath);
+        mTabManager.openTab(
+                TabType.IMAGE,
+                fileName,
+                "🖼️",
+                fragment,
+                true
+        );
+    }
+
     public void openFileInEditor(String filePath) {
+        if (filePath != null && isImageFile(new File(filePath))) {
+            openImageInViewer(filePath);
+            return;
+        }
         LogViewerService.getInstance().i("MainActivity", "openFileInEditor called for: " + filePath);
         File file = new File(filePath);
         String fileName = file.getName();
@@ -410,11 +454,58 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
     private void handleIncomingIntent(Intent intent) {
         if (intent == null) return;
+        String action = intent.getAction();
+        if (Intent.ACTION_SEND.equals(action) || Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+            List<Uri> uris = extractStreamUris(intent);
+            if (uris != null && !uris.isEmpty()) {
+                intent.setAction(null);
+                intent.setData(null);
+                openFilesTabWithSharedUris(uris);
+                return;
+            }
+        }
+
         String url = IntentUtils.extractUrlFromIntent(intent);
         if (url != null && !url.isEmpty()) {
             intent.setAction(null);
             intent.setData(null);
             openBrowserTabWithUrl(url);
+        }
+    }
+
+    private List<Uri> extractStreamUris(Intent intent) {
+        List<Uri> uris = new ArrayList<>();
+        if (Intent.ACTION_SEND.equals(intent.getAction())) {
+            Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (uri != null) {
+                uris.add(uri);
+            }
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())) {
+            ArrayList<Uri> list = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (list != null) {
+                uris.addAll(list);
+            }
+        }
+        return uris;
+    }
+
+    public void openFilesTabWithSharedUris(List<Uri> uris) {
+        FilesFragment fragment = null;
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == TabType.FILES) {
+                mTabManager.selectTab(tab);
+                if (tab.getFragment() instanceof FilesFragment) {
+                    fragment = (FilesFragment) tab.getFragment();
+                }
+                break;
+            }
+        }
+        if (fragment == null) {
+            fragment = new FilesFragment();
+            mTabManager.openTab(TabType.FILES, "Files", "📁", fragment, true);
+        }
+        if (fragment != null) {
+            fragment.startPendingSharedFiles(uris);
         }
     }
 

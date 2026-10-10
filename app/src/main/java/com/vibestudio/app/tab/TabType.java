@@ -7,6 +7,7 @@ public enum TabType {
     BROWSER("Browser", "🌐"),
     TERMINAL("Terminal", "💻"),
     EDITOR("Editor", "📝"),
+    IMAGE("Image Viewer", "🖼️"),
     SETTINGS("Settings", "⚙️");
 
     private final String defaultTitle;

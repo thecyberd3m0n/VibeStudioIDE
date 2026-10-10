@@ -52,7 +52,8 @@
     <FrameLayout
         android:id="@+id/files_container_wrapper"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
         <!-- Container for active file list ScrollView(s) -->
         <FrameLayout
@@ -72,5 +73,61 @@
             android:visibility="gone" />
 
     </FrameLayout>
+
+    <!-- Invisible (by default) fixed bottom bar for sharing/pasting action -->
+    <LinearLayout
+        android:id="@+id/layout_bottom_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#2A2A3C" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#1A1A24"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp">
+
+            <TextView
+                android:id="@+id/tv_bottom_bar_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Select destination"
+                android:textColor="#82AAFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btn_bottom_bar_cancel"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:text="Cancel"
+                android:textColor="#A0A0A0"
+                android:textSize="14sp"
+                android:background="#1E1E28"
+                android:paddingHorizontal="12dp" />
+
+            <Button
+                android:id="@+id/btn_bottom_bar_ok"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="8dp"
+                android:text="OK"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:background="#2C2C3A"
+                android:paddingHorizontal="16dp" />
+        </LinearLayout>
+    </LinearLayout>
 
 </LinearLayout>
