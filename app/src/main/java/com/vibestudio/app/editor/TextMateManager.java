@@ -15,6 +15,7 @@ import io.github.rosemoe.sora.widget.CodeEditor;
 
 import org.eclipse.tm4e.core.registry.IThemeSource;
 
+import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -25,9 +26,10 @@ public class TextMateManager {
     private static TextMateManager instance;
     private boolean isInitialized = false;
     private final Map<String, String> extensionToScopeMap = new HashMap<>();
+    private final Map<String, String> exactFileNameToScopeMap = new HashMap<>();
 
     private TextMateManager() {
-        initExtensionMap();
+        initMaps();
     }
 
     public static synchronized TextMateManager getInstance() {
@@ -37,11 +39,11 @@ public class TextMateManager {
         return instance;
     }
 
-    private void initExtensionMap() {
+    private void initMaps() {
         // Java
         extensionToScopeMap.put("java", "source.java");
 
-        // JavaScript / TypeScript / React
+        // JavaScript / TypeScript / React / Dart
         extensionToScopeMap.put("js", "source.js");
         extensionToScopeMap.put("mjs", "source.js");
         extensionToScopeMap.put("cjs", "source.js");
@@ -50,6 +52,7 @@ public class TextMateManager {
         extensionToScopeMap.put("mts", "source.ts");
         extensionToScopeMap.put("cts", "source.ts");
         extensionToScopeMap.put("tsx", "source.tsx");
+        extensionToScopeMap.put("dart", "source.dart");
 
         // Python
         extensionToScopeMap.put("py", "source.python");
@@ -107,6 +110,23 @@ public class TextMateManager {
         extensionToScopeMap.put("bash", "source.shell");
         extensionToScopeMap.put("zsh", "source.shell");
         extensionToScopeMap.put("sql", "source.sql");
+
+        // Common exact filenames & dotfiles
+        exactFileNameToScopeMap.put("dockerfile", "source.shell");
+        exactFileNameToScopeMap.put("makefile", "source.shell");
+        exactFileNameToScopeMap.put(".gitignore", "source.shell");
+        exactFileNameToScopeMap.put(".gitattributes", "source.shell");
+        exactFileNameToScopeMap.put(".env", "source.shell");
+        exactFileNameToScopeMap.put(".bashrc", "source.shell");
+        exactFileNameToScopeMap.put(".zshrc", "source.shell");
+        exactFileNameToScopeMap.put(".profile", "source.shell");
+        exactFileNameToScopeMap.put(".eslintrc", "source.json");
+        exactFileNameToScopeMap.put(".prettierrc", "source.json");
+        exactFileNameToScopeMap.put(".babelrc", "source.json");
+        exactFileNameToScopeMap.put("package.json", "source.json");
+        exactFileNameToScopeMap.put("tsconfig.json", "source.json");
+        exactFileNameToScopeMap.put("angular.json", "source.json");
+        exactFileNameToScopeMap.put(".angular-config.json", "source.json");
     }
 
     public synchronized void ensureInitialized(Context context) {
@@ -164,7 +184,12 @@ public class TextMateManager {
         String scopeName = getScopeForFile(filePath);
         if (scopeName != null && isInitialized) {
             try {
-                TextMateLanguage language = TextMateLanguage.create(scopeName, true);
+                TextMateLanguage language = TextMateLanguage.create(
+                    scopeName,
+                    GrammarRegistry.getInstance(),
+                    ThemeRegistry.getInstance(),
+                    true
+                );
                 editor.setEditorLanguage(language);
                 Log.i(TAG, "Applied TextMate language: " + scopeName + " for " + filePath);
                 return;
@@ -179,11 +204,40 @@ public class TextMateManager {
     }
 
     public String getScopeForFile(String filePath) {
-        if (filePath == null) return null;
-        int dotIndex = filePath.lastIndexOf('.');
-        if (dotIndex < 0 || dotIndex >= filePath.length() - 1) return null;
+        if (filePath == null || filePath.isEmpty()) return null;
 
-        String ext = filePath.substring(dotIndex + 1).toLowerCase();
-        return extensionToScopeMap.get(ext);
+        String fileName = new File(filePath).getName().toLowerCase();
+
+        // 1. Check exact match first
+        if (exactFileNameToScopeMap.containsKey(fileName)) {
+            return exactFileNameToScopeMap.get(fileName);
+        }
+
+        // 2. Extract last extension after dot
+        int lastDot = fileName.lastIndexOf('.');
+        if (lastDot >= 0 && lastDot < fileName.length() - 1) {
+            String ext = fileName.substring(lastDot + 1);
+            String scope = extensionToScopeMap.get(ext);
+            if (scope != null) return scope;
+        }
+
+        // 3. Fallback for hidden files / dotfiles without recognized extension (e.g. .bashrc, .eslintrc)
+        if (fileName.startsWith(".")) {
+            String stripDot = fileName.substring(1);
+            if (extensionToScopeMap.containsKey(stripDot)) {
+                return extensionToScopeMap.get(stripDot);
+            }
+            if (stripDot.endsWith("rc")) {
+                String rcName = stripDot.substring(0, stripDot.length() - 2);
+                if ("bash".equals(rcName) || "zsh".equals(rcName) || "sh".equals(rcName)) {
+                    return "source.shell";
+                }
+                if ("eslint".equals(rcName) || "prettier".equals(rcName) || "babel".equals(rcName)) {
+                    return "source.json";
+                }
+            }
+        }
+
+        return null;
     }
 }

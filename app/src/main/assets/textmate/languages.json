@@ -137,6 +137,11 @@
       "name": "shell",
       "scopeName": "source.shell",
       "languageConfiguration": "textmate/shell/language-configuration.json"
+    },
+    {
+      "grammar": "textmate/dart/grammar.json",
+      "name": "dart",
+      "scopeName": "source.dart"
     }
   ]
 }
