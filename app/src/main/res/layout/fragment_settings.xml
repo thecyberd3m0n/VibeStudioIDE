@@ -28,17 +28,6 @@
             android:background="#2C2C3A"/>
 
         <TextView
-            android:id="@+id/btn_settings_permissions"
-            android:layout_width="0dp"
-            android:layout_height="-1px"
-            android:layout_weight="1"
-            android:gravity="center"
-            android:text="🔒 Permissions"
-            android:textColor="#A0A0A0"
-            android:textSize="14sp"
-            android:background="#1E1E28"/>
-
-        <TextView
             android:id="@+id/btn_settings_logs"
             android:layout_width="0dp"
             android:layout_height="-1px"

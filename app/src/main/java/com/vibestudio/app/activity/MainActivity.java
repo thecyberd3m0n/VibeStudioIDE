@@ -195,7 +195,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                 break;
             case 0: // Models
             case 1: // MCP
-            case 5: // Permissions
+            
             case 6: // Logs
             default:
                 type = TabType.SETTINGS;

@@ -310,7 +310,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Configure AI models, permissions, logs &amp; system options"
+                    android:text="Configure AI models, logs &amp; system options"
                     android:textColor="#8E8E93"
                     android:textSize="12sp"/>
             </LinearLayout>
