@@ -7,8 +7,8 @@
     android:background="#1E1E1E"
     android:fitsSystemWindows="true">
 
-    <!-- Content Frame where Active Tab's Fragment is displayed -->
-    <FrameLayout
+    <!-- Content Frame where Active Tab's Fragment is displayed wrapped with two-finger swipe container -->
+    <com.vibestudio.app.view.TwoFingerSwipeLayout
         android:id="@+id/content_frame"
         android:layout_width="-1px"
         android:layout_height="0dp"
