@@ -13,12 +13,16 @@ import io.github.rosemoe.sora.langs.textmate.registry.model.ThemeModel;
 import io.github.rosemoe.sora.langs.textmate.registry.provider.AssetsFileResolver;
 import io.github.rosemoe.sora.widget.CodeEditor;
 
+import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.registry.IThemeSource;
+
+import com.vibestudio.app.service.LogViewerService;
 
 import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class TextMateManager {
@@ -133,6 +137,7 @@ public class TextMateManager {
         if (isInitialized) return;
 
         try {
+            LogViewerService.getInstance().i(TAG, "[TM-INIT] Starting TextMate initialization...");
             Context appContext = context.getApplicationContext();
             FileProviderRegistry.getInstance().addFileProvider(new AssetsFileResolver(appContext.getAssets()));
 
@@ -144,21 +149,30 @@ public class TextMateManager {
             themeRegistry.setTheme("darcula");
 
             ThemeModel currentTheme = themeRegistry.getCurrentThemeModel();
+            LogViewerService.getInstance().i(TAG, "[TM-INIT] Loaded ThemeModel: " + (currentTheme != null ? currentTheme.getName() : "NULL"));
+
             if (currentTheme != null) {
                 GrammarRegistry.getInstance().setTheme(currentTheme);
             }
 
-            GrammarRegistry.getInstance().loadGrammars("textmate/languages.json");
+            List<IGrammar> grammars = GrammarRegistry.getInstance().loadGrammars("textmate/languages.json");
+            LogViewerService.getInstance().i(TAG, "[TM-INIT] Loaded " + (grammars != null ? grammars.size() : 0) + " grammars from languages.json");
 
             isInitialized = true;
-            Log.i(TAG, "TextMate syntax highlighting initialized successfully!");
+            LogViewerService.getInstance().i(TAG, "[TM-INIT] TextMate syntax highlighting initialized successfully!");
         } catch (Throwable t) {
-            Log.e(TAG, "Failed to initialize TextMate syntax highlighting: " + t.getMessage(), t);
+            Log.e(TAG, "[TM-INIT-ERROR] Failed to initialize TextMate", t);
+            LogViewerService.getInstance().e(TAG, "[TM-INIT-ERROR] Failed to initialize TextMate: " + t.getMessage(), t);
         }
     }
 
     public void applyLanguageAndTheme(Context context, CodeEditor editor, String filePath) {
-        if (context == null || editor == null) return;
+        if (context == null || editor == null) {
+            LogViewerService.getInstance().w(TAG, "[TM-APPLY] context or editor is null!");
+            return;
+        }
+
+        LogViewerService.getInstance().i(TAG, "[TM-APPLY] Request to apply for filePath: " + filePath);
 
         try {
             ensureInitialized(context);
@@ -168,22 +182,31 @@ public class TextMateManager {
                 if (currentTheme != null) {
                     TextMateColorScheme colorScheme = TextMateColorScheme.create(ThemeRegistry.getInstance(), currentTheme);
                     editor.setColorScheme(colorScheme);
+                    LogViewerService.getInstance().i(TAG, "[TM-APPLY] Set TextMateColorScheme successfully");
                 } else {
+                    LogViewerService.getInstance().w(TAG, "[TM-APPLY] ThemeModel is null, fallback to ThemeManager scheme");
                     editor.setColorScheme(ThemeManager.getInstance().createEditorColorScheme());
                 }
             } else {
+                LogViewerService.getInstance().w(TAG, "[TM-APPLY] Not initialized, fallback to ThemeManager scheme");
                 editor.setColorScheme(ThemeManager.getInstance().createEditorColorScheme());
             }
         } catch (Throwable t) {
-            Log.e(TAG, "Failed to apply TextMate color scheme, falling back to ThemeManager default", t);
+            Log.e(TAG, "[TM-APPLY-ERROR] Error setting color scheme", t);
+            LogViewerService.getInstance().e(TAG, "[TM-APPLY-ERROR] Error setting color scheme: " + t.getMessage(), t);
             try {
                 editor.setColorScheme(ThemeManager.getInstance().createEditorColorScheme());
             } catch (Throwable ignored) {}
         }
 
         String scopeName = getScopeForFile(filePath);
+        LogViewerService.getInstance().i(TAG, "[TM-APPLY] Extracted scopeName: " + scopeName + " for filePath: " + filePath);
+
         if (scopeName != null && isInitialized) {
             try {
+                IGrammar foundGrammar = GrammarRegistry.getInstance().findGrammar(scopeName);
+                LogViewerService.getInstance().i(TAG, "[TM-APPLY] findGrammar('" + scopeName + "') result: " + (foundGrammar != null ? foundGrammar.getName() : "NULL"));
+
                 TextMateLanguage language = TextMateLanguage.create(
                     scopeName,
                     GrammarRegistry.getInstance(),
@@ -191,15 +214,19 @@ public class TextMateManager {
                     true
                 );
                 editor.setEditorLanguage(language);
-                Log.i(TAG, "Applied TextMate language: " + scopeName + " for " + filePath);
+                LogViewerService.getInstance().i(TAG, "[TM-APPLY] Applied TextMateLanguage for scope: " + scopeName);
                 return;
             } catch (Throwable t) {
-                Log.e(TAG, "Failed to create TextMate language for scope: " + scopeName + " - " + t.getMessage(), t);
+                Log.e(TAG, "[TM-APPLY-ERROR] Failed to create TextMate language for scope: " + scopeName, t);
+                LogViewerService.getInstance().e(TAG, "[TM-APPLY-ERROR] Failed for scope: " + scopeName + " - " + t.getMessage(), t);
             }
+        } else {
+            LogViewerService.getInstance().w(TAG, "[TM-APPLY] scopeName is null or not initialized (scope=" + scopeName + ", init=" + isInitialized + ")");
         }
 
         try {
             editor.setEditorLanguage(new EmptyLanguage());
+            LogViewerService.getInstance().i(TAG, "[TM-APPLY] Set EmptyLanguage fallback");
         } catch (Throwable ignored) {}
     }
 
