@@ -66,8 +66,8 @@
         <!-- Option 1: File Manager -->
         <LinearLayout
             android:id="@+id/btn_launch_files"
-            android:layout_width="-1px"
-            android:layout_height="-2px"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:background="#1E1E28"
             android:padding="16dp"
@@ -86,30 +86,30 @@
 
             <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="-2px"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
                 android:paddingLeft="16dp">
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Open File Manager"
                     android:textColor="#FFFFFF"
                     android:textSize="16sp"
                     android:textStyle="bold"/>
 
                 <TextView
-                    android:layout_width="-2px"
-                    android:layout_height="-2px"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Browse Termux workspace files and directories"
                     android:textColor="#8E8E93"
                     android:textSize="12sp"/>
             </LinearLayout>
 
             <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="➔"
                 android:textColor="#BB86FC"
                 android:textSize="18sp"/>
@@ -259,58 +259,6 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Open local terminal session with full PTY/shell support"
-                    android:textColor="#8E8E93"
-                    android:textSize="12sp"/>
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="➔"
-                android:textColor="#BB86FC"
-                android:textSize="18sp"/>
-        </LinearLayout>
-
-        <!-- Option 4: Editor -->
-        <LinearLayout
-            android:id="@+id/btn_launch_editor"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:background="#1E1E28"
-            android:padding="16dp"
-            android:layout_marginBottom="12dp"
-            android:gravity="center_vertical"
-            android:clickable="true"
-            android:focusable="true">
-
-            <TextView
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:text="📝"
-                android:textSize="24sp"
-                android:gravity="center"
-                android:background="#2A2A38"/>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:paddingLeft="16dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Open Editor"
-                    android:textColor="#FFFFFF"
-                    android:textSize="16sp"
-                    android:textStyle="bold"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Open code editor tool with syntax highlighting"
                     android:textColor="#8E8E93"
                     android:textSize="12sp"/>
             </LinearLayout>

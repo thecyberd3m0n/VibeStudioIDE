@@ -60,6 +60,8 @@ public class ToolSessionManager {
     private ToolSessionManager() {
         registerProvider(new BrowserSessionProvider());
         registerProvider(new TerminalSessionProvider());
+        registerProvider(new FileSessionProvider());
+        registerProvider(new EditorSessionProvider());
     }
 
     public static synchronized ToolSessionManager getInstance() {
@@ -75,38 +77,30 @@ public class ToolSessionManager {
         }
     }
 
-    private synchronized int generateRandomSessionId() {
-        int id;
-        do {
-            id = mRandom.nextInt(900000) + 100000; // 6-digit random positive integer
-        } while (mSessionsById.containsKey(id));
-        return id;
-    }
-
     public synchronized int getOrCreateSession(ToolType toolType, Context context, boolean forceNew) {
-        if (toolType == null) return -1;
-
-        Integer existingId = mActiveSessionByToolType.get(toolType);
-
-        if (!forceNew && existingId != null && existingId > 0) {
-            ToolSession session = mSessionsById.get(existingId);
-            if (session != null && isSessionAlive(session)) {
-                return existingId;
+        if (!forceNew) {
+            Integer existingId = mActiveSessionByToolType.get(toolType);
+            if (existingId != null) {
+                ToolSession session = mSessionsById.get(existingId);
+                if (session != null && isSessionAlive(session)) {
+                    return existingId;
+                }
             }
         }
 
         ToolSessionProvider provider = mProviders.get(toolType);
-        if (provider == null) return -1;
+        if (provider == null) {
+            throw new IllegalStateException("No provider registered for ToolType: " + toolType);
+        }
 
-        Object handle = (context != null) ? provider.createSessionHandle(context) : null;
-        if (handle == null) return -1;
+        Object handle = provider.createSessionHandle(context);
 
-        int newId = generateRandomSessionId();
-        provider.openUiTab(context, newId, handle);
-
+        int newId = 1000 + mRandom.nextInt(9000);
         ToolSession newSession = new ToolSession(newId, toolType, handle);
         mSessionsById.put(newId, newSession);
         mActiveSessionByToolType.put(toolType, newId);
+
+        provider.openUiTab(context, newId, handle);
 
         return newId;
     }
@@ -118,7 +112,7 @@ public class ToolSessionManager {
 
         ToolSession session = mSessionsById.get(sessionId);
         if (session == null) {
-            return new SessionValidationResult(null, "Session #" + sessionId + " does not exist or was closed.");
+            return new SessionValidationResult(null, "Session #" + sessionId + " does not exist or has been closed.");
         }
 
         if (expectedToolType != null && session.toolType != expectedToolType) {
@@ -126,7 +120,11 @@ public class ToolSessionManager {
         }
 
         if (!isSessionAlive(session)) {
-            return new SessionValidationResult(null, "Session #" + sessionId + " was closed or terminated.");
+            mSessionsById.remove(sessionId);
+            if (mActiveSessionByToolType.get(session.toolType) != null && mActiveSessionByToolType.get(session.toolType) == sessionId) {
+                mActiveSessionByToolType.remove(session.toolType);
+            }
+            return new SessionValidationResult(null, "Session #" + sessionId + " is no longer alive.");
         }
 
         return new SessionValidationResult(session, null);
@@ -137,7 +135,7 @@ public class ToolSessionManager {
     }
 
     public synchronized boolean isSessionAlive(ToolSession session) {
-        if (session == null || session.sessionHandle == null) return false;
+        if (session == null) return false;
         ToolSessionProvider provider = mProviders.get(session.toolType);
         return provider != null && provider.isSessionAlive(session.sessionHandle);
     }

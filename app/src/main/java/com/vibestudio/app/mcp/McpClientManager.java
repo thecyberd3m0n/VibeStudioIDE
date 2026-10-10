@@ -49,6 +49,8 @@ public class McpClientManager {
     public McpClientManager() {
         registerServer(new TerminalMcpServer());
         registerServer(new BrowserMcpServer());
+        registerServer(new FileMcpServer());
+        registerServer(new EditorMcpServer());
     }
 
     public void registerServer(McpServer server) {
@@ -85,7 +87,7 @@ public class McpClientManager {
             catalog.put("available_skills", skills);
 
             McpTool metaTool = McpTool.builder("get_skill_schema", "Fetches detailed parameters and tool schemas for a given skill name when needed.")
-                    .addProperty("skill_name", PropertyType.STRING, "Name of the skill to load (e.g. 'terminal', 'browser')", true)
+                    .addProperty("skill_name", PropertyType.STRING, "Name of the skill to load (e.g. 'terminal', 'browser', 'file', 'editor')", true)
                     .build();
 
             catalog.put("meta_tool", metaTool.toJsonSchema());

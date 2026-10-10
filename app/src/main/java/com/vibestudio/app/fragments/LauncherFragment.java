@@ -17,7 +17,7 @@ import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
 
-public class  LauncherFragment extends Fragment {
+public class LauncherFragment extends Fragment {
 
     @Nullable
     @Override
@@ -40,10 +40,6 @@ public class  LauncherFragment extends Fragment {
         view.findViewById(R.id.btn_launch_terminal).setOnClickListener(v -> {
             TerminalSession session = TerminalSessionManager.getInstance().createSession(getContext());
             TabManager.getInstance().openTab(TabType.TERMINAL, TerminalFragment.newInstance(session));
-        });
-
-        view.findViewById(R.id.btn_launch_editor).setOnClickListener(v -> {
-            TabManager.getInstance().openTab(TabType.EDITOR, EditorFragment.newInstance());
         });
 
         view.findViewById(R.id.btn_launch_settings).setOnClickListener(v -> {
