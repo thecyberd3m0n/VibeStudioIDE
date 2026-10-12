@@ -148,7 +148,7 @@
             <TextView
                 android:layout_width="-2px"
                 android:layout_height="-2px"
-                android:text="Welcome to VibeStudio"
+                android:text="Welcome to VibeStudio IDE"
                 android:textColor="#FFFFFF"
                 android:textSize="20sp"
                 android:textStyle="bold"
