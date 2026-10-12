@@ -31,16 +31,14 @@
             android:clickable="true"
             android:focusable="true">
 
-            <TextView
+            <ImageView
                 android:id="@+id/btn_launcher"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:layout_gravity="center"
-                android:gravity="center"
-                android:text="📱"
-                android:textSize="22sp"
-                android:textColor="#FFFFFF"
-                android:background="@drawable/circle_launcher_bg"/>
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_launcher_foreground"
+                android:background="@drawable/selector_launcher_btn"/>
         </FrameLayout>
 
         <!-- Horizontal Tab Bar (To the right of the Launcher circle) -->
@@ -57,9 +55,7 @@
                 android:id="@+id/tab_strip_container"
                 android:layout_width="-2px"
                 android:layout_height="-1px"
-                android:orientation="horizontal"
-                android:gravity="bottom"/>
+                android:orientation="horizontal"/>
         </HorizontalScrollView>
-
     </RelativeLayout>
 </LinearLayout>

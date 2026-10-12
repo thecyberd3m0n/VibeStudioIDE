@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">VibeStudio</string>
+    <string name="app_name">VibeStudio IDE</string>
     <string name="ms_back">BACK</string>
     <string name="ms_next">NEXT</string>
     <string name="ms_complete">COMPLETE</string>

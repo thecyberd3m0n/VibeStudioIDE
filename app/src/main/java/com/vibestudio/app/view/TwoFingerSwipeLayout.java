@@ -8,6 +8,7 @@ import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ViewParent;
 import android.widget.FrameLayout;
 
 import com.vibestudio.app.tab.TabItem;
@@ -46,7 +47,7 @@ public class TwoFingerSwipeLayout extends FrameLayout {
     }
 
     @Override
-    public boolean onInterceptTouchEvent(MotionEvent ev) {
+    public boolean dispatchTouchEvent(MotionEvent ev) {
         int pointerCount = ev.getPointerCount();
         int action = ev.getActionMasked();
 
@@ -77,7 +78,15 @@ public class TwoFingerSwipeLayout extends FrameLayout {
                     if (sameDirectionX && isHorizontal && Math.abs(avgDx) > mTouchSlop * 1.5f) {
                         mIsTwoFingerSwiping = true;
                         prepareSwipePreview(avgDx);
-                        getParent().requestDisallowInterceptTouchEvent(true);
+                        ViewParent parent = getParent();
+                        if (parent != null) {
+                            parent.requestDisallowInterceptTouchEvent(true);
+                        }
+                        // Cancel child views' touch gestures
+                        MotionEvent cancelEvent = MotionEvent.obtain(ev);
+                        cancelEvent.setAction(MotionEvent.ACTION_CANCEL);
+                        super.dispatchTouchEvent(cancelEvent);
+                        cancelEvent.recycle();
                         return true;
                     }
                 }
@@ -93,7 +102,19 @@ public class TwoFingerSwipeLayout extends FrameLayout {
                 break;
         }
 
-        return mIsTwoFingerSwiping || super.onInterceptTouchEvent(ev);
+        if (mIsTwoFingerSwiping) {
+            return onTouchEvent(ev);
+        }
+
+        return super.dispatchTouchEvent(ev);
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        if (mIsTwoFingerSwiping) {
+            return true;
+        }
+        return super.onInterceptTouchEvent(ev);
     }
 
     @Override

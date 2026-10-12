@@ -66,14 +66,33 @@ public class ImageViewerFragment extends Fragment {
         return view;
     }
 
-    private void loadImage() {
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (mFilePath != null) {
+            loadImage();
+        }
+    }
+
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (!hidden && mFilePath != null) {
+            loadImage();
+        }
+    }
+
+    public void loadImage() {
+        if (mFilePath == null) return;
         File file = new File(mFilePath);
         if (!file.exists() || !file.isFile()) {
             showError("File not found");
             return;
         }
 
-        mTvTitle.setText(file.getName());
+        if (mTvTitle != null) {
+            mTvTitle.setText(file.getName());
+        }
 
         try {
             BitmapFactory.Options options = new BitmapFactory.Options();
@@ -84,16 +103,20 @@ public class ImageViewerFragment extends Fragment {
             int height = options.outHeight;
             String mimeType = options.outMimeType;
 
-            mTvInfo.setText(width + "x" + height + (mimeType != null ? " (" + mimeType.replace("image/", "") + ")" : ""));
+            if (mTvInfo != null) {
+                mTvInfo.setText(width + "x" + height + (mimeType != null ? " (" + mimeType.replace("image/", "") + ")" : ""));
+            }
 
             options.inJustDecodeBounds = false;
             options.inSampleSize = calculateInSampleSize(options, 2048, 2048);
 
             Bitmap bitmap = BitmapFactory.decodeFile(mFilePath, options);
-            if (bitmap != null) {
+            if (bitmap != null && mIvPreview != null) {
                 mIvPreview.setImageBitmap(bitmap);
                 mIvPreview.setVisibility(View.VISIBLE);
-                mTvError.setVisibility(View.GONE);
+                if (mTvError != null) {
+                    mTvError.setVisibility(View.GONE);
+                }
             } else {
                 showError("Failed to decode image");
             }

@@ -21,14 +21,11 @@
             android:gravity="center_vertical"
             android:paddingBottom="24dp">
 
-            <TextView
+            <ImageView
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:text="🚀"
-                android:textSize="32sp"
-                android:gravity="center"
-                android:background="#1E1E28"
-                android:padding="4dp"/>
+                android:src="@drawable/ic_launcher_foreground"
+                android:scaleType="fitCenter"/>
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -40,7 +37,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="VibeStudio Launcher"
+                    android:text="VibeStudio IDE"
                     android:textColor="#03DAC6"
                     android:textSize="22sp"
                     android:textStyle="bold"/>
@@ -48,7 +45,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Select a tool to start a new session"
+                    android:text="Mobile-first agentic IDE"
                     android:textColor="#A0A0A0"
                     android:textSize="13sp"/>
             </LinearLayout>
