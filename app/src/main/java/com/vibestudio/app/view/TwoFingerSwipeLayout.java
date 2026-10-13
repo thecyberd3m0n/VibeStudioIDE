@@ -103,11 +103,16 @@ public class TwoFingerSwipeLayout extends FrameLayout {
     }
 
     @Override
-    public boolean dispatchTouchEvent(MotionEvent ev) {
+    public boolean onTouchEvent(MotionEvent ev) {
         int pointerCount = ev.getPointerCount();
         int action = ev.getActionMasked();
 
         switch (action) {
+            case MotionEvent.ACTION_DOWN:
+                // Return true so parent container receives subsequent gesture events
+                // even if child views (e.g. ImageViewerFragment) do not consume ACTION_DOWN.
+                return true;
+
             case MotionEvent.ACTION_POINTER_DOWN:
                 if (pointerCount == 2) {
                     mInitialX0 = ev.getX(0);
@@ -117,16 +122,15 @@ public class TwoFingerSwipeLayout extends FrameLayout {
                     mCurrentX0 = mInitialX0;
                     mCurrentX1 = mInitialX1;
                 }
-                break;
+                return true;
 
             case MotionEvent.ACTION_MOVE:
-                if (pointerCount == 2 && !mIsTwoFingerSwiping) {
+                if (!mIsTwoFingerSwiping && pointerCount == 2) {
                     float dx0 = ev.getX(0) - mInitialX0;
                     float dy0 = ev.getY(0) - mInitialY0;
                     float dx1 = ev.getX(1) - mInitialX1;
                     float dy1 = ev.getY(1) - mInitialY1;
 
-                    // Both fingers must move horizontally in the same direction
                     boolean sameDirectionX = (dx0 * dx1 > 0);
                     boolean isHorizontal = Math.abs(dx0) > Math.abs(dy0) && Math.abs(dx1) > Math.abs(dy1);
                     float avgDx = (dx0 + dx1) / 2f;
@@ -138,40 +142,9 @@ public class TwoFingerSwipeLayout extends FrameLayout {
                         if (parent != null) {
                             parent.requestDisallowInterceptTouchEvent(true);
                         }
-                        // Cancel child views' touch gestures
-                        MotionEvent cancelEvent = MotionEvent.obtain(ev);
-                        cancelEvent.setAction(MotionEvent.ACTION_CANCEL);
-                        super.dispatchTouchEvent(cancelEvent);
-                        cancelEvent.recycle();
-                        return true;
                     }
                 }
-                break;
 
-            case MotionEvent.ACTION_POINTER_UP:
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_CANCEL:
-                if (mIsTwoFingerSwiping) {
-                    finishSwipe();
-                    return true;
-                }
-                break;
-        }
-
-        if (mIsTwoFingerSwiping) {
-            return onTouchEvent(ev);
-        }
-
-        return super.dispatchTouchEvent(ev);
-    }
-
-    @Override
-    public boolean onTouchEvent(MotionEvent ev) {
-        int pointerCount = ev.getPointerCount();
-        int action = ev.getActionMasked();
-
-        switch (action) {
-            case MotionEvent.ACTION_MOVE:
                 if (mIsTwoFingerSwiping) {
                     if (pointerCount >= 2) {
                         mCurrentX0 = ev.getX(0);
@@ -257,6 +230,9 @@ public class TwoFingerSwipeLayout extends FrameLayout {
     }
 
     private void finishSwipe() {
+        if (!mIsTwoFingerSwiping && mCurrentTab == null) {
+            return;
+        }
         mIsTwoFingerSwiping = false;
 
         float width = getWidth();
