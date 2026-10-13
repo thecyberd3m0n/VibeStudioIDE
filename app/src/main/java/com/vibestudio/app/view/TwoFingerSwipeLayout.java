@@ -1,7 +1,6 @@
 package com.vibestudio.app.view;
 
 import android.content.Context;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.util.AttributeSet;
@@ -44,6 +43,63 @@ public class TwoFingerSwipeLayout extends FrameLayout {
 
         mOverlayPaint = new Paint();
         mOverlayPaint.setColor(Color.argb(40, 0, 0, 0)); // Subtle dimming overlay
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        int pointerCount = ev.getPointerCount();
+        int action = ev.getActionMasked();
+
+        switch (action) {
+            case MotionEvent.ACTION_POINTER_DOWN:
+                if (pointerCount == 2) {
+                    mInitialX0 = ev.getX(0);
+                    mInitialY0 = ev.getY(0);
+                    mInitialX1 = ev.getX(1);
+                    mInitialY1 = ev.getY(1);
+                    mCurrentX0 = mInitialX0;
+                    mCurrentX1 = mInitialX1;
+                }
+                break;
+
+            case MotionEvent.ACTION_MOVE:
+                if (pointerCount == 2 && !mIsTwoFingerSwiping) {
+                    float dx0 = ev.getX(0) - mInitialX0;
+                    float dy0 = ev.getY(0) - mInitialY0;
+                    float dx1 = ev.getX(1) - mInitialX1;
+                    float dy1 = ev.getY(1) - mInitialY1;
+
+                    boolean sameDirectionX = (dx0 * dx1 > 0);
+                    boolean isHorizontal = Math.abs(dx0) > Math.abs(dy0) && Math.abs(dx1) > Math.abs(dy1);
+                    float avgDx = (dx0 + dx1) / 2f;
+
+                    if (sameDirectionX && isHorizontal && Math.abs(avgDx) > mTouchSlop * 1.5f) {
+                        mIsTwoFingerSwiping = true;
+                        prepareSwipePreview(avgDx);
+                        ViewParent parent = getParent();
+                        if (parent != null) {
+                            parent.requestDisallowInterceptTouchEvent(true);
+                        }
+                        return true;
+                    }
+                }
+                break;
+
+            case MotionEvent.ACTION_POINTER_UP:
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                if (mIsTwoFingerSwiping) {
+                    finishSwipe();
+                    return true;
+                }
+                break;
+        }
+
+        if (mIsTwoFingerSwiping) {
+            return true;
+        }
+
+        return super.onInterceptTouchEvent(ev);
     }
 
     @Override
@@ -107,14 +163,6 @@ public class TwoFingerSwipeLayout extends FrameLayout {
         }
 
         return super.dispatchTouchEvent(ev);
-    }
-
-    @Override
-    public boolean onInterceptTouchEvent(MotionEvent ev) {
-        if (mIsTwoFingerSwiping) {
-            return true;
-        }
-        return super.onInterceptTouchEvent(ev);
     }
 
     @Override
