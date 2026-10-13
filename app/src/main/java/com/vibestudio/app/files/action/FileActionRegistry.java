@@ -10,6 +10,7 @@ public class FileActionRegistry {
     private static final List<FileAction> ACTIONS = new ArrayList<>();
 
     static {
+        ACTIONS.add(new ShareAction());
         ACTIONS.add(new OpenTerminalAction());
         ACTIONS.add(new RenameAction());
         ACTIONS.add(new DeleteAction());
