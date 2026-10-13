@@ -63,6 +63,11 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         mTabManager = TabManager.getInstance();
         mTabManager.addListener(this);
 
+        // Focus diagnostics: surfaces which view takes focus away from text inputs on devices
+        // where the keyboard flickers/dismisses (visible in the in-app Logs tab).
+        getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldFocus, newFocus) ->
+                LogViewerService.getInstance().i("Focus", describeView(oldFocus) + " -> " + describeView(newFocus)));
+
         mLauncherFragment = new LauncherFragment();
 
 
@@ -199,6 +204,28 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                 imm.hideSoftInputFromWindow(currentFocus.getWindowToken(), 0);
             }
         }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        LogViewerService.getInstance().i("Focus", "Window focus " + (hasFocus ? "gained" : "lost")
+                + ", current view focus: " + describeView(getCurrentFocus()));
+    }
+
+    private static String describeView(View v) {
+        if (v == null) return "none";
+        StringBuilder sb = new StringBuilder(v.getClass().getSimpleName());
+        int id = v.getId();
+        if (id != View.NO_ID) {
+            try {
+                sb.append("#").append(v.getResources().getResourceEntryName(id));
+            } catch (Exception ignored) {
+                sb.append("#").append(id);
+            }
+        }
+        sb.append("@").append(Integer.toHexString(System.identityHashCode(v)));
+        return sb.toString();
     }
 
     private void showLauncherOverlay() {

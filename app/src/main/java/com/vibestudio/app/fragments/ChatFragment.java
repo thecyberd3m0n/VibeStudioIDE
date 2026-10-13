@@ -2,6 +2,7 @@ package com.vibestudio.app.fragments;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.text.Editable;
@@ -28,14 +29,48 @@ import com.vibestudio.app.chat.connection.ModelConnectionManager;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.mcp.ToolMessageFactory;
 import com.vibestudio.app.service.ChatService;
+import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.view.BaseToolMessageView;
 
 import java.util.List;
 
 public class ChatFragment extends Fragment implements ChatService.OnChatMessageListener {
 
+    private static final String TAG = "ChatFragment";
     private static final int MATCH_PARENT = -1;
     private static final int WRAP_CONTENT = -2;
+
+    /**
+     * Root container that routes implicit focus requests to the message input.
+     *
+     * The message history (above the input in traversal order) contains selectable
+     * TextViews which are focusable in touch mode. Whenever the framework re-assigns
+     * focus on its own (focused view hidden/removed, touch-mode transitions, root
+     * re-focus after clearFocus, ...), it picks the first eligible descendant - a plain
+     * TextView - which is not a text editor, so the IME gets dismissed. Preferring the
+     * input keeps the keyboard attached to the field the user is typing into.
+     */
+    private static class ChatRootLayout extends LinearLayout {
+        private View mPreferredFocus;
+
+        ChatRootLayout(Context context) {
+            super(context);
+        }
+
+        void setPreferredFocus(View view) {
+            mPreferredFocus = view;
+        }
+
+        @Override
+        protected boolean onRequestFocusInDescendants(int direction, Rect previouslyFocusedRect) {
+            if (mPreferredFocus != null
+                    && mPreferredFocus.getVisibility() == View.VISIBLE
+                    && mPreferredFocus.requestFocus(direction, previouslyFocusedRect)) {
+                return true;
+            }
+            return super.onRequestFocusInDescendants(direction, previouslyFocusedRect);
+        }
+    }
 
     private ScrollView mChatScroll;
     private LinearLayout mChatContainer;
@@ -50,7 +85,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         final Context context = getContext();
         if (context == null) return null;
 
-        LinearLayout layout = new LinearLayout(context);
+        ChatRootLayout layout = new ChatRootLayout(context);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(16, 16, 16, 16);
         layout.setBackgroundColor(Color.parseColor("#1E1E1E"));
@@ -73,11 +108,18 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         inputRow.setPadding(0, 12, 0, 0);
 
         mMsgInput = new EditText(context);
+        // Stable id so the field's text/selection survive view re-creation (state is only saved for views with an id)
+        mMsgInput.setId(R.id.chat_message_input);
         mMsgInput.setHint("Message VibeStudio...");
         mMsgInput.setHintTextColor(Color.parseColor("#666666"));
         mMsgInput.setTextColor(Color.parseColor("#FFFFFF"));
         mMsgInput.setBackgroundColor(Color.parseColor("#1E1E24"));
         mMsgInput.setPadding(24, 20, 24, 20);
+        // A chat prompt is never autofill material; keeps OEM/3rd-party autofill services from reacting to focus
+        mMsgInput.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+        mMsgInput.setOnFocusChangeListener((v, hasFocus) ->
+                LogViewerService.getInstance().i(TAG, "Message input focus " + (hasFocus ? "gained" : "lost")));
+        layout.setPreferredFocus(mMsgInput);
 
         LinearLayout.LayoutParams inParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
         mMsgInput.setLayoutParams(inParams);
@@ -267,14 +309,11 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     }
 
     private void scrollToBottom() {
-        if (mChatScroll != null) {
-            mChatScroll.post(new Runnable() {
-                @Override
-                public void run() {
-                    mChatScroll.fullScroll(ScrollView.FOCUS_DOWN);
-                }
-            });
-        }
+        if (mChatScroll == null || mChatContainer == null) return;
+        // Do not use fullScroll(FOCUS_DOWN): it runs arrowScroll(), which moves focus to the
+        // next focusable child (the selectable message TextViews). That steals focus from the
+        // input and dismisses the keyboard whenever a message arrives.
+        mChatScroll.post(() -> mChatScroll.smoothScrollTo(0, mChatContainer.getBottom()));
     }
 
     @Override
