@@ -26,16 +26,21 @@ import androidx.fragment.app.Fragment;
 import com.vibestudio.app.R;
 import com.vibestudio.app.chat.connection.ModelConnectionManager;
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.chat.session.ChatSession;
+import com.vibestudio.app.chat.session.ChatSessionManager;
 import com.vibestudio.app.mcp.ToolMessageFactory;
-import com.vibestudio.app.service.ChatService;
 import com.vibestudio.app.view.BaseToolMessageView;
 
 import java.util.List;
 
-public class ChatFragment extends Fragment implements ChatService.OnChatMessageListener {
+public class ChatFragment extends Fragment implements ChatSession.OnChatMessageListener {
 
+    private static final String ARG_SESSION_ID = "session_id";
     private static final int MATCH_PARENT = -1;
     private static final int WRAP_CONTENT = -2;
+
+    private ChatSession mChatSession;
+    private String mSessionId;
 
     private ScrollView mChatScroll;
     private LinearLayout mChatContainer;
@@ -44,9 +49,44 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     private TextView mTvActionIcon;
     private ProgressBar mProgressBar;
 
+    public static ChatFragment newInstance(ChatSession session) {
+        ChatFragment fragment = new ChatFragment();
+        Bundle args = new Bundle();
+        if (session != null) {
+            args.putString(ARG_SESSION_ID, session.getId());
+        }
+        fragment.setArguments(args);
+        return fragment;
+    }
+
+    private void ensureSession() {
+        if (mSessionId == null && getArguments() != null) {
+            mSessionId = getArguments().getString(ARG_SESSION_ID);
+        }
+        if (mChatSession == null && mSessionId != null) {
+            mChatSession = ChatSessionManager.getInstance().getSession(mSessionId);
+        }
+        if (mChatSession == null) {
+            mChatSession = ChatSessionManager.getInstance().createSession();
+            mSessionId = mChatSession.getId();
+        }
+    }
+
+    public ChatSession getChatSession() {
+        ensureSession();
+        return mChatSession;
+    }
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        ensureSession();
+    }
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+        ensureSession();
         final Context context = getContext();
         if (context == null) return null;
 
@@ -95,7 +135,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         mTvActionIcon.setTextColor(Color.parseColor("#121212"));
         mTvActionIcon.setTextSize(20);
         mTvActionIcon.setTypeface(null, Typeface.BOLD);
-        
+
         FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
         iconParams.gravity = Gravity.CENTER;
         mTvActionIcon.setLayoutParams(iconParams);
@@ -123,10 +163,11 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
         layout.addView(mProgressBar);
         layout.addView(inputRow);
 
-        ChatService.getInstance().addListener(this);
-
-        // Render current chat history from ChatService
-        renderChatHistory(context);
+        if (mChatSession != null) {
+            mChatSession.addListener(this);
+            // Render current chat history from ChatSession
+            renderChatHistory(context);
+        }
 
         return layout;
     }
@@ -136,12 +177,14 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     }
 
     private void onActionButtonClicked(Context context) {
-        boolean isLoading = ChatService.getInstance().isLoading();
+        if (mChatSession == null) return;
+
+        boolean isLoading = mChatSession.isLoading();
         String text = mMsgInput.getText() != null ? mMsgInput.getText().toString() : "";
 
         if (isLoading && text.trim().isEmpty()) {
             // User pressed STOP while prompt is empty and agent is operating
-            ChatService.getInstance().stopAgentExecution();
+            mChatSession.stopAgentExecution();
             Toast.makeText(context, "Stopping Agent execution...", Toast.LENGTH_SHORT).show();
             updateActionButtonState();
             return;
@@ -152,7 +195,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
                 Toast.makeText(context, ModelConnectionManager.getInstance().getConnectionStatusMessage(context), Toast.LENGTH_LONG).show();
             }
             mMsgInput.setText("");
-            ChatService.getInstance().sendMessage(context, text);
+            mChatSession.sendMessage(context, text);
             updateActionButtonState();
         }
     }
@@ -160,7 +203,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     private void updateActionButtonState() {
         if (mBtnActionButton == null || mTvActionIcon == null) return;
 
-        boolean isLoading = ChatService.getInstance().isLoading();
+        boolean isLoading = mChatSession != null && mChatSession.isLoading();
         String text = mMsgInput.getText() != null ? mMsgInput.getText().toString() : "";
 
         if (isLoading && text.trim().isEmpty()) {
@@ -179,14 +222,16 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        ChatService.getInstance().removeListener(this);
+        if (mChatSession != null) {
+            mChatSession.removeListener(this);
+        }
     }
 
     private void renderChatHistory(Context context) {
-        if (mChatContainer == null) return;
+        if (mChatContainer == null || mChatSession == null) return;
         mChatContainer.removeAllViews();
 
-        List<ChatMessage> history = ChatService.getInstance().getMessages();
+        List<ChatMessage> history = mChatSession.getMessages();
         for (ChatMessage msg : history) {
             // Do not display raw background TOOL_RESULT messages in UI
             if (msg.getType() == ChatMessage.MessageType.TOOL_RESULT) {
@@ -195,7 +240,7 @@ public class ChatFragment extends Fragment implements ChatService.OnChatMessageL
             addChatMessageUI(context, msg);
         }
 
-        updateLoadingUI(ChatService.getInstance().isLoading());
+        updateLoadingUI(mChatSession.isLoading());
         scrollToBottom();
     }
 

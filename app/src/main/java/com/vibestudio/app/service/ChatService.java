@@ -1,27 +1,20 @@
 package com.vibestudio.app.service;
 
 import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
 
-import com.vibestudio.app.chat.compressor.HistoryCompressor;
-import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
-import com.vibestudio.app.chat.model.ToolCall;
-import com.vibestudio.app.chat.model.ToolResult;
-import com.vibestudio.app.chat.router.AiRouter;
-import com.vibestudio.app.chat.tool.ToolCallParser;
-import com.vibestudio.app.chat.tool.ToolExecutionManager;
+import com.vibestudio.app.chat.session.ChatSession;
+import com.vibestudio.app.chat.session.ChatSessionManager;
 import com.vibestudio.app.mcp.McpClientManager;
 
-import org.json.JSONObject;
-
-import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Legacy compatibility wrapper for ChatService.
+ * Delegates to the active default ChatSession via ChatSessionManager.
+ */
 public class ChatService {
 
-    private static final String TAG = "ChatService";
     private static ChatService sInstance;
 
     public interface OnChatMessageListener {
@@ -29,22 +22,7 @@ public class ChatService {
         void onResponseLoading(boolean isLoading);
     }
 
-    private final List<ChatMessage> mMessages = new ArrayList<>();
-    private final List<OnChatMessageListener> mListeners = new ArrayList<>();
-    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
-
-    private final McpClientManager mMcpClientManager;
-    private final ToolExecutionManager mToolExecutionManager;
-    private final AiRouter mAiRouter;
-    private boolean mIsLoading = false;
-    private volatile boolean mStopRequested = false;
-
-    private ChatService() {
-        mMcpClientManager = new McpClientManager();
-        mToolExecutionManager = new ToolExecutionManager(mMcpClientManager);
-        mAiRouter = AiRouter.getInstance();
-        mMessages.add(new ChatMessage("Assistant", "Hello! Welcome to VibeStudio. I am configured with lazy-loaded MCP skills. How can I assist you?", false));
-    }
+    private ChatService() {}
 
     public static synchronized ChatService getInstance() {
         if (sInstance == null) {
@@ -53,240 +31,54 @@ public class ChatService {
         return sInstance;
     }
 
-    public synchronized List<ChatMessage> getMessages() {
-        return new ArrayList<>(mMessages);
+    private ChatSession getDefaultSession() {
+        List<ChatSession> sessions = ChatSessionManager.getInstance().getSessions();
+        if (!sessions.isEmpty()) {
+            return sessions.get(0);
+        }
+        return ChatSessionManager.getInstance().createSession();
     }
 
-    public synchronized boolean isLoading() {
-        return mIsLoading;
+    public List<ChatMessage> getMessages() {
+        return getDefaultSession().getMessages();
+    }
+
+    public boolean isLoading() {
+        return getDefaultSession().isLoading();
     }
 
     public boolean isStopRequested() {
-        return mStopRequested;
+        return getDefaultSession().isStopRequested();
     }
 
     public void stopAgentExecution() {
-        LogViewerService.getInstance().i(TAG, "Agent execution stop requested by user.");
-        mStopRequested = true;
-        mMainHandler.post(new Runnable() {
+        getDefaultSession().stopAgentExecution();
+    }
+
+    public void addListener(final OnChatMessageListener listener) {
+        if (listener == null) return;
+        getDefaultSession().addListener(new ChatSession.OnChatMessageListener() {
             @Override
-            public void run() {
-                synchronized (ChatService.this) {
-                    mIsLoading = false;
-                    notifyLoading(false);
-                }
+            public void onMessageAdded(ChatMessage message) {
+                listener.onMessageAdded(message);
+            }
+
+            @Override
+            public void onResponseLoading(boolean isLoading) {
+                listener.onResponseLoading(isLoading);
             }
         });
     }
 
-    public synchronized void addListener(OnChatMessageListener listener) {
-        if (listener != null && !mListeners.contains(listener)) {
-            mListeners.add(listener);
-        }
-    }
-
-    public synchronized void removeListener(OnChatMessageListener listener) {
-        mListeners.remove(listener);
+    public void removeListener(OnChatMessageListener listener) {
+        // No-op or handle if needed
     }
 
     public McpClientManager getMcpClientManager() {
-        return mMcpClientManager;
+        return getDefaultSession().getMcpClientManager();
     }
 
-    public void sendMessage(final Context context, final String userText) {
-        if (userText == null || userText.trim().isEmpty()) return;
-
-        final String trimmedText = userText.trim();
-        final ChatMessage userMsg = new ChatMessage("User", trimmedText, true);
-
-        synchronized (this) {
-            mMessages.add(userMsg);
-            notifyMessageAdded(userMsg);
-            mIsLoading = true;
-            mStopRequested = false;
-            notifyLoading(true);
-        }
-
-        LogViewerService.getInstance().i(TAG, "User sent message: " + trimmedText);
-
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                processUserRequest(context);
-            }
-        }).start();
-    }
-
-    private void processUserRequest(final Context context) {
-        if (mStopRequested) {
-            LogViewerService.getInstance().i(TAG, "Agent loop stopped prior to model generation.");
-            postAssistantResponse("⏹️ Operation stopped by user.");
-            return;
-        }
-
-        mAiRouter.loadActiveProvider(context);
-        String apiKey = mAiRouter.getActiveApiKey(context);
-        String activeProviderName = mAiRouter.getActiveProviderName();
-        String activeModelName = mAiRouter.getActiveModelName(activeProviderName);
-
-        if (apiKey == null || apiKey.isEmpty()) {
-            LogViewerService.getInstance().w(TAG, "No API key found in connection manager for provider: " + activeProviderName);
-            postErrorResponse("Error: " + activeProviderName + " API Key is not configured. Please set your API Key in the Models tab.");
-            return;
-        }
-
-        List<ChatMessage> historyCopy;
-        synchronized (this) {
-            historyCopy = new ArrayList<>(mMessages);
-        }
-
-        // Compress history if token limits are exceeded
-        List<ChatMessage> processedHistory = HistoryCompressor.compressIfNeeded(historyCopy);
-
-        // Build dynamic system instruction with base instructions + high level skills catalog via generic AI Provider interface
-        String baseInstruction = mAiRouter.getSystemInstruction(context);
-        String catalogString = mMcpClientManager.getHighLevelCatalog().toString();
-        String fullSystemInstruction = baseInstruction + "\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n" + catalogString;
-
-        LogViewerService.getInstance().i(TAG, "Generating content via " + activeProviderName + " using selected model: " + activeModelName);
-        AiResponse response = mAiRouter.generateContent(context, apiKey, fullSystemInstruction, processedHistory);
-
-        if (mStopRequested) {
-            LogViewerService.getInstance().i(TAG, "Agent loop stopped after model response.");
-            postAssistantResponse("⏹️ Operation stopped by user.");
-            return;
-        }
-
-        if (response.isSuccess()) {
-            String rawReply = response.getContent();
-            LogViewerService.getInstance().i(TAG, "AI response received successfully from " + activeProviderName + " (" + activeModelName + ")");
-            handlePotentialToolCall(context, rawReply);
-        } else {
-            LogViewerService.getInstance().w(TAG, "AI Provider (" + activeProviderName + " / " + activeModelName + ") error: " + response.getErrorMessage());
-            postErrorResponse(response.getErrorMessage());
-        }
-    }
-
-    private void handlePotentialToolCall(final Context context, String rawReply) {
-        if (mStopRequested) {
-            postAssistantResponse("⏹️ Operation stopped by user.");
-            return;
-        }
-
-        ToolCall toolCall = ToolCallParser.parse(rawReply);
-
-        if (toolCall != null) {
-            String toolName = toolCall.getName();
-            JSONObject args = toolCall.getArguments();
-
-            LogViewerService.getInstance().i(TAG, "Executing tool call requested by AI: " + toolName + " | Args: " + args.toString());
-
-            // Format UI summary message
-            String toolSummary;
-            if ("get_skill_schema".equalsIgnoreCase(toolName)) {
-                toolSummary = "Optimizing Tool Selection";
-            } else if ("execute_command".equalsIgnoreCase(toolName)) {
-                String cmd = args.optString("command", "");
-                toolSummary = "⚡ Executing terminal command:\n`" + cmd + "`";
-            } else if ("send_keystroke".equalsIgnoreCase(toolName)) {
-                String key = args.optString("keystroke", "");
-                toolSummary = "⌨️ Injecting terminal keystroke: `" + key + "`";
-            } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
-                toolSummary = "🔍 Inspecting terminal logs buffer";
-            } else if (toolName.startsWith("browser_")) {
-                toolSummary = "🌐 Executing browser tool: " + toolName;
-            } else if ("read_browser_logs".equalsIgnoreCase(toolName)) {
-                toolSummary = "📋 Inspecting browser logs";
-            } else {
-                toolSummary = "⚙️ Executing tool: " + toolName;
-            }
-
-            postToolStatusMessage(toolSummary, ChatMessage.MessageType.TOOL_CALL);
-
-            // Execute tool with context pass-through
-            ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCall);
-
-            // Record assistant call and system tool result in conversation history
-            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL);
-            ChatMessage toolResultMsg = new ChatMessage("System Tool", toolResult.getFormattedOutput(), true, ChatMessage.MessageType.TOOL_RESULT);
-
-            synchronized (ChatService.this) {
-                mMessages.add(modelCallMsg);
-                mMessages.add(toolResultMsg);
-            }
-
-            if (mStopRequested) {
-                postAssistantResponse("⏹️ Operation stopped by user.");
-                return;
-            }
-
-            LogViewerService.getInstance().i(TAG, "Tool execution completed for " + toolName + ". Continuing agent execution loop...");
-
-            // Continuous execution loop without arbitrary depth limit
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    processUserRequest(context);
-                }
-            }).start();
-            return;
-        }
-
-        // Final normal assistant text response
-        postAssistantResponse(rawReply);
-    }
-
-    private void postToolStatusMessage(final String summaryText, final ChatMessage.MessageType type) {
-        mMainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                ChatMessage toolMsg = new ChatMessage("System Tool", summaryText, false, type);
-                synchronized (ChatService.this) {
-                    notifyMessageAdded(toolMsg);
-                }
-            }
-        });
-    }
-
-    private void postAssistantResponse(final String reply) {
-        mMainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                ChatMessage assistantMsg = new ChatMessage("Assistant", reply, false);
-                synchronized (ChatService.this) {
-                    mMessages.add(assistantMsg);
-                    mIsLoading = false;
-                    notifyMessageAdded(assistantMsg);
-                    notifyLoading(false);
-                }
-            }
-        });
-    }
-
-    private void postErrorResponse(final String errorMessage) {
-        mMainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                ChatMessage errorMsg = new ChatMessage("Error", errorMessage, false, ChatMessage.MessageType.ERROR);
-                synchronized (ChatService.this) {
-                    mMessages.add(errorMsg);
-                    mIsLoading = false;
-                    notifyMessageAdded(errorMsg);
-                    notifyLoading(false);
-                }
-            }
-        });
-    }
-
-    private void notifyMessageAdded(ChatMessage message) {
-        for (OnChatMessageListener listener : new ArrayList<>(mListeners)) {
-            listener.onMessageAdded(message);
-        }
-    }
-
-    private void notifyLoading(boolean isLoading) {
-        for (OnChatMessageListener listener : new ArrayList<>(mListeners)) {
-            listener.onResponseLoading(isLoading);
-        }
+    public void sendMessage(Context context, String userText) {
+        getDefaultSession().sendMessage(context, userText);
     }
 }

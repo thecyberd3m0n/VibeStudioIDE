@@ -26,6 +26,8 @@ import com.vibestudio.app.R;
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.fragments.BrowserFragment;
+import com.vibestudio.app.chat.session.ChatSession;
+import com.vibestudio.app.chat.session.ChatSessionManager;
 import com.vibestudio.app.fragments.ChatFragment;
 import com.vibestudio.app.fragments.EditorFragment;
 import com.vibestudio.app.fragments.FilesFragment;
@@ -247,7 +249,8 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                 break;
             case 3: // Chat
                 type = TabType.CHAT;
-                fragment = new ChatFragment();
+                ChatSession session = ChatSessionManager.getInstance().createSession();
+                fragment = ChatFragment.newInstance(session);
                 break;
             case 4: // Browser
                 type = TabType.BROWSER;
@@ -268,7 +271,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         // Search if tab of this type already exists and select it, or open a new one
         for (TabItem tab : mTabManager.getTabs()) {
-            if (tab.getType() == type) {
+            if (type != TabType.CHAT && tab.getType() == type) {
                 mTabManager.selectTab(tab);
                 return;
             }
@@ -336,6 +339,11 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         if (frag instanceof TerminalFragment) {
             TerminalSessionManager.getInstance().closeSession(((TerminalFragment) frag).getTerminalSession());
+        } else if (frag instanceof ChatFragment) {
+            ChatFragment cf = (ChatFragment) frag;
+            if (cf.getChatSession() != null) {
+                ChatSessionManager.getInstance().closeSession(cf.getChatSession().getId());
+            }
         } else if (frag instanceof BrowserFragment) {
             BrowserManager.getInstance().closeWebView(((BrowserFragment) frag).getWebView());
         }

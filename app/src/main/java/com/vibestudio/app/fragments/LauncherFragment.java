@@ -13,6 +13,8 @@ import androidx.fragment.app.Fragment;
 import com.termux.terminal.TerminalSession;
 import com.vibestudio.app.R;
 import com.vibestudio.app.browser.BrowserManager;
+import com.vibestudio.app.chat.session.ChatSession;
+import com.vibestudio.app.chat.session.ChatSessionManager;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
@@ -29,7 +31,8 @@ public class LauncherFragment extends Fragment {
         });
 
         view.findViewById(R.id.btn_launch_chat).setOnClickListener(v -> {
-            TabManager.getInstance().openTab(TabType.CHAT, new ChatFragment());
+            ChatSession session = ChatSessionManager.getInstance().createSession();
+            TabManager.getInstance().openTab(TabType.CHAT, ChatFragment.newInstance(session));
         });
 
         view.findViewById(R.id.btn_launch_browser).setOnClickListener(v -> {
