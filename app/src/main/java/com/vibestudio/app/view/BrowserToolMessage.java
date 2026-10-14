@@ -2,6 +2,8 @@ package com.vibestudio.app.view;
 
 import android.content.Context;
 
+import com.vibestudio.app.tab.TabType;
+
 public class BrowserToolMessage extends BaseToolMessageView {
 
     public BrowserToolMessage(Context context) {
@@ -21,5 +23,10 @@ public class BrowserToolMessage extends BaseToolMessageView {
     @Override
     protected int getTargetNavigationIndex() {
         return 4; // Browser tab index in MainActivity navigation
+    }
+
+    @Override
+    protected TabType getTargetTabType() {
+        return TabType.BROWSER;
     }
 }

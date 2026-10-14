@@ -12,6 +12,9 @@ import androidx.fragment.app.FragmentActivity;
 
 import com.vibestudio.app.activity.MainActivity;
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.tab.TabItem;
+import com.vibestudio.app.tab.TabManager;
+import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.util.FontUtils;
 
 public abstract class BaseToolMessageView extends LinearLayout {
@@ -22,9 +25,9 @@ public abstract class BaseToolMessageView extends LinearLayout {
     private final TextView mTvExpandArrow;
 
     private final LinearLayout mBodyLayout;
-    private final TextView mTvBodyContent;
+    protected final TextView mTvBodyContent;
 
-    private boolean mIsExpanded = false;
+    private boolean mIsExpanded = true;
 
     public BaseToolMessageView(Context context) {
         super(context);
@@ -60,7 +63,7 @@ public abstract class BaseToolMessageView extends LinearLayout {
         mTvHeaderTitle.setLayoutParams(titleParams);
 
         mTvExpandArrow = new TextView(context);
-        mTvExpandArrow.setText("▼"); // Wrapped by default
+        mTvExpandArrow.setText("▲"); // Expanded by default
         mTvExpandArrow.setTextColor(Color.parseColor("#007ACC"));
         mTvExpandArrow.setTextSize(11);
         mTvExpandArrow.setPadding(12, 0, 0, 0);
@@ -74,7 +77,7 @@ public abstract class BaseToolMessageView extends LinearLayout {
         mBodyLayout.setOrientation(LinearLayout.VERTICAL);
         mBodyLayout.setPadding(24, 16, 24, 16);
         mBodyLayout.setBackgroundColor(Color.parseColor("#111116")); // Darker body fill
-        mBodyLayout.setVisibility(View.GONE); // Wrapped by default
+        mBodyLayout.setVisibility(View.VISIBLE); // Expanded by default
 
         mTvBodyContent = new TextView(context);
         mTvBodyContent.setTextColor(Color.parseColor("#A0A0A0"));
@@ -100,6 +103,10 @@ public abstract class BaseToolMessageView extends LinearLayout {
     protected abstract String getHeaderTitle();
     protected abstract int getTargetNavigationIndex();
 
+    protected TabType getTargetTabType() {
+        return null;
+    }
+
     private void toggleExpand() {
         mIsExpanded = !mIsExpanded;
         mBodyLayout.setVisibility(mIsExpanded ? View.VISIBLE : View.GONE);
@@ -107,6 +114,16 @@ public abstract class BaseToolMessageView extends LinearLayout {
     }
 
     private void navigateToTool() {
+        TabType tabType = getTargetTabType();
+        if (tabType != null) {
+            TabManager tabManager = TabManager.getInstance();
+            TabItem targetTab = tabManager.findTabByType(tabType);
+            if (targetTab != null) {
+                tabManager.selectTab(targetTab);
+                return;
+            }
+        }
+
         int navIndex = getTargetNavigationIndex();
         Context ctx = getContext();
         if (ctx instanceof MainActivity) {
@@ -119,7 +136,7 @@ public abstract class BaseToolMessageView extends LinearLayout {
         }
     }
 
-    public void bind(ChatMessage msg) {
+    protected CharSequence formatToolContent(ChatMessage msg) {
         String text = msg.getText();
         String displayContent = text;
 
@@ -150,6 +167,28 @@ public abstract class BaseToolMessageView extends LinearLayout {
             } catch (Exception ignored) {}
         }
 
-        mTvBodyContent.setText(displayContent);
+        return displayContent;
+    }
+
+    public void bind(ChatMessage msg) {
+        mTvBodyContent.setText(formatToolContent(msg));
+    }
+
+    public void appendToolMessage(ChatMessage msg) {
+        CharSequence currentText = mTvBodyContent.getText();
+        CharSequence newText = formatToolContent(msg);
+        if (currentText == null || currentText.length() == 0) {
+            mTvBodyContent.setText(newText);
+        } else {
+            if (currentText instanceof android.text.SpannableStringBuilder) {
+                android.text.SpannableStringBuilder builder = (android.text.SpannableStringBuilder) currentText;
+                builder.append("\n\n").append(newText);
+                mTvBodyContent.setText(builder);
+            } else {
+                android.text.SpannableStringBuilder builder = new android.text.SpannableStringBuilder(currentText);
+                builder.append("\n\n").append(newText);
+                mTvBodyContent.setText(builder);
+            }
+        }
     }
 }

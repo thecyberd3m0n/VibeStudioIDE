@@ -4,13 +4,11 @@ import android.content.Context;
 import android.os.Build;
 import android.text.Html;
 import android.text.Spanned;
-import android.widget.TextView;
 
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.tab.TabType;
 
 import org.json.JSONObject;
-
-import java.lang.reflect.Field;
 
 public class EditorToolMessage extends BaseToolMessageView {
 
@@ -34,9 +32,12 @@ public class EditorToolMessage extends BaseToolMessageView {
     }
 
     @Override
-    public void bind(ChatMessage msg) {
-        super.bind(msg);
+    protected TabType getTargetTabType() {
+        return TabType.EDITOR;
+    }
 
+    @Override
+    protected CharSequence formatToolContent(ChatMessage msg) {
         String text = msg.getText();
         CharSequence formattedContent = text;
 
@@ -97,7 +98,7 @@ public class EditorToolMessage extends BaseToolMessageView {
             } catch (Exception ignored) {}
         }
 
-        setBodyText(formattedContent);
+        return formattedContent;
     }
 
     private Spanned parseHtml(String html) {
@@ -106,16 +107,5 @@ public class EditorToolMessage extends BaseToolMessageView {
         } else {
             return Html.fromHtml(html);
         }
-    }
-
-    private void setBodyText(CharSequence text) {
-        try {
-            Field field = BaseToolMessageView.class.getDeclaredField("mTvBodyContent");
-            field.setAccessible(true);
-            TextView tv = (TextView) field.get(this);
-            if (tv != null) {
-                tv.setText(text);
-            }
-        } catch (Exception ignored) {}
     }
 }

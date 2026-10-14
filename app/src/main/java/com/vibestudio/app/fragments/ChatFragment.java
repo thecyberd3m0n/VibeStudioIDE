@@ -249,7 +249,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         // Centralized SOLID check and view creation via ToolMessageFactory
         if (ToolMessageFactory.isToolMessage(msg)) {
-            BaseToolMessageView toolView = ToolMessageFactory.createToolMessageView(context, msg);
+            int childCount = mChatContainer.getChildCount(); if (childCount > 0) { View lastChild = mChatContainer.getChildAt(childCount - 1); if (lastChild instanceof BaseToolMessageView) { BaseToolMessageView lastToolView = (BaseToolMessageView) lastChild; Class<? extends BaseToolMessageView> targetClass = ToolMessageFactory.getToolMessageClass(msg); if (targetClass != null && targetClass.isInstance(lastToolView)) { lastToolView.appendToolMessage(msg); return; } } } BaseToolMessageView toolView = ToolMessageFactory.createToolMessageView(context, msg);
             mChatContainer.addView(toolView);
             return;
         }

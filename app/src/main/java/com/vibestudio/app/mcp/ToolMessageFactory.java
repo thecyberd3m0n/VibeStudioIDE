@@ -26,49 +26,56 @@ public class ToolMessageFactory {
     }
 
     /**
-     * Factory method returning the appropriate BaseToolMessageView implementation.
+     * Returns the target BaseToolMessageView Class implementation for a given message.
      */
-    public static BaseToolMessageView createToolMessageView(Context context, ChatMessage msg) {
+    public static Class<? extends BaseToolMessageView> getToolMessageClass(ChatMessage msg) {
         if (!isToolMessage(msg)) {
-            TerminalToolMessage defaultView = new TerminalToolMessage(context);
-            defaultView.bind(msg);
-            return defaultView;
+            return TerminalToolMessage.class;
         }
 
         String text = msg.getText();
         if (text != null) {
             if ("Optimizing Tool Selection".equalsIgnoreCase(text) || text.contains("get_skill_schema")) {
-                CustomStatusToolMessage statusView = new CustomStatusToolMessage(context);
-                statusView.bind(msg);
-                return statusView;
+                return CustomStatusToolMessage.class;
             } else if (text.contains("file_") || text.contains("\"file\"") || text.contains("\"file_")) {
-                FileToolMessage fileView = new FileToolMessage(context);
-                fileView.bind(msg);
-                return fileView;
+                return FileToolMessage.class;
             } else if (text.contains("editor_") || text.contains("\"editor\"") || text.contains("\"editor_")) {
-                EditorToolMessage editorView = new EditorToolMessage(context);
-                editorView.bind(msg);
-                return editorView;
+                return EditorToolMessage.class;
             } else if (text.contains("browser_") || text.contains("\"browser\"")) {
                 if (text.contains("read_browser_logs") || text.contains("browser_logs")) {
-                    BrowserLogsToolMessage logsView = new BrowserLogsToolMessage(context);
-                    logsView.bind(msg);
-                    return logsView;
+                    return BrowserLogsToolMessage.class;
                 } else {
-                    BrowserToolMessage browserView = new BrowserToolMessage(context);
-                    browserView.bind(msg);
-                    return browserView;
+                    return BrowserToolMessage.class;
                 }
             } else if (text.contains("execute_command") || text.contains("read_terminal_output") || text.contains("send_keystroke") || text.contains("terminal")) {
-                TerminalToolMessage terminalView = new TerminalToolMessage(context);
-                terminalView.bind(msg);
-                return terminalView;
+                return TerminalToolMessage.class;
             }
         }
 
-        // Fallback default
-        TerminalToolMessage defaultView = new TerminalToolMessage(context);
-        defaultView.bind(msg);
-        return defaultView;
+        return TerminalToolMessage.class;
+    }
+
+    /**
+     * Factory method returning the appropriate BaseToolMessageView implementation.
+     */
+    public static BaseToolMessageView createToolMessageView(Context context, ChatMessage msg) {
+        Class<? extends BaseToolMessageView> clazz = getToolMessageClass(msg);
+        BaseToolMessageView view;
+        if (clazz == CustomStatusToolMessage.class) {
+            view = new CustomStatusToolMessage(context);
+        } else if (clazz == FileToolMessage.class) {
+            view = new FileToolMessage(context);
+        } else if (clazz == EditorToolMessage.class) {
+            view = new EditorToolMessage(context);
+        } else if (clazz == BrowserLogsToolMessage.class) {
+            view = new BrowserLogsToolMessage(context);
+        } else if (clazz == BrowserToolMessage.class) {
+            view = new BrowserToolMessage(context);
+        } else {
+            view = new TerminalToolMessage(context);
+        }
+
+        view.bind(msg);
+        return view;
     }
 }

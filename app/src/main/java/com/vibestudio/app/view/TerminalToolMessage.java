@@ -2,6 +2,8 @@ package com.vibestudio.app.view;
 
 import android.content.Context;
 
+import com.vibestudio.app.tab.TabType;
+
 public class TerminalToolMessage extends BaseToolMessageView {
 
     public TerminalToolMessage(Context context) {
@@ -21,5 +23,10 @@ public class TerminalToolMessage extends BaseToolMessageView {
     @Override
     protected int getTargetNavigationIndex() {
         return 2; // Terminal tab index in MainActivity navigation
+    }
+
+    @Override
+    protected TabType getTargetTabType() {
+        return TabType.TERMINAL;
     }
 }

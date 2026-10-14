@@ -3,6 +3,7 @@ package com.vibestudio.app.view;
 import android.content.Context;
 
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.tab.TabType;
 
 import org.json.JSONObject;
 
@@ -28,7 +29,12 @@ public class FileToolMessage extends BaseToolMessageView {
     }
 
     @Override
-    public void bind(ChatMessage msg) {
+    protected TabType getTargetTabType() {
+        return TabType.FILES;
+    }
+
+    @Override
+    protected CharSequence formatToolContent(ChatMessage msg) {
         String text = msg.getText();
         String displayContent = text;
 
@@ -63,20 +69,6 @@ public class FileToolMessage extends BaseToolMessageView {
             } catch (Exception ignored) {}
         }
 
-        findViewById(android.R.id.text1); // dummy check
-        super.bind(msg);
-        // Replace body content text with formatted displayContent
-        setBodyText(displayContent);
-    }
-
-    private void setBodyText(String text) {
-        try {
-            java.lang.reflect.Field field = BaseToolMessageView.class.getDeclaredField("mTvBodyContent");
-            field.setAccessible(true);
-            android.widget.TextView tv = (android.widget.TextView) field.get(this);
-            if (tv != null) {
-                tv.setText(text);
-            }
-        } catch (Exception ignored) {}
+        return displayContent;
     }
 }
