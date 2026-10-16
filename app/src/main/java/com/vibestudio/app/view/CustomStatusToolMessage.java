@@ -59,6 +59,22 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
         addView(mTvStatusText);
     }
 
+    @Override
+    public void appendToolMessage(ChatMessage msg) {
+        if (mTvStatusText == null) {
+            bind(msg);
+            return;
+        }
+        CharSequence currentText = mTvStatusText.getText();
+        CharSequence newText = extractFormattedStatus(msg != null ? msg.getText() : null);
+        if (currentText == null || currentText.length() == 0) {
+            mTvStatusText.setText(newText);
+        } else {
+            mTvStatusText.append("\n\n");
+            mTvStatusText.append(newText);
+        }
+    }
+
     private String extractFormattedStatus(String text) {
         if (text == null || text.trim().isEmpty()) return "processing...";
         String trimmed = text.trim();

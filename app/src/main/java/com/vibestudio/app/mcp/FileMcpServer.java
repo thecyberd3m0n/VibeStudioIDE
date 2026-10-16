@@ -178,6 +178,9 @@ public class FileMcpServer implements McpServer {
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
                 File file = resolveFile(pathArg, context);
+                if (file.exists() && !file.isFile()) {
+                    return McpToolResult.error("Path is not a file: " + pathArg);
+                }
                 File parent = file.getParentFile();
                 if (parent != null && !parent.exists()) {
                     parent.mkdirs();
@@ -195,9 +198,12 @@ public class FileMcpServer implements McpServer {
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
                 File dir = resolveFile(pathArg, context);
-                if (!dir.exists()) {
-                    boolean created = dir.mkdirs();
-                    if (!created) return McpToolResult.error("Failed to create directory: " + pathArg);
+                if (dir.exists()) {
+                    if (!dir.isDirectory()) {
+                        return McpToolResult.error("Path is not a directory: " + pathArg);
+                    }
+                } else if (!dir.mkdirs() && !dir.isDirectory()) {
+                    return McpToolResult.error("Failed to create directory: " + pathArg);
                 }
                 return McpToolResult.success("Directory created successfully: " + dir.getAbsolutePath());
 

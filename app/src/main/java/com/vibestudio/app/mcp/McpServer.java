@@ -20,6 +20,10 @@ public interface McpServer {
     boolean handlesTool(String toolName);
     McpToolResult callTool(String toolName, Map<String, Object> arguments, Context context);
 
+    default JSONObject onToolCallCompleted(String toolName, Map<String, Object> arguments, Context context, JSONObject result) {
+        return result;
+    }
+
     /**
      * Skill priority tier for tool selection:
      * Lower integer = higher priority / simpler tool (e.g. 1 for file/editor, 2 for terminal/browser).

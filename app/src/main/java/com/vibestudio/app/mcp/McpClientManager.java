@@ -18,12 +18,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class McpClientManager {
 
@@ -56,7 +56,7 @@ public class McpClientManager {
     }
 
     private final Map<String, McpServer> mRegisteredServers = new LinkedHashMap<>();
-    private final Set<String> mLoadedSkills = new HashSet<>();
+    private final Set<String> mLoadedSkills = ConcurrentHashMap.newKeySet();
 
     public McpClientManager() {
         registerServer(new FileMcpServer());
@@ -178,7 +178,7 @@ public class McpClientManager {
     }
 
     public Set<String> getLoadedSkills() {
-        return new HashSet<>(mLoadedSkills);
+        return new java.util.HashSet<>(mLoadedSkills);
     }
 
     public String getLoadedSkillsInstructions(Context context) {
@@ -375,6 +375,14 @@ public class McpClientManager {
 
     public JSONObject executeToolCall(String toolName, JSONObject args) {
         return executeToolCall(toolName, args, null);
+    }
+
+    public JSONObject onToolCallCompleted(String toolName, JSONObject args, Context context, JSONObject result) {
+        McpServer server = findServerForTool(toolName);
+        if (server == null) {
+            return result;
+        }
+        return server.onToolCallCompleted(toolName, jsonObjectToMap(args), context, result);
     }
 
     private Map<String, Object> jsonObjectToMap(JSONObject jsonObj) {

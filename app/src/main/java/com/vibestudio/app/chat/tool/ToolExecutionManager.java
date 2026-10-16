@@ -65,6 +65,12 @@ public class ToolExecutionManager {
             performDelay(plannedDelayMs);
         }
 
+        try {
+            resultObj = mMcpClientManager.onToolCallCompleted(toolName, args, context, resultObj);
+        } catch (Throwable t) {
+            LogViewerService.getInstance().e(TAG, "Exception completing tool '" + toolName + "': " + t.getMessage(), t);
+        }
+
         // Apply 25KB output truncation rule
         JSONObject truncatedObj = OutputTruncator.truncateOutput(resultObj);
 

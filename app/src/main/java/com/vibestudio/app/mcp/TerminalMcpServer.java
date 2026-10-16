@@ -45,6 +45,7 @@ public class TerminalMcpServer implements McpServer {
 
     private boolean mIsActive = false;
     private final List<McpTool> mTools;
+    private final ThreadLocal<TerminalSession> mPendingTerminalSessions = new ThreadLocal<>();
 
     public TerminalMcpServer() {
         mTools = new ArrayList<>();
@@ -154,6 +155,7 @@ public class TerminalMcpServer implements McpServer {
             }
 
             if ("execute_command".equals(toolName)) {
+                mPendingTerminalSessions.remove();
                 String command = arguments != null ? getStringArg(arguments, "command", "") : "";
                 if (command.isEmpty()) {
                     return McpToolResult.error("Missing 'command' parameter.");
@@ -162,17 +164,14 @@ public class TerminalMcpServer implements McpServer {
                 boolean success = TerminalSessionManager.getInstance().executeCommand(termSession, command);
 
                 if (success) {
-                    String snapshot = captureTerminalSnapshot(termSession);
-                    String resultMsg = "Command dispatched to terminal session #" + session.id + ".";
-                    if (!snapshot.isEmpty()) {
-                        resultMsg += "\n\nTerminal Snapshot:\n" + snapshot;
-                    }
-                    return McpToolResult.success(resultMsg);
+                    mPendingTerminalSessions.set(termSession);
+                    return McpToolResult.success("Command dispatched to terminal session #" + session.id + ".");
                 } else {
                     return McpToolResult.error("Failed to dispatch command to session #" + session.id + ".");
                 }
 
             } else if ("send_keystroke".equals(toolName)) {
+                mPendingTerminalSessions.remove();
                 String keystroke = arguments != null ? getStringArg(arguments, "keystroke", "") : "";
                 int keyCode = arguments != null ? getIntArg(arguments, "key_code", -1) : -1;
 
@@ -183,13 +182,9 @@ public class TerminalMcpServer implements McpServer {
                 boolean success = TerminalSessionManager.getInstance().sendKeystroke(termSession, keystroke, keyCode);
 
                 if (success) {
+                    mPendingTerminalSessions.set(termSession);
                     String info = keyCode > 0 ? "keycode: " + keyCode : keystroke;
-                    String snapshot = captureTerminalSnapshot(termSession);
-                    String resultMsg = "Keystroke injected into terminal session #" + session.id + ": " + info;
-                    if (!snapshot.isEmpty()) {
-                        resultMsg += "\n\nTerminal Snapshot:\n" + snapshot;
-                    }
-                    return McpToolResult.success(resultMsg);
+                    return McpToolResult.success("Keystroke injected into terminal session #" + session.id + ": " + info);
                 } else {
                     return McpToolResult.error("Failed to inject keystroke.");
                 }
@@ -211,6 +206,32 @@ public class TerminalMcpServer implements McpServer {
             LogViewerService.getInstance().e(TAG, "Error executing MCP tool: " + toolName, e);
             return McpToolResult.error(e.getMessage());
         }
+    }
+
+    @Override
+    public JSONObject onToolCallCompleted(String toolName, Map<String, Object> arguments, Context context, JSONObject result) {
+        if (!"execute_command".equals(toolName) && !"send_keystroke".equals(toolName)) {
+            return result;
+        }
+        TerminalSession termSession = mPendingTerminalSessions.get();
+        mPendingTerminalSessions.remove();
+        if (result == null || !"success".equalsIgnoreCase(result.optString("status"))) {
+            return result;
+        }
+
+        try {
+            if (termSession == null) {
+                return result;
+            }
+            String snapshot = captureTerminalSnapshot(termSession);
+            if (!snapshot.isEmpty()) {
+                String output = result.optString("output", "");
+                result.put("output", output + "\n\nTerminal Snapshot:\n" + snapshot);
+            }
+        } catch (Exception e) {
+            LogViewerService.getInstance().w(TAG, "Failed to capture terminal snapshot after tool completion: " + e.getMessage());
+        }
+        return result;
     }
 
     private String captureTerminalSnapshot(TerminalSession termSession) {

@@ -42,6 +42,16 @@ public class ToolMessageFactory {
         String text = msg.getText();
         if (text == null) return "";
 
+        String resultHeader = "[MCP Tool Execution Output for ";
+        int headerStart = text.indexOf(resultHeader);
+        if (headerStart >= 0) {
+            int nameStart = headerStart + resultHeader.length();
+            int headerEnd = text.indexOf(']', nameStart);
+            if (headerEnd > nameStart) {
+                return text.substring(nameStart, headerEnd).trim();
+            }
+        }
+
         int jsonStart = text.indexOf("{");
         int jsonEnd = text.lastIndexOf("}");
         if (jsonStart != -1 && jsonEnd > jsonStart) {

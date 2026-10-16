@@ -233,10 +233,6 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         List<ChatMessage> history = mChatSession.getMessages();
         for (ChatMessage msg : history) {
-            // Do not display raw background TOOL_RESULT messages in UI
-            if (msg.getType() == ChatMessage.MessageType.TOOL_RESULT) {
-                continue;
-            }
             addChatMessageUI(context, msg);
         }
 
@@ -326,10 +322,8 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     public void onMessageAdded(ChatMessage message) {
         Context context = getContext();
         if (context != null) {
-            if (message.getType() != ChatMessage.MessageType.TOOL_RESULT) {
-                addChatMessageUI(context, message);
-                scrollToBottom();
-            }
+            addChatMessageUI(context, message);
+            scrollToBottom();
         }
     }
 
