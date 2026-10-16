@@ -28,6 +28,7 @@ public abstract class BaseToolMessageView extends LinearLayout {
     protected final TextView mTvBodyContent;
 
     private boolean mIsExpanded = true;
+    private boolean mIsErrorState = false;
 
     public BaseToolMessageView(Context context) {
         super(context);
@@ -136,42 +137,46 @@ public abstract class BaseToolMessageView extends LinearLayout {
         }
     }
 
-    protected CharSequence formatToolContent(ChatMessage msg) {
-        String text = msg.getText();
-        String displayContent = text;
-
-        if (text != null && text.contains("{") && text.contains("\"tool\"")) {
-            try {
-                int jsonStart = text.indexOf("{");
-                int jsonEnd = text.lastIndexOf("}");
-                if (jsonStart != -1 && jsonEnd > jsonStart) {
-                    org.json.JSONObject toolCallObj = new org.json.JSONObject(text.substring(jsonStart, jsonEnd + 1).trim());
-                    String toolName = toolCallObj.optString("tool");
-                    org.json.JSONObject args = toolCallObj.optJSONObject("args");
-                    if (args == null) args = new org.json.JSONObject();
-
-                    if ("execute_command".equalsIgnoreCase(toolName)) {
-                        displayContent = "$ " + args.optString("command", "");
-                    } else if ("send_keystroke".equalsIgnoreCase(toolName)) {
-                        displayContent = "Keystroke: " + args.optString("keystroke", "");
-                    } else if ("get_skill_schema".equalsIgnoreCase(toolName)) {
-                        displayContent = "Schema request: " + args.optString("skill_name", "");
-                    } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
-                        displayContent = "Reading terminal buffer (" + args.optInt("max_lines", 30) + " lines)";
-                    } else if (toolName.startsWith("browser_")) {
-                        displayContent = "Browser Tool [" + toolName + "]: " + args.toString();
-                    } else {
-                        displayContent = toolName + "(" + args.toString() + ")";
-                    }
-                }
-            } catch (Exception ignored) {}
+    public void setErrorState(boolean isError) {
+        mIsErrorState = isError;
+        if (isError) {
+            mHeaderLayout.setBackgroundColor(Color.parseColor("#4A1520")); // Header more red
+            mBodyLayout.setBackgroundColor(Color.parseColor("#241014"));   // Content background slightly red
+            mTvHeaderTitle.setTextColor(Color.parseColor("#FF9999"));
+            mTvExpandArrow.setTextColor(Color.parseColor("#FF5555"));
+            mTvBodyContent.setTextColor(Color.parseColor("#FFB0B0"));
+        } else {
+            mHeaderLayout.setBackgroundColor(Color.parseColor("#181822"));
+            mBodyLayout.setBackgroundColor(Color.parseColor("#111116"));
+            mTvHeaderTitle.setTextColor(Color.parseColor("#CCCCCC"));
+            mTvExpandArrow.setTextColor(Color.parseColor("#007ACC"));
+            mTvBodyContent.setTextColor(Color.parseColor("#A0A0A0"));
         }
+    }
 
-        return displayContent;
+    public boolean isErrorState() {
+        return mIsErrorState;
+    }
+
+    protected boolean isErrorContent(String text) {
+        if (text == null) return false;
+        String lower = text.toLowerCase();
+        if (lower.contains("\"status\":\"error\"") || lower.contains("\"status\": \"error\"")) return true;
+        if (lower.contains("tool execution threw exception")) return true;
+        if (lower.contains("\"error\":") || lower.contains("\"exception\":")) return true;
+        if (lower.startsWith("error:") || lower.startsWith("exception:")) return true;
+        return false;
+    }
+
+    protected CharSequence formatToolContent(ChatMessage msg) {
+        return msg != null ? msg.getText() : "";
     }
 
     public void bind(ChatMessage msg) {
         mTvBodyContent.setText(formatToolContent(msg));
+        if (msg != null && (msg.isError() || isErrorContent(msg.getText()))) {
+            setErrorState(true);
+        }
     }
 
     public void appendToolMessage(ChatMessage msg) {
@@ -189,6 +194,10 @@ public abstract class BaseToolMessageView extends LinearLayout {
                 builder.append("\n\n").append(newText);
                 mTvBodyContent.setText(builder);
             }
+        }
+
+        if (msg != null && (msg.isError() || isErrorContent(msg.getText()))) {
+            setErrorState(true);
         }
     }
 }

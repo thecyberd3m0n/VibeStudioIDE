@@ -5,7 +5,6 @@ import android.content.Context;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
-import com.vibestudio.app.mcp.model.ToolProperty;
 import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONArray;
@@ -18,13 +17,20 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class McpClientManager {
 
     private static final String TAG = "McpClientManager";
+    public static final String META_TOOL_GET_SKILL_SCHEMA = "get_skill_schema";
+
+    public static boolean isMetaTool(String toolName) {
+        return META_TOOL_GET_SKILL_SCHEMA.equalsIgnoreCase(toolName);
+    }
 
     public static class McpServerInfo {
         private final String name;
@@ -45,6 +51,7 @@ public class McpClientManager {
     }
 
     private final Map<String, McpServer> mRegisteredServers = new HashMap<>();
+    private final Set<String> mLoadedSkills = new HashSet<>();
 
     public McpClientManager() {
         registerServer(new TerminalMcpServer());
@@ -60,6 +67,27 @@ public class McpClientManager {
         }
     }
 
+    public McpServer findServerForTool(String toolName) {
+        if (toolName == null) return null;
+        for (McpServer server : mRegisteredServers.values()) {
+            if (server.handlesTool(toolName)) {
+                return server;
+            }
+        }
+        return null;
+    }
+
+    public CharSequence formatToolCall(String toolName, JSONObject args) {
+        McpServer server = findServerForTool(toolName);
+        if (server != null) {
+            CharSequence custom = server.formatToolCall(toolName, args);
+            if (custom != null) {
+                return custom;
+            }
+        }
+        return null;
+    }
+
     public List<McpServerInfo> getServerInfos() {
         List<McpServerInfo> list = new ArrayList<>();
         for (McpServer server : mRegisteredServers.values()) {
@@ -70,6 +98,42 @@ public class McpClientManager {
 
     public List<McpServerInfo> getConfiguredServers() {
         return getServerInfos();
+    }
+
+    public void markSkillLoaded(String skillName) {
+        if (skillName != null && !skillName.trim().isEmpty()) {
+            mLoadedSkills.add(skillName.toLowerCase().trim());
+        }
+    }
+
+    public boolean isSkillLoaded(String skillName) {
+        if (skillName == null) return false;
+        return mLoadedSkills.contains(skillName.toLowerCase().trim());
+    }
+
+    public Set<String> getLoadedSkills() {
+        return new HashSet<>(mLoadedSkills);
+    }
+
+    public String getLoadedSkillsInstructions(Context context) {
+        if (mLoadedSkills.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n=== LOADED SKILLS SCHEMAS (ACTIVE IN CONTEXT) ===\n");
+        sb.append("The following skills are already loaded and ACTIVE in your context window:\n");
+        for (String skillName : mLoadedSkills) {
+            JSONObject schema = getSkillSchema(context, skillName);
+            sb.append("\n--- SKILL: ").append(skillName.toUpperCase()).append(" ---\n");
+            if (schema != null && schema.has("schema")) {
+                JSONObject schemaObj = schema.optJSONObject("schema");
+                if (schemaObj != null) {
+                    sb.append(schemaObj.toString()).append("\n");
+                }
+            }
+        }
+        sb.append("\nIMPORTANT: Do NOT call '").append(META_TOOL_GET_SKILL_SCHEMA).append("' again for any of the above loaded skills. Invoke their action tools directly.\n");
+        return sb.toString();
     }
 
     public JSONObject getHighLevelCatalog() {
@@ -86,7 +150,7 @@ public class McpClientManager {
 
             catalog.put("available_skills", skills);
 
-            McpTool metaTool = McpTool.builder("get_skill_schema", "Fetches detailed parameters and tool schemas for a given skill name when needed.")
+            McpTool metaTool = McpTool.builder(META_TOOL_GET_SKILL_SCHEMA, "Fetches detailed parameters and tool schemas for a given skill name when needed.")
                     .addProperty("skill_name", PropertyType.STRING, "Name of the skill to load (e.g. 'terminal', 'browser', 'file', 'editor')", true)
                     .build();
 
@@ -101,6 +165,7 @@ public class McpClientManager {
         try {
             if (skillName != null && mRegisteredServers.containsKey(skillName.toLowerCase())) {
                 String cleanSkillName = skillName.toLowerCase();
+                markSkillLoaded(cleanSkillName);
                 McpServer server = mRegisteredServers.get(cleanSkillName);
                 if (server != null) {
                     JSONArray toolsArray = new JSONArray();
@@ -157,8 +222,11 @@ public class McpClientManager {
 
     public JSONObject executeToolCall(String toolName, JSONObject args, Context context) {
         try {
-            if ("get_skill_schema".equalsIgnoreCase(toolName)) {
+            if (isMetaTool(toolName)) {
                 String skillName = args != null ? args.optString("skill_name") : "";
+                if (skillName.isEmpty() && args != null) {
+                    skillName = args.optString("skill", args.optString("tool", ""));
+                }
                 return getSkillSchema(context, skillName);
             }
 
@@ -166,12 +234,13 @@ public class McpClientManager {
 
             for (McpServer server : mRegisteredServers.values()) {
                 if (server.handlesTool(toolName)) {
+                    markSkillLoaded(server.getName());
                     McpToolResult result = server.callTool(toolName, arguments, context);
                     return result.toJsonObject();
                 }
             }
 
-            McpToolResult errResult = McpToolResult.error("Tool execution failed: Unknown tool '" + toolName + "'. Lazy load skill schema via 'get_skill_schema' if not loaded.");
+            McpToolResult errResult = McpToolResult.error("Tool execution failed: Unknown tool '" + toolName + "'. Lazy load skill schema via '" + META_TOOL_GET_SKILL_SCHEMA + "' if not loaded.");
             return errResult.toJsonObject();
 
         } catch (Exception e) {

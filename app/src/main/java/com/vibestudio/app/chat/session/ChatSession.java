@@ -7,15 +7,13 @@ import android.os.Looper;
 import com.vibestudio.app.chat.compressor.HistoryCompressor;
 import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
-import com.vibestudio.app.chat.model.ToolCall;
+import org.json.JSONObject;
 import com.vibestudio.app.chat.model.ToolResult;
 import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.chat.tool.ToolCallParser;
 import com.vibestudio.app.chat.tool.ToolExecutionManager;
 import com.vibestudio.app.mcp.McpClientManager;
 import com.vibestudio.app.service.LogViewerService;
-
-import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +59,10 @@ public class ChatSession {
         return mIsLoading;
     }
 
+    public McpClientManager getMcpClientManager() {
+        return mMcpClientManager;
+    }
+
     public boolean isStopRequested() {
         return mStopRequested;
     }
@@ -79,6 +81,10 @@ public class ChatSession {
         });
     }
 
+    public void stopGeneration() {
+        stopAgentExecution();
+    }
+
     public synchronized void addListener(OnChatMessageListener listener) {
         if (listener != null && !mListeners.contains(listener)) {
             mListeners.add(listener);
@@ -89,25 +95,42 @@ public class ChatSession {
         mListeners.remove(listener);
     }
 
-    public McpClientManager getMcpClientManager() {
-        return mMcpClientManager;
+    public void sendMessage(final Context context, final String userText) {
+        addUserMessage(context, userText);
     }
 
-    public void sendMessage(final Context context, final String userText) {
+    public void retry(final Context context) {
+        if (mIsLoading) return;
+        synchronized (this) {
+            if (!mMessages.isEmpty()) {
+                ChatMessage last = mMessages.get(mMessages.size() - 1);
+                if (last.isError() || last.getType() == ChatMessage.MessageType.ERROR) {
+                    mMessages.remove(mMessages.size() - 1);
+                }
+            }
+        }
+        mIsLoading = true;
+        mStopRequested = false;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                processUserRequest(context);
+            }
+        }).start();
+    }
+
+    public void addUserMessage(final Context context, final String userText) {
         if (userText == null || userText.trim().isEmpty()) return;
 
-        final String trimmedText = userText.trim();
-        final ChatMessage userMsg = new ChatMessage("User", trimmedText, true);
+        mStopRequested = false;
+        ChatMessage userMsg = new ChatMessage("User", userText, true);
 
         synchronized (this) {
             mMessages.add(userMsg);
-            notifyMessageAdded(userMsg);
             mIsLoading = true;
-            mStopRequested = false;
+            notifyMessageAdded(userMsg);
             notifyLoading(true);
         }
-
-        LogViewerService.getInstance().i(TAG, "User sent message in session " + mId + ": " + trimmedText);
 
         new Thread(new Runnable() {
             @Override
@@ -119,7 +142,6 @@ public class ChatSession {
 
     private void processUserRequest(final Context context) {
         if (mStopRequested) {
-            LogViewerService.getInstance().i(TAG, "Agent loop stopped prior to model generation.");
             postAssistantResponse("⏹️ Operation stopped by user.");
             return;
         }
@@ -135,85 +157,68 @@ public class ChatSession {
             return;
         }
 
-        List<ChatMessage> historyCopy;
+        List<ChatMessage> snapshot;
         synchronized (this) {
-            historyCopy = new ArrayList<>(mMessages);
+            snapshot = new ArrayList<>(mMessages);
         }
 
-        // Compress history if token limits are exceeded
-        List<ChatMessage> processedHistory = HistoryCompressor.compressIfNeeded(historyCopy);
+        // Apply automatic token history compression rule before sending payload
+        snapshot = HistoryCompressor.compressIfNeeded(snapshot);
 
-        // Build dynamic system instruction with base instructions + high level skills catalog via generic AI Provider interface
+        // Attach system instructions with high level skills catalog + loaded skills schemas
         String baseInstruction = mAiRouter.getSystemInstruction(context);
         String catalogString = mMcpClientManager.getHighLevelCatalog().toString();
-        String fullSystemInstruction = baseInstruction + "\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n" + catalogString;
+        String loadedSkillsString = mMcpClientManager.getLoadedSkillsInstructions(context);
+        String fullSystemInstruction = baseInstruction 
+                + "\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n" + catalogString
+                + (loadedSkillsString != null && !loadedSkillsString.isEmpty() ? "\n" + loadedSkillsString : "");
 
         LogViewerService.getInstance().i(TAG, "Generating content via " + activeProviderName + " using selected model: " + activeModelName);
-        AiResponse response = mAiRouter.generateContent(context, apiKey, fullSystemInstruction, processedHistory);
+        AiResponse response = mAiRouter.generateContent(context, apiKey, fullSystemInstruction, snapshot);
 
         if (mStopRequested) {
-            LogViewerService.getInstance().i(TAG, "Agent loop stopped after model response.");
             postAssistantResponse("⏹️ Operation stopped by user.");
             return;
         }
 
-        if (response.isSuccess()) {
-            String rawReply = response.getContent();
-            LogViewerService.getInstance().i(TAG, "AI response received successfully from " + activeProviderName + " (" + activeModelName + ")");
-            handlePotentialToolCall(context, rawReply);
-        } else {
+        if (!response.isSuccess()) {
             LogViewerService.getInstance().w(TAG, "AI Provider (" + activeProviderName + " / " + activeModelName + ") error: " + response.getErrorMessage());
             postErrorResponse(response.getErrorMessage());
-        }
-    }
-
-    private void handlePotentialToolCall(final Context context, String rawReply) {
-        if (mStopRequested) {
-            postAssistantResponse("⏹️ Operation stopped by user.");
             return;
         }
 
-        ToolCall toolCall = ToolCallParser.parse(rawReply);
+        String rawReply = response.getContent();
 
-        if (toolCall != null) {
-            String toolName = toolCall.getName();
-            JSONObject args = toolCall.getArguments();
+        // Check if response contains a tool call request
+        JSONObject toolCallObj = ToolCallParser.parse(rawReply);
+
+        if (toolCallObj != null) {
+            String toolName = toolCallObj.optString("tool", "unknown");
+            JSONObject args = toolCallObj.optJSONObject("args");
+            if (args == null) args = new JSONObject();
+
+            String requestMsg = rawReply;
 
             LogViewerService.getInstance().i(TAG, "Executing tool call requested by AI: " + toolName + " | Args: " + args.toString());
 
-            // Format UI summary message
-            String toolSummary;
-            if ("get_skill_schema".equalsIgnoreCase(toolName)) {
-                toolSummary = "Optimizing Tool Selection";
-            } else if ("execute_command".equalsIgnoreCase(toolName)) {
-                String cmd = args.optString("command", "");
-                toolSummary = "⚡ Executing terminal command:\n`" + cmd + "`";
-            } else if ("send_keystroke".equalsIgnoreCase(toolName)) {
-                String key = args.optString("keystroke", "");
-                toolSummary = "⌨️ Injecting terminal keystroke: `" + key + "`";
-            } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
-                toolSummary = "🔍 Inspecting terminal logs buffer";
-            } else if (toolName.startsWith("browser_")) {
-                toolSummary = "🌐 Executing browser tool: " + toolName;
-            } else if ("read_browser_logs".equalsIgnoreCase(toolName)) {
-                toolSummary = "📋 Inspecting browser logs";
-            } else {
-                toolSummary = "⚙️ Executing tool: " + toolName;
-            }
-
-            postToolStatusMessage(toolSummary, ChatMessage.MessageType.TOOL_CALL);
+            postToolStatusMessage(requestMsg, ChatMessage.MessageType.TOOL_CALL);
 
             // Execute tool with context pass-through
-            ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCall);
+            ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
+            String responseMsg = toolResult.getFormattedOutput();
 
             // Record assistant call and system tool result in conversation history
             ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL);
-            ChatMessage toolResultMsg = new ChatMessage("System Tool", toolResult.getFormattedOutput(), true, ChatMessage.MessageType.TOOL_RESULT);
+            ChatMessage toolResultMsg = new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
+                    toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT);
 
             synchronized (ChatSession.this) {
                 mMessages.add(modelCallMsg);
                 mMessages.add(toolResultMsg);
             }
+
+            postToolStatusMessage(responseMsg,
+                    toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT);
 
             if (mStopRequested) {
                 postAssistantResponse("⏹️ Operation stopped by user.");
@@ -278,15 +283,31 @@ public class ChatSession {
         });
     }
 
-    private void notifyMessageAdded(ChatMessage message) {
-        for (OnChatMessageListener listener : new ArrayList<>(mListeners)) {
-            listener.onMessageAdded(message);
+    private void notifyMessageAdded(final ChatMessage message) {
+        List<OnChatMessageListener> listeners;
+        synchronized (mListeners) {
+            listeners = new ArrayList<>(mListeners);
+        }
+        for (OnChatMessageListener l : listeners) {
+            try {
+                l.onMessageAdded(message);
+            } catch (Exception e) {
+                LogViewerService.getInstance().e(TAG, "Error notifying message listener", e);
+            }
         }
     }
 
-    private void notifyLoading(boolean isLoading) {
-        for (OnChatMessageListener listener : new ArrayList<>(mListeners)) {
-            listener.onResponseLoading(isLoading);
+    private void notifyLoading(final boolean isLoading) {
+        List<OnChatMessageListener> listeners;
+        synchronized (mListeners) {
+            listeners = new ArrayList<>(mListeners);
+        }
+        for (OnChatMessageListener l : listeners) {
+            try {
+                l.onResponseLoading(isLoading);
+            } catch (Exception e) {
+                LogViewerService.getInstance().e(TAG, "Error notifying loading listener", e);
+            }
         }
     }
 }

@@ -21,6 +21,34 @@ import java.util.Map;
 
 public class FileMcpServer implements McpServer {
 
+    @Override
+    public CharSequence formatToolCall(String toolName, JSONObject args) {
+        if (args == null) args = new JSONObject();
+        if ("file_list_directory".equalsIgnoreCase(toolName)) {
+            return "Traversing directory: " + args.optString("path", "~");
+        } else if ("file_create_file".equalsIgnoreCase(toolName)) {
+            return "Created file: " + args.optString("path", "");
+        } else if ("file_create_directory".equalsIgnoreCase(toolName)) {
+            return "Created directory: " + args.optString("path", "");
+        } else if ("file_delete".equalsIgnoreCase(toolName)) {
+            return "Deleted path: " + args.optString("path", "");
+        } else if ("file_move".equalsIgnoreCase(toolName)) {
+            return "Moved " + args.optString("source", "") + " -> " + args.optString("destination", "");
+        } else if ("file_copy".equalsIgnoreCase(toolName)) {
+            return "Copied " + args.optString("source", "") + " -> " + args.optString("destination", "");
+        } else if ("file_get_info".equalsIgnoreCase(toolName)) {
+            return "Inspected info for: " + args.optString("path", "");
+        }
+        return toolName + "(" + args.toString() + ")";
+    }
+
+
+    @Override
+    public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
+        return new com.vibestudio.app.view.FileToolMessage(context);
+    }
+
+
     private static final String TAG = "FileMcpServer";
     private static final String NAME = "file";
     private static final String DESCRIPTION = "Allows traversing filesystem, listing directory contents, creating files/directories, moving, copying, and deleting files within the workspace.";

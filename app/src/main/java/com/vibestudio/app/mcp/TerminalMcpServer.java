@@ -12,8 +12,27 @@ import com.vibestudio.app.terminal.TerminalSessionManager;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.json.JSONObject;
 
 public class TerminalMcpServer implements McpServer {
+
+    @Override
+    public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
+        return new com.vibestudio.app.view.TerminalToolMessage(context);
+    }
+
+    @Override
+    public CharSequence formatToolCall(String toolName, JSONObject args) {
+        if (args == null) args = new JSONObject();
+        if ("execute_command".equalsIgnoreCase(toolName)) {
+            return "$ " + args.optString("command", "");
+        } else if ("send_keystroke".equalsIgnoreCase(toolName)) {
+            return "Keystroke: " + args.optString("keystroke", "");
+        } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
+            return "Reading terminal buffer (" + args.optInt("max_lines", 30) + " lines)";
+        }
+        return null;
+    }
 
     private static final String TAG = "TerminalMcpServer";
     private static final String NAME = "terminal";
@@ -138,7 +157,12 @@ public class TerminalMcpServer implements McpServer {
                 boolean success = TerminalSessionManager.getInstance().executeCommand(termSession, command);
 
                 if (success) {
-                    return McpToolResult.success("Command dispatched to terminal session #" + session.id + ".");
+                    String snapshot = captureTerminalSnapshot(termSession);
+                    String resultMsg = "Command dispatched to terminal session #" + session.id + ".";
+                    if (!snapshot.isEmpty()) {
+                        resultMsg += "\n\nTerminal Snapshot:\n" + snapshot;
+                    }
+                    return McpToolResult.success(resultMsg);
                 } else {
                     return McpToolResult.error("Failed to dispatch command to session #" + session.id + ".");
                 }
@@ -155,7 +179,12 @@ public class TerminalMcpServer implements McpServer {
 
                 if (success) {
                     String info = keyCode > 0 ? "keycode: " + keyCode : keystroke;
-                    return McpToolResult.success("Keystroke injected into terminal session #" + session.id + ": " + info);
+                    String snapshot = captureTerminalSnapshot(termSession);
+                    String resultMsg = "Keystroke injected into terminal session #" + session.id + ": " + info;
+                    if (!snapshot.isEmpty()) {
+                        resultMsg += "\n\nTerminal Snapshot:\n" + snapshot;
+                    }
+                    return McpToolResult.success(resultMsg);
                 } else {
                     return McpToolResult.error("Failed to inject keystroke.");
                 }
@@ -177,6 +206,18 @@ public class TerminalMcpServer implements McpServer {
             LogViewerService.getInstance().e(TAG, "Error executing MCP tool: " + toolName, e);
             return McpToolResult.error(e.getMessage());
         }
+    }
+
+    private String captureTerminalSnapshot(TerminalSession termSession) {
+        try {
+            if (termSession != null && termSession.isRunning()) {
+                String snapshot = TerminalSessionManager.getInstance().readTerminalOutput(termSession, 30, 0, true, null);
+                return snapshot != null ? snapshot : "";
+            }
+        } catch (Exception e) {
+            LogViewerService.getInstance().w(TAG, "Failed to capture terminal snapshot: " + e.getMessage());
+        }
+        return "";
     }
 
     private String getStringArg(Map<String, Object> args, String key, String defaultValue) {

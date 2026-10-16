@@ -4,75 +4,81 @@ import android.content.Context;
 
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.view.BaseToolMessageView;
-import com.vibestudio.app.view.BrowserLogsToolMessage;
-import com.vibestudio.app.view.BrowserToolMessage;
 import com.vibestudio.app.view.CustomStatusToolMessage;
-import com.vibestudio.app.view.EditorToolMessage;
-import com.vibestudio.app.view.FileToolMessage;
-import com.vibestudio.app.view.TerminalToolMessage;
+
+import org.json.JSONObject;
 
 public class ToolMessageFactory {
 
-    /**
-     * Centralized logic to determine if a ChatMessage is a tool call message.
-     */
+    private static McpClientManager sMcpClientManager;
+
+    public static void setMcpClientManager(McpClientManager clientManager) {
+        sMcpClientManager = clientManager;
+    }
+
+    private static McpClientManager getClientManager() {
+        if (sMcpClientManager == null) {
+            sMcpClientManager = new McpClientManager();
+        }
+        return sMcpClientManager;
+    }
+
     public static boolean isToolMessage(ChatMessage msg) {
         if (msg == null) return false;
-        if (msg.getType() == ChatMessage.MessageType.TOOL_CALL) {
+        if (msg.getType() == ChatMessage.MessageType.TOOL_CALL || msg.getType() == ChatMessage.MessageType.TOOL_RESULT) {
             return true;
         }
         String text = msg.getText();
-        return text != null && text.contains("{") && text.contains("\"tool\"");
-    }
-
-    /**
-     * Returns the target BaseToolMessageView Class implementation for a given message.
-     */
-    public static Class<? extends BaseToolMessageView> getToolMessageClass(ChatMessage msg) {
-        if (!isToolMessage(msg)) {
-            return TerminalToolMessage.class;
-        }
-
-        String text = msg.getText();
         if (text != null) {
-            if ("Optimizing Tool Selection".equalsIgnoreCase(text) || text.contains("get_skill_schema")) {
-                return CustomStatusToolMessage.class;
-            } else if (text.contains("file_") || text.contains("\"file\"") || text.contains("\"file_")) {
-                return FileToolMessage.class;
-            } else if (text.contains("editor_") || text.contains("\"editor\"") || text.contains("\"editor_")) {
-                return EditorToolMessage.class;
-            } else if (text.contains("browser_") || text.contains("\"browser\"")) {
-                if (text.contains("read_browser_logs") || text.contains("browser_logs")) {
-                    return BrowserLogsToolMessage.class;
-                } else {
-                    return BrowserToolMessage.class;
-                }
-            } else if (text.contains("execute_command") || text.contains("read_terminal_output") || text.contains("send_keystroke") || text.contains("terminal")) {
-                return TerminalToolMessage.class;
-            }
+            if (text.contains("{") && text.contains("\"tool\"")) return true;
+            if (text.contains("[MCP Tool Execution Output")) return true;
+            if ("Optimizing Tool Selection".equalsIgnoreCase(text) || text.toLowerCase().startsWith("loading skill:")) return true;
         }
-
-        return TerminalToolMessage.class;
+        return false;
     }
 
-    /**
-     * Factory method returning the appropriate BaseToolMessageView implementation.
-     */
+    private static String extractToolName(ChatMessage msg) {
+        if (msg == null) return "";
+        String text = msg.getText();
+        if (text == null) return "";
+
+        int jsonStart = text.indexOf("{");
+        int jsonEnd = text.lastIndexOf("}");
+        if (jsonStart != -1 && jsonEnd > jsonStart) {
+            try {
+                JSONObject json = new JSONObject(text.substring(jsonStart, jsonEnd + 1));
+                return json.optString("tool", "");
+            } catch (Exception ignored) {}
+        }
+        return "";
+    }
+
     public static BaseToolMessageView createToolMessageView(Context context, ChatMessage msg) {
-        Class<? extends BaseToolMessageView> clazz = getToolMessageClass(msg);
-        BaseToolMessageView view;
-        if (clazz == CustomStatusToolMessage.class) {
+        if (!isToolMessage(msg)) {
+            BaseToolMessageView defaultView = new CustomStatusToolMessage(context);
+            defaultView.bind(msg);
+            return defaultView;
+        }
+
+        String text = msg != null ? msg.getText() : "";
+        if (text != null && ("Optimizing Tool Selection".equalsIgnoreCase(text) 
+                || text.toLowerCase().startsWith("loading skill:") 
+                || text.contains(McpClientManager.META_TOOL_GET_SKILL_SCHEMA))) {
+            BaseToolMessageView customView = new CustomStatusToolMessage(context);
+            customView.bind(msg);
+            return customView;
+        }
+
+        String toolName = extractToolName(msg);
+        McpServer server = getClientManager().findServerForTool(toolName);
+        BaseToolMessageView view = null;
+
+        if (server != null) {
+            view = server.createToolMessageView(context, toolName);
+        }
+
+        if (view == null) {
             view = new CustomStatusToolMessage(context);
-        } else if (clazz == FileToolMessage.class) {
-            view = new FileToolMessage(context);
-        } else if (clazz == EditorToolMessage.class) {
-            view = new EditorToolMessage(context);
-        } else if (clazz == BrowserLogsToolMessage.class) {
-            view = new BrowserLogsToolMessage(context);
-        } else if (clazz == BrowserToolMessage.class) {
-            view = new BrowserToolMessage(context);
-        } else {
-            view = new TerminalToolMessage(context);
         }
 
         view.bind(msg);

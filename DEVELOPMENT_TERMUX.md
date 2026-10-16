@@ -62,3 +62,10 @@ When Android Package Installer throws generic errors like *"Pakiet wygląda na n
 ## 4. Submodule & Architecture Rules
 
 - **Do NOT modify submodules directly** (e.g., `libtermux-android`). All fixes, keyboard event translations, view wrappings, or custom behaviors MUST be implemented inside app workspace code (`app/src/...`), using custom subclasses, view wrappers, or delegating event listeners, without modifying external submodule libraries.
+
+---
+
+## 5. Release & Changelog Guidelines
+
+- **Changelog Updates**: Before releasing a new version, document all notable changes, new features, and bug fixes in `CHANGELOG.md` following Semantic Versioning conventions.
+- **Tone & Language**: Write changelog entries in business-oriented, user-centric language rather than overly technical jargon so non-technical stakeholders and end users can understand the value delivered.

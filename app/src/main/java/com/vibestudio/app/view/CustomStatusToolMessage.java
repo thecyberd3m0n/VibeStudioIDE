@@ -8,6 +8,8 @@ import android.widget.TextView;
 
 import com.vibestudio.app.chat.model.ChatMessage;
 
+import org.json.JSONObject;
+
 public class CustomStatusToolMessage extends BaseToolMessageView {
 
     private TextView mTvStatusText;
@@ -49,12 +51,35 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
         mTvStatusText.setTypeface(null, Typeface.ITALIC);
         mTvStatusText.setGravity(Gravity.CENTER);
 
-        String text = message != null ? message.getText() : "Optimizing Tool Selection";
-        if (text != null && text.contains("get_skill_schema")) {
-            text = "Optimizing Tool Selection";
-        }
-        mTvStatusText.setText(text);
+        String rawText = message != null ? message.getText() : "";
+        String skillName = extractSkillNameFromToolCall(rawText);
+        String displayText;
 
+        if (!skillName.isEmpty()) {
+            displayText = "loading skill: " + skillName;
+        } else if (rawText != null && !rawText.trim().isEmpty()) {
+            displayText = rawText.trim();
+        } else {
+            displayText = "processing...";
+        }
+
+        mTvStatusText.setText(displayText);
         addView(mTvStatusText);
+    }
+
+    private String extractSkillNameFromToolCall(String text) {
+        if (text == null || text.isEmpty()) return "";
+        int jsonStart = text.indexOf("{");
+        int jsonEnd = text.lastIndexOf("}");
+        if (jsonStart != -1 && jsonEnd > jsonStart) {
+            try {
+                JSONObject json = new JSONObject(text.substring(jsonStart, jsonEnd + 1));
+                JSONObject args = json.optJSONObject("args");
+                if (args != null) {
+                    return args.optString("skill_name", args.optString("skill", ""));
+                }
+            } catch (Exception ignored) {}
+        }
+        return "";
     }
 }
