@@ -36,7 +36,11 @@ public class TerminalToolMessage extends BaseToolMessageView {
 
     @Override
     protected CharSequence formatToolContent(ChatMessage msg) {
+        if (msg == null) return "";
         String text = msg.getText();
+        if (text != null && text.contains("[MCP Tool Execution Output")) {
+            return null;
+        }
 
         if (text != null && text.contains("{") && text.contains("\"tool\"")) {
             try {
@@ -56,7 +60,7 @@ public class TerminalToolMessage extends BaseToolMessageView {
             } catch (Exception ignored) {}
         }
 
-        return text;
+        return text != null ? text : "";
     }
 
     private McpClientManager getMcpClientManager() {

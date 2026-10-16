@@ -64,21 +64,6 @@ public class ToolMessageFactory {
     }
 
     public static BaseToolMessageView createToolMessageView(Context context, ChatMessage msg) {
-        if (!isToolMessage(msg)) {
-            BaseToolMessageView defaultView = new CustomStatusToolMessage(context);
-            defaultView.bind(msg);
-            return defaultView;
-        }
-
-        String text = msg != null ? msg.getText() : "";
-        if (text != null && ("Optimizing Tool Selection".equalsIgnoreCase(text) 
-                || text.toLowerCase().startsWith("loading skill:") 
-                || text.contains(McpClientManager.META_TOOL_GET_SKILL_SCHEMA))) {
-            BaseToolMessageView customView = new CustomStatusToolMessage(context);
-            customView.bind(msg);
-            return customView;
-        }
-
         String toolName = extractToolName(msg);
         McpServer server = getClientManager().findServerForTool(toolName);
         BaseToolMessageView view = null;

@@ -38,7 +38,11 @@ public class EditorToolMessage extends BaseToolMessageView {
 
     @Override
     protected CharSequence formatToolContent(ChatMessage msg) {
+        if (msg == null) return "";
         String text = msg.getText();
+        if (text != null && text.contains("[MCP Tool Execution Output")) {
+            return null;
+        }
         CharSequence formattedContent = text;
 
         if (text != null && text.contains("{") && text.contains("\"tool\"")) {

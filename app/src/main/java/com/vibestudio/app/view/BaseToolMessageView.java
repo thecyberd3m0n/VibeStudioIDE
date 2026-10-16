@@ -169,19 +169,33 @@ public abstract class BaseToolMessageView extends LinearLayout {
     }
 
     protected CharSequence formatToolContent(ChatMessage msg) {
-        return msg != null ? msg.getText() : "";
+        if (msg == null) return "";
+        String text = msg.getText();
+        if (text != null && text.contains("[MCP Tool Execution Output")) {
+            return null;
+        }
+        return text != null ? text : "";
     }
 
     public void bind(ChatMessage msg) {
-        mTvBodyContent.setText(formatToolContent(msg));
+        CharSequence formatted = formatToolContent(msg);
+        if (formatted == null) {
+            setVisibility(GONE);
+            return;
+        }
+        setVisibility(VISIBLE);
+        mTvBodyContent.setText(formatted);
         if (msg != null && (msg.isError() || isErrorContent(msg.getText()))) {
             setErrorState(true);
         }
     }
 
     public void appendToolMessage(ChatMessage msg) {
-        CharSequence currentText = mTvBodyContent.getText();
         CharSequence newText = formatToolContent(msg);
+        if (newText == null) {
+            return;
+        }
+        CharSequence currentText = mTvBodyContent.getText();
         if (currentText == null || currentText.length() == 0) {
             mTvBodyContent.setText(newText);
         } else {
