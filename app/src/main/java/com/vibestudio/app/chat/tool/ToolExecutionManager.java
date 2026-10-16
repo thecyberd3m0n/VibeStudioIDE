@@ -35,7 +35,12 @@ public class ToolExecutionManager {
         String toolName = toolCallObj.optString("tool", "unknown");
         JSONObject args = toolCallObj.optJSONObject("args");
         if (args == null) args = new JSONObject();
+
         long plannedDelayMs = Math.max(0L, toolCallObj.optLong("planned_delay_ms", 0L));
+        if (plannedDelayMs > 0 && !mMcpClientManager.supportsPlannedDelay(toolName)) {
+            LogViewerService.getInstance().i(TAG, "Reducing planned delay to 0ms for simple/synchronous tool: " + toolName);
+            plannedDelayMs = 0L;
+        }
 
         JSONObject resultObj;
         try {
@@ -54,7 +59,7 @@ public class ToolExecutionManager {
             }
         }
 
-        // Perform planned delay AFTER executing tool call if requested by Agent
+        // Perform planned delay AFTER executing tool call if supported & requested
         if (plannedDelayMs > 0) {
             LogViewerService.getInstance().i(TAG, "Executing planned delay of " + plannedDelayMs + " ms after dispatching tool: " + toolName);
             performDelay(plannedDelayMs);

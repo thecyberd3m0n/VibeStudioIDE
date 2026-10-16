@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -37,16 +38,19 @@ public class McpClientManager {
         private final String name;
         private final String description;
         private final boolean isConnected;
+        private final int priority;
 
-        public McpServerInfo(String name, String description, boolean isConnected) {
+        public McpServerInfo(String name, String description, boolean isConnected, int priority) {
             this.name = name;
             this.description = description;
             this.isConnected = isConnected;
+            this.priority = priority;
         }
 
         public String getName() { return name; }
         public String getDescription() { return description; }
         public boolean isConnected() { return isConnected; }
+        public int getPriority() { return priority; }
         public String getStatus() { return isConnected ? "Status: Connected & Ready" : "Status: Disconnected"; }
         public String getColor() { return isConnected ? "#4CAF50" : "#F44336"; }
     }
@@ -55,7 +59,6 @@ public class McpClientManager {
     private final Set<String> mLoadedSkills = new HashSet<>();
 
     public McpClientManager() {
-        // Registered in Tier priority order: Tier 1 (Simpler/Lightweight) -> Tier 2 (Complex/Heavyweight)
         registerServer(new FileMcpServer());
         registerServer(new EditorMcpServer());
         registerServer(new TerminalMcpServer());
@@ -79,7 +82,18 @@ public class McpClientManager {
         return null;
     }
 
+    public boolean supportsPlannedDelay(String toolName) {
+        if (toolName == null || isMetaTool(toolName)) {
+            return false;
+        }
+        McpServer server = findServerForTool(toolName);
+        return server != null && server.supportsPlannedDelay();
+    }
+
     public CharSequence formatToolCall(String toolName, JSONObject args) {
+        if (isMetaTool(toolName)) {
+            return formatMetaToolCall(args);
+        }
         McpServer server = findServerForTool(toolName);
         if (server != null) {
             CharSequence custom = server.formatToolCall(toolName, args);
@@ -90,10 +104,60 @@ public class McpClientManager {
         return null;
     }
 
+    private CharSequence formatMetaToolCall(JSONObject args) {
+        if (args == null) return "loading skill...";
+        List<String> skills = new ArrayList<>();
+
+        JSONArray skillsArray = args.optJSONArray("skills");
+        if (skillsArray == null) {
+            skillsArray = args.optJSONArray("skill_names");
+        }
+
+        if (skillsArray != null) {
+            for (int i = 0; i < skillsArray.length(); i++) {
+                String s = skillsArray.optString(i);
+                if (s != null && !s.trim().isEmpty()) {
+                    skills.add(s.trim());
+                }
+            }
+        } else {
+            String rawSkillName = args.optString("skill_name", args.optString("skill", args.optString("tool", "")));
+            if (!rawSkillName.trim().isEmpty()) {
+                String[] parts = rawSkillName.split(",");
+                for (String part : parts) {
+                    if (!part.trim().isEmpty()) {
+                        skills.add(part.trim());
+                    }
+                }
+            }
+        }
+
+        if (skills.isEmpty()) {
+            return "loading skill...";
+        } else if (skills.size() == 1) {
+            return "loading skill: " + skills.get(0);
+        } else {
+            StringBuilder sb = new StringBuilder("loading skills: ");
+            for (int i = 0; i < skills.size(); i++) {
+                sb.append(skills.get(i));
+                if (i < skills.size() - 1) {
+                    sb.append(", ");
+                }
+            }
+            return sb.toString();
+        }
+    }
+
+    private List<McpServer> getSortedServers() {
+        List<McpServer> sortedList = new ArrayList<>(mRegisteredServers.values());
+        Collections.sort(sortedList, (s1, s2) -> Integer.compare(s1.getPriority(), s2.getPriority()));
+        return sortedList;
+    }
+
     public List<McpServerInfo> getServerInfos() {
         List<McpServerInfo> list = new ArrayList<>();
-        for (McpServer server : mRegisteredServers.values()) {
-            list.add(new McpServerInfo(server.getName(), server.getDescription(), server.isActive()));
+        for (McpServer server : getSortedServers()) {
+            list.add(new McpServerInfo(server.getName(), server.getDescription(), server.isActive(), server.getPriority()));
         }
         return list;
     }
@@ -143,17 +207,20 @@ public class McpClientManager {
         try {
             JSONArray skills = new JSONArray();
 
-            for (McpServer server : mRegisteredServers.values()) {
+            for (McpServer server : getSortedServers()) {
                 JSONObject skillObj = new JSONObject();
                 skillObj.put("name", server.getName());
                 skillObj.put("description", server.getDescription());
+                skillObj.put("priority_tier", server.getPriority());
+                skillObj.put("is_loaded", isSkillLoaded(server.getName()));
                 skills.put(skillObj);
             }
 
             catalog.put("available_skills", skills);
 
-            McpTool metaTool = McpTool.builder(META_TOOL_GET_SKILL_SCHEMA, "Fetches detailed parameters and tool schemas for a given skill name when needed.")
-                    .addProperty("skill_name", PropertyType.STRING, "Name of the skill to load (e.g. 'file', 'editor', 'terminal', 'browser')", true)
+            McpTool metaTool = McpTool.builder(META_TOOL_GET_SKILL_SCHEMA, "Fetches detailed parameters and tool schemas for one or multiple skill names in a single batch call.")
+                    .addProperty("skill_name", PropertyType.STRING, "Single skill name (e.g. 'file') or comma-separated list of skills to batch load.", false)
+                    .addProperty("skills", PropertyType.ARRAY, "List of skill names to batch load (e.g. ['file', 'terminal', 'browser']).", false)
                     .build();
 
             catalog.put("meta_tool", metaTool.toJsonSchema());
@@ -225,11 +292,7 @@ public class McpClientManager {
     public JSONObject executeToolCall(String toolName, JSONObject args, Context context) {
         try {
             if (isMetaTool(toolName)) {
-                String skillName = args != null ? args.optString("skill_name") : "";
-                if (skillName.isEmpty() && args != null) {
-                    skillName = args.optString("skill", args.optString("tool", ""));
-                }
-                return getSkillSchema(context, skillName);
+                return executeMetaToolGetSkillSchema(args, context);
             }
 
             Map<String, Object> arguments = jsonObjectToMap(args);
@@ -248,6 +311,66 @@ public class McpClientManager {
         } catch (Exception e) {
             return McpToolResult.error("Exception executing tool: " + e.getMessage()).toJsonObject();
         }
+    }
+
+    private JSONObject executeMetaToolGetSkillSchema(JSONObject args, Context context) {
+        List<String> requestedSkills = new ArrayList<>();
+
+        if (args != null) {
+            JSONArray skillsArray = args.optJSONArray("skills");
+            if (skillsArray == null) {
+                skillsArray = args.optJSONArray("skill_names");
+            }
+
+            if (skillsArray != null) {
+                for (int i = 0; i < skillsArray.length(); i++) {
+                    String s = skillsArray.optString(i);
+                    if (s != null && !s.trim().isEmpty()) {
+                        requestedSkills.add(s.trim().toLowerCase());
+                    }
+                }
+            } else {
+                String rawSkillName = args.optString("skill_name", args.optString("skill", args.optString("tool", "")));
+                if (!rawSkillName.trim().isEmpty()) {
+                    String[] parts = rawSkillName.split(",");
+                    for (String part : parts) {
+                        if (!part.trim().isEmpty()) {
+                            requestedSkills.add(part.trim().toLowerCase());
+                        }
+                    }
+                }
+            }
+        }
+
+        if (requestedSkills.isEmpty()) {
+            return McpToolResult.error("Missing skill parameter. Provide 'skill_name' (e.g. 'file') or 'skills' array (e.g. ['file', 'terminal']).").toJsonObject();
+        }
+
+        if (requestedSkills.size() == 1) {
+            return getSkillSchema(context, requestedSkills.get(0));
+        }
+
+        JSONObject batchResponse = new JSONObject();
+        try {
+            JSONArray loadedList = new JSONArray();
+            JSONArray schemasArray = new JSONArray();
+
+            for (String skillName : requestedSkills) {
+                JSONObject schemaRes = getSkillSchema(context, skillName);
+                if ("success".equals(schemaRes.optString("status"))) {
+                    loadedList.put(skillName);
+                }
+                schemasArray.put(schemaRes);
+            }
+
+            batchResponse.put("status", "success");
+            batchResponse.put("loaded_skills", loadedList);
+            batchResponse.put("schemas", schemasArray);
+        } catch (JSONException e) {
+            return McpToolResult.error("Error creating batch schema response: " + e.getMessage()).toJsonObject();
+        }
+
+        return batchResponse;
     }
 
     public JSONObject executeToolCall(String toolName, JSONObject args) {

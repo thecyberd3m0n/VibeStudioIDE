@@ -7,6 +7,7 @@ import android.view.Gravity;
 import android.widget.TextView;
 
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.mcp.McpClientManager;
 
 import org.json.JSONObject;
 
@@ -52,34 +53,39 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
         mTvStatusText.setGravity(Gravity.CENTER);
 
         String rawText = message != null ? message.getText() : "";
-        String skillName = extractSkillNameFromToolCall(rawText);
-        String displayText;
-
-        if (!skillName.isEmpty()) {
-            displayText = "loading skill: " + skillName;
-        } else if (rawText != null && !rawText.trim().isEmpty()) {
-            displayText = rawText.trim();
-        } else {
-            displayText = "processing...";
-        }
+        String displayText = extractFormattedStatus(rawText);
 
         mTvStatusText.setText(displayText);
         addView(mTvStatusText);
     }
 
-    private String extractSkillNameFromToolCall(String text) {
-        if (text == null || text.isEmpty()) return "";
-        int jsonStart = text.indexOf("{");
-        int jsonEnd = text.lastIndexOf("}");
+    private String extractFormattedStatus(String text) {
+        if (text == null || text.trim().isEmpty()) return "processing...";
+        String trimmed = text.trim();
+
+        if (!trimmed.startsWith("{") && !trimmed.contains("\"tool\"")) {
+            return trimmed;
+        }
+
+        int jsonStart = trimmed.indexOf("{");
+        int jsonEnd = trimmed.lastIndexOf("}");
         if (jsonStart != -1 && jsonEnd > jsonStart) {
             try {
-                JSONObject json = new JSONObject(text.substring(jsonStart, jsonEnd + 1));
+                JSONObject json = new JSONObject(trimmed.substring(jsonStart, jsonEnd + 1));
+                String toolName = json.optString("tool", "");
                 JSONObject args = json.optJSONObject("args");
-                if (args != null) {
-                    return args.optString("skill_name", args.optString("skill", ""));
+
+                CharSequence formatted = getMcpClientManager().formatToolCall(toolName, args);
+                if (formatted != null) {
+                    return formatted.toString();
                 }
             } catch (Exception ignored) {}
         }
-        return "";
+
+        return trimmed;
+    }
+
+    private McpClientManager getMcpClientManager() {
+        return new McpClientManager();
     }
 }

@@ -17,6 +17,11 @@ import org.json.JSONObject;
 public class TerminalMcpServer implements McpServer {
 
     @Override
+    public int getPriority() {
+        return 2;
+    }
+
+    @Override
     public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
         return new com.vibestudio.app.view.TerminalToolMessage(context);
     }

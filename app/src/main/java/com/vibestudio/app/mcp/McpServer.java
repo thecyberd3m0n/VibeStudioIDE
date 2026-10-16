@@ -21,6 +21,22 @@ public interface McpServer {
     McpToolResult callTool(String toolName, Map<String, Object> arguments, Context context);
 
     /**
+     * Skill priority tier for tool selection:
+     * Lower integer = higher priority / simpler tool (e.g. 1 for file/editor, 2 for terminal/browser).
+     */
+    default int getPriority() {
+        return 1;
+    }
+
+    /**
+     * Indicates whether tools under this server support/require async planned delays.
+     * Synchronous Tier 1 servers default to false (0 delay overhead).
+     */
+    default boolean supportsPlannedDelay() {
+        return getPriority() > 1;
+    }
+
+    /**
      * Creates a tool message view for chat UI for tools handled by this McpServer.
      */
     BaseToolMessageView createToolMessageView(Context context, String toolName);

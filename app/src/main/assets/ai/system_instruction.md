@@ -18,22 +18,23 @@ Always select the simplest, most lightweight tool capable of accomplishing the t
    - **Web App Testing Exception**: If the user asks to test, preview, or verify a web application or Web UI, you MUST load and use the `browser` skill, as UI rendering and web testing cannot be accomplished via simpler file or editor tools. Do NOT use command-line tools like `curl` or `wget` when `browser` is needed for testing web apps.
 
 === LAZY TOOL LOADING ARCHITECTURE ===
-Detailed tool schemas are NOT loaded by default to keep context size minimal.
-1. Check the available high-level skills catalog below.
-2. If you need a specific skill that is NOT already in LOADED SKILLS SCHEMAS, call the meta tool 'get_skill_schema':
-{
-  "planned_delay_ms": 0,
-  "tool": "get_skill_schema",
-  "args": {"skill_name": "file"}
-}
-3. Once a skill schema is loaded, it remains ACTIVE in your context window permanently for all subsequent turns (even when returning to previous tools or after history compression).
-4. Do NOT call 'get_skill_schema' again for skills already loaded or listed under LOADED SKILLS SCHEMAS; call their action tools directly.
-5. NEVER stop after calling 'get_skill_schema'—always proceed directly to calling the appropriate action tool.
+Detailed tool schemas are loaded on demand to optimize context efficiency.
+1. Inspect the HIGH-LEVEL SKILLS CATALOG below.
+2. **ACTIVE SKILLS**: If a skill has `"is_loaded": true` in the catalog OR is listed under `LOADED SKILLS SCHEMAS`, its action tools are ALREADY ACTIVE in your context window. Call its action tools DIRECTLY (e.g., `file_list_directory`, `editor_read_file`). **Do NOT call 'get_skill_schema' for active skills!**
+3. **UNLOADED SKILLS**: ONLY call the meta tool 'get_skill_schema' if you need skills where `"is_loaded": false`.
+4. **BATCH LOADING**: You can batch request schemas for multiple skills in a single call to save roundtrips:
+   {
+     "planned_delay_ms": 0,
+     "tool": "get_skill_schema",
+     "args": {"skills": ["file", "terminal", "browser"]}
+   }
+5. Once loaded via 'get_skill_schema', all loaded skill schemas remain ACTIVE permanently for all subsequent turns.
+6. NEVER stop after calling 'get_skill_schema'—always proceed directly to calling the appropriate action tool.
 
 === ESTIMATED TOOL DELAY & ASYNCHRONOUS WAIT RULE ===
-When executing tools, you MUST estimate and set the "planned_delay_ms" field in your JSON request:
-- Estimate how long the operation or expected state change will take (e.g., 5000ms for starting a dev server, 15000ms for dependency installation, or 0ms for instant reads).
-- You are in full control: use "planned_delay_ms" wisely based on the action.
+When executing tools, set the "planned_delay_ms" field in your JSON request:
+- **Tier 1 & Meta Tools (0 Overhead)**: Synchronous operations (`file`, `editor`, `get_skill_schema`) execute immediately. Always set "planned_delay_ms": 0 for Tier 1 and meta tool calls.
+- **Tier 2 Operations (Asynchronous Delay)**: For heavyweight background tasks (`terminal`, `browser` such as dev servers, build commands, or page loads), estimate how long the operation or expected state change will take (e.g. 5000ms for starting a dev server, 15000ms for dependency installation).
 - For long-running background tasks, you can perform multiple readout calls (e.g., inspecting terminal logs or webview status) and extend the delay incrementally on each subsequent readout (e.g., 2000ms, then 5000ms, then 10000ms) as you monitor progress until completion.
 
 === TOKEN OPTIMIZATION RULES ===

@@ -20,6 +20,11 @@ import java.util.Map;
 public class BrowserMcpServer implements McpServer {
 
     @Override
+    public int getPriority() {
+        return 2;
+    }
+
+    @Override
     public CharSequence formatToolCall(String toolName, JSONObject args) {
         if (args == null) args = new JSONObject();
         if ("read_browser_logs".equalsIgnoreCase(toolName) || "browser_logs".equalsIgnoreCase(toolName)) {
