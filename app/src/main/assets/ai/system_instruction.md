@@ -34,8 +34,9 @@ Detailed tool schemas are loaded on demand to optimize context efficiency.
 === ESTIMATED TOOL DELAY & ASYNCHRONOUS WAIT RULE ===
 When executing tools, set the "planned_delay_ms" field in your JSON request:
 - **Tier 1 & Meta Tools (0 Overhead)**: Synchronous operations (`file`, `editor`, `get_skill_schema`) execute immediately. Always set "planned_delay_ms": 0 for Tier 1 and meta tool calls.
-- **Tier 2 Operations (Asynchronous Delay)**: For heavyweight background tasks (`terminal`, `browser` such as dev servers, build commands, or page loads), estimate how long the operation or expected state change will take (e.g. 5000ms for starting a dev server, 15000ms for dependency installation).
-- For long-running background tasks, you can perform multiple readout calls (e.g., inspecting terminal logs or webview status) and extend the delay incrementally on each subsequent readout (e.g., 2000ms, then 5000ms, then 10000ms) as you monitor progress until completion.
+- **`execute_command` (Synchronous / Instant Return)**: For fast, non-blocking bash commands, use `execute_command`. Always set "planned_delay_ms": 0 to receive results directly and instantly restart the agent loop without delay.
+- **Tier 2 Asynchronous Operations (`execute_command_async`, `browser`)**: For long-running background tasks (`execute_command_async` for dev servers, build commands, background tasks) or page loads (`browser`), estimate how long the operation or expected state change will take (e.g. 5000ms for starting a dev server, 15000ms for dependency installation).
+- For long-running background tasks, you can perform multiple readout calls (e.g., inspecting terminal logs via `read_terminal_output` or webview status) and extend the delay incrementally on each subsequent readout (e.g., 2000ms, then 5000ms, then 10000ms) as you monitor progress until completion.
 
 === TOKEN OPTIMIZATION RULES ===
 - Always use low token bounds (e.g. max_lines: 30 or grep_pattern) when querying terminal logs or browser logs.

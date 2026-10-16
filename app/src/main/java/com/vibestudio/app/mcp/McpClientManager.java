@@ -57,6 +57,7 @@ public class McpClientManager {
 
     private final Map<String, McpServer> mRegisteredServers = new LinkedHashMap<>();
     private final Set<String> mLoadedSkills = ConcurrentHashMap.newKeySet();
+    private final Map<String, JSONObject> mCachedSchemas = new ConcurrentHashMap<>();
 
     public McpClientManager() {
         registerServer(new FileMcpServer());
@@ -87,7 +88,7 @@ public class McpClientManager {
             return false;
         }
         McpServer server = findServerForTool(toolName);
-        return server != null && server.supportsPlannedDelay();
+        return server != null && server.supportsPlannedDelay(toolName);
     }
 
     public CharSequence formatToolCall(String toolName, JSONObject args) {
@@ -177,9 +178,6 @@ public class McpClientManager {
         return mLoadedSkills.contains(skillName.toLowerCase().trim());
     }
 
-    public Set<String> getLoadedSkills() {
-        return new java.util.HashSet<>(mLoadedSkills);
-    }
 
     public String getLoadedSkillsInstructions(Context context) {
         if (mLoadedSkills.isEmpty()) {
@@ -230,6 +228,11 @@ public class McpClientManager {
     }
 
     public JSONObject getSkillSchema(Context context, String skillName) {
+        if (skillName != null && mCachedSchemas.containsKey(skillName.toLowerCase())) {
+            markSkillLoaded(skillName.toLowerCase());
+            return mCachedSchemas.get(skillName.toLowerCase());
+        }
+
         JSONObject response = new JSONObject();
         try {
             if (skillName != null && mRegisteredServers.containsKey(skillName.toLowerCase())) {
@@ -254,6 +257,7 @@ public class McpClientManager {
                     }
 
                     response.put("schema", schemaObj);
+                    mCachedSchemas.put(cleanSkillName, response);
                     return response;
                 }
             }

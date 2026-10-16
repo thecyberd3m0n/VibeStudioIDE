@@ -336,8 +336,38 @@ public class ModelsFragment extends Fragment {
                 } else {
                     String currentActiveModel = router.getActiveModelName(pName);
 
+                    // Ensure currentActiveModel matches one of the available models
+                    boolean hasMatch = false;
+                    if (currentActiveModel != null) {
+                        for (String m : availableModels) {
+                            if (m.equalsIgnoreCase(currentActiveModel)) {
+                                hasMatch = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!hasMatch && !availableModels.isEmpty()) {
+                        // Try matching provider default model
+                        String defModel = provider.getDefaultModel();
+                        if (defModel != null) {
+                            for (String m : availableModels) {
+                                if (m.equalsIgnoreCase(defModel)) {
+                                    currentActiveModel = m;
+                                    hasMatch = true;
+                                    break;
+                                }
+                            }
+                        }
+                        // Fallback to first available model if still no match
+                        if (!hasMatch) {
+                            currentActiveModel = availableModels.get(0);
+                        }
+                    }
+
                     for (final String modelName : availableModels) {
-                        final boolean isSelectedModel = isProviderActive && modelName.equalsIgnoreCase(currentActiveModel);
+                        final boolean isSelectedModel = modelName.equalsIgnoreCase(currentActiveModel);
+                        final boolean isGloballyActive = isProviderActive && isSelectedModel;
 
                         final LinearLayout modelRow = new LinearLayout(context);
                         modelRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -383,8 +413,8 @@ public class ModelsFragment extends Fragment {
                         LinearLayout.LayoutParams titleTextParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f);
                         modelTitle.setLayoutParams(titleTextParams);
 
-                        // Active Label Chip
-                        if (isSelectedModel) {
+                        // Active Label Chip (only for the globally active provider & model)
+                        if (isGloballyActive) {
                             TextView activeChip = new TextView(context);
                             activeChip.setText("ACTIVE");
                             activeChip.setTextSize(10);

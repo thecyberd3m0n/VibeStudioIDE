@@ -41,6 +41,13 @@ public interface McpServer {
     }
 
     /**
+     * Indicates whether a specific tool handled by this server supports/requires async planned delays.
+     */
+    default boolean supportsPlannedDelay(String toolName) {
+        return supportsPlannedDelay();
+    }
+
+    /**
      * Creates a tool message view for chat UI for tools handled by this McpServer.
      */
     BaseToolMessageView createToolMessageView(Context context, String toolName);

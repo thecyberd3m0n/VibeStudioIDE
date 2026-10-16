@@ -8,6 +8,8 @@ import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.terminal.TerminalSessionManager;
+import com.vibestudio.app.view.BaseToolMessageView;
+import com.vibestudio.app.view.TerminalToolMessage;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,19 +24,19 @@ public class TerminalMcpServer implements McpServer {
     }
 
     @Override
-    public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
-        return new com.vibestudio.app.view.TerminalToolMessage(context);
+    public BaseToolMessageView createToolMessageView(Context context, String toolName) {
+        return new TerminalToolMessage(context);
     }
 
     @Override
     public CharSequence formatToolCall(String toolName, JSONObject args) {
-        if (args == null) args = new JSONObject();
-        if ("execute_command".equalsIgnoreCase(toolName)) {
-            return "$ " + args.optString("command", "");
+        JSONObject formatArgs = args != null ? args : new JSONObject();
+        if ("execute_command".equalsIgnoreCase(toolName) || "execute_command_async".equalsIgnoreCase(toolName)) {
+            return "$ " + formatArgs.optString("command", "");
         } else if ("send_keystroke".equalsIgnoreCase(toolName)) {
-            return "Keystroke: " + args.optString("keystroke", "");
+            return "Keystroke: " + formatArgs.optString("keystroke", "");
         } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
-            return "Reading terminal buffer (" + args.optInt("max_lines", 30) + " lines)";
+            return "Reading terminal buffer (" + formatArgs.optInt("max_lines", 30) + " lines)";
         }
         return null;
     }
@@ -47,6 +49,11 @@ public class TerminalMcpServer implements McpServer {
     private final List<McpTool> mTools;
     private final ThreadLocal<TerminalSession> mPendingTerminalSessions = new ThreadLocal<>();
 
+    @Override
+    public boolean supportsPlannedDelay(String toolName) {
+        return "execute_command_async".equalsIgnoreCase(toolName);
+    }
+
     public TerminalMcpServer() {
         mTools = new ArrayList<>();
 
@@ -55,7 +62,13 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 1: execute_command
-        mTools.add(McpTool.builder("execute_command", "Execute a bash shell command in a terminal session. Useful for non-interactive commands.")
+        mTools.add(McpTool.builder("execute_command", "Execute a fast, synchronous bash shell command in a terminal session. Takes no planned delay and returns results directly and instantly without future readout.")
+                .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
+                .build());
+
+        // Tool 1b: execute_command_async
+        mTools.add(McpTool.builder("execute_command_async", "Execute a long-running, background, or server bash shell command in a terminal session asynchronously.")
                 .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
@@ -154,7 +167,7 @@ public class TerminalMcpServer implements McpServer {
                 return McpToolResult.error("Terminal session #" + session.id + " is not running.");
             }
 
-            if ("execute_command".equals(toolName)) {
+            if ("execute_command".equals(toolName) || "execute_command_async".equals(toolName)) {
                 mPendingTerminalSessions.remove();
                 String command = arguments != null ? getStringArg(arguments, "command", "") : "";
                 if (command.isEmpty()) {
@@ -210,7 +223,7 @@ public class TerminalMcpServer implements McpServer {
 
     @Override
     public JSONObject onToolCallCompleted(String toolName, Map<String, Object> arguments, Context context, JSONObject result) {
-        if (!"execute_command".equals(toolName) && !"send_keystroke".equals(toolName)) {
+        if (!"execute_command".equals(toolName) && !"execute_command_async".equals(toolName) && !"send_keystroke".equals(toolName)) {
             return result;
         }
         TerminalSession termSession = mPendingTerminalSessions.get();

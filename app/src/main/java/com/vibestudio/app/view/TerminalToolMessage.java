@@ -37,29 +37,19 @@ public class TerminalToolMessage extends BaseToolMessageView {
     @Override
     protected CharSequence formatToolContent(ChatMessage msg) {
         if (msg == null) return "";
+
+        String toolName = msg.getToolName();
+        if (toolName != null && !toolName.isEmpty()) {
+            JSONObject args = msg.getToolArgs();
+            if (args == null) args = new JSONObject();
+            CharSequence customFormat = getMcpClientManager().formatToolCall(toolName, args);
+            if (customFormat != null) {
+                return customFormat;
+            }
+            return "Executing " + toolName + "...";
+        }
+
         String text = msg.getText();
-        if (text != null && text.contains("[MCP Tool Execution Output")) {
-            return null;
-        }
-
-        if (text != null && text.contains("{") && text.contains("\"tool\"")) {
-            try {
-                int jsonStart = text.indexOf("{");
-                int jsonEnd = text.lastIndexOf("}");
-                if (jsonStart != -1 && jsonEnd > jsonStart) {
-                    JSONObject toolCallObj = new JSONObject(text.substring(jsonStart, jsonEnd + 1).trim());
-                    String toolName = toolCallObj.optString("tool");
-                    JSONObject args = toolCallObj.optJSONObject("args");
-                    if (args == null) args = new JSONObject();
-
-                    CharSequence customFormat = getMcpClientManager().formatToolCall(toolName, args);
-                    if (customFormat != null) {
-                        return customFormat;
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
-
         return text != null ? text : "";
     }
 

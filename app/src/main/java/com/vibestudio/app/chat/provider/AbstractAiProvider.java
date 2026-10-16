@@ -181,18 +181,7 @@ public abstract class AbstractAiProvider implements AiProvider {
         StringBuilder sb = new StringBuilder();
         sb.append("=== HTTP ").append(method).append(" REQUEST ===\n");
         sb.append("URL: ").append(url).append("\n");
-        sb.append("Headers:\n");
-        if (headers != null) {
-            for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
-                if (entry.getKey() != null) {
-                    sb.append("  ").append(entry.getKey()).append(": ");
-                    if (entry.getValue() != null) {
-                        sb.append(joinHeaderValues(entry.getValue()));
-                    }
-                    sb.append("\n");
-                }
-            }
-        }
+
         if (body != null && !body.isEmpty()) {
             sb.append("Body:\n").append(body).append("\n");
         }

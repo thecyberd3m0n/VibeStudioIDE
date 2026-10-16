@@ -201,15 +201,15 @@ public class ChatSession {
 
             LogViewerService.getInstance().i(TAG, "Executing tool call requested by AI: " + toolName + " | Args: " + args.toString());
 
-            postToolStatusMessage(requestMsg, ChatMessage.MessageType.TOOL_CALL);
+            postToolStatusMessage(requestMsg, ChatMessage.MessageType.TOOL_CALL, toolName, args);
 
             // Execute tool with context pass-through
             ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
 
             // Record assistant call and system tool result in conversation history (for LLM context)
-            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL);
+            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
             ChatMessage toolResultMsg = new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
-                    toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT);
+                    toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT, toolName, null);
 
             synchronized (ChatSession.this) {
                 mMessages.add(modelCallMsg);
@@ -218,7 +218,7 @@ public class ChatSession {
 
             // If execution caused an error, notify UI
             if (toolResult.isError()) {
-                postToolStatusMessage(toolResult.getFormattedOutput(), ChatMessage.MessageType.ERROR);
+                postToolStatusMessage(toolResult.getFormattedOutput(), ChatMessage.MessageType.ERROR, toolName, null);
             }
 
             if (mStopRequested) {
@@ -242,11 +242,11 @@ public class ChatSession {
         postAssistantResponse(rawReply);
     }
 
-    private void postToolStatusMessage(final String summaryText, final ChatMessage.MessageType type) {
+    private void postToolStatusMessage(final String summaryText, final ChatMessage.MessageType type, final String toolName, final JSONObject toolArgs) {
         mMainHandler.post(new Runnable() {
             @Override
             public void run() {
-                ChatMessage toolMsg = new ChatMessage("System Tool", summaryText, false, type);
+                ChatMessage toolMsg = new ChatMessage("System Tool", summaryText, false, type, toolName, toolArgs);
                 synchronized (ChatSession.this) {
                     notifyMessageAdded(toolMsg);
                 }
