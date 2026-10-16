@@ -85,21 +85,23 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
     }
 
     private String extractFormattedStatus(String text) {
-        if (text == null || text.trim().isEmpty()) return "processing...";
+        if (text == null || text.trim().isEmpty()) return null;
         String trimmed = text.trim();
 
-        // Do NOT display raw MCP tool execution results to the user (used for LLM context/logs)
+        // Do NOT display raw MCP tool execution results or raw text outputs to the user
         if (trimmed.contains("[MCP Tool Execution Output")) {
             return null;
         }
 
-        if (!trimmed.startsWith("{") && !trimmed.contains("\"tool\"")) {
+        // Explicitly allowed plain text system status messages
+        if ("Optimizing Tool Selection".equalsIgnoreCase(trimmed) || trimmed.toLowerCase().startsWith("loading skill")) {
             return trimmed;
         }
 
+        // Try parsing JSON tool call
         int jsonStart = trimmed.indexOf("{");
         int jsonEnd = trimmed.lastIndexOf("}");
-        if (jsonStart != -1 && jsonEnd > jsonStart) {
+        if (jsonStart != -1 && jsonEnd > jsonStart && trimmed.contains("\"tool\"")) {
             try {
                 JSONObject json = new JSONObject(trimmed.substring(jsonStart, jsonEnd + 1));
                 String toolName = json.optString("tool", "");
@@ -112,7 +114,8 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
             } catch (Exception ignored) {}
         }
 
-        return trimmed;
+        // Block any other arbitrary plain text from being rendered in CustomStatusToolMessage
+        return null;
     }
 
     private McpClientManager getMcpClientManager() {
