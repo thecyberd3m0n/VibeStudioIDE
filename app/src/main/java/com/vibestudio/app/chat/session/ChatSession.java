@@ -205,9 +205,8 @@ public class ChatSession {
 
             // Execute tool with context pass-through
             ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
-            String responseMsg = toolResult.getFormattedOutput();
 
-            // Record assistant call and system tool result in conversation history
+            // Record assistant call and system tool result in conversation history (for LLM context)
             ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL);
             ChatMessage toolResultMsg = new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
                     toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT);
@@ -217,8 +216,10 @@ public class ChatSession {
                 mMessages.add(toolResultMsg);
             }
 
-            postToolStatusMessage(responseMsg,
-                    toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT);
+            // If execution caused an error, notify UI
+            if (toolResult.isError()) {
+                postToolStatusMessage(toolResult.getFormattedOutput(), ChatMessage.MessageType.ERROR);
+            }
 
             if (mStopRequested) {
                 postAssistantResponse("⏹️ Operation stopped by user.");
