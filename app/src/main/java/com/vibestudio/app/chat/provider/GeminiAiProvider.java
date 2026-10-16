@@ -51,11 +51,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
 
     @Override
     public String getDefaultModel() {
-        return "gemini-1.5-flash";
-    }
-
-    public static String loadBaseSystemInstruction(Context context) {
-        return new GeminiAiProvider().getSystemInstruction(context);
+        return "gemini-flash-latest";
     }
 
     @Override

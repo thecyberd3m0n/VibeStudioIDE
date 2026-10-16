@@ -27,6 +27,34 @@ import java.util.Map;
 
 public class EditorMcpServer implements McpServer {
 
+    @Override
+    public int getPriority() {
+        return 1;
+    }
+
+    @Override
+    public CharSequence formatToolCall(String toolName, JSONObject args) {
+        if (args == null) args = new JSONObject();
+        String path = args.optString("path", "");
+        if ("editor_open".equalsIgnoreCase(toolName)) {
+            return "Opened in editor: " + path;
+        } else if ("editor_read_file".equalsIgnoreCase(toolName)) {
+            int start = args.optInt("start_line", 1);
+            int end = args.optInt("end_line", 100);
+            return "Reading " + path + " (lines " + start + "-" + end + ")";
+        } else if ("editor_search_replace".equalsIgnoreCase(toolName)) {
+            return "Replaced pattern in " + path + ": '" + args.optString("search", "") + "' -> '" + args.optString("replace", "") + "'";
+        } else if ("editor_save".equalsIgnoreCase(toolName)) {
+            return "Saved changes to " + path;
+        }
+        return toolName + "(" + args.toString() + ")";
+    }
+
+    @Override
+    public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
+        return new com.vibestudio.app.view.EditorToolMessage(context);
+    }
+
     private static final String TAG = "EditorMcpServer";
     private static final String NAME = "editor";
     private static final String DESCRIPTION = "Provides token-efficient single-file read and modification tools: line-range reading, targeted line replacements, search and replace, line insertion, opening file in tab, and saving changes.";
@@ -128,7 +156,7 @@ public class EditorMcpServer implements McpServer {
                 String pathArg = getStringArg(arguments, "path", "");
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File file = new File(pathArg);
+                File file = PathResolver.resolveFile(pathArg, context);
                 if (!file.exists()) return McpToolResult.error("File does not exist: " + pathArg);
 
                 new Handler(Looper.getMainLooper()).post(() -> {
@@ -142,7 +170,7 @@ public class EditorMcpServer implements McpServer {
                 String pathArg = getStringArg(arguments, "path", "");
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File file = new File(pathArg);
+                File file = PathResolver.resolveFile(pathArg, context);
                 if (!file.exists()) return McpToolResult.error("File does not exist: " + pathArg);
 
                 List<String> lines = readFileLines(file);
@@ -172,7 +200,7 @@ public class EditorMcpServer implements McpServer {
                 String pathArg = getStringArg(arguments, "path", "");
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File file = new File(pathArg);
+                File file = PathResolver.resolveFile(pathArg, context);
                 if (!file.exists()) return McpToolResult.error("File does not exist: " + pathArg);
 
                 int startLine = getIntArg(arguments, "start_line", -1);
@@ -223,7 +251,7 @@ public class EditorMcpServer implements McpServer {
                     return McpToolResult.error("Missing 'path' or 'search' parameter.");
                 }
 
-                File file = new File(pathArg);
+                File file = PathResolver.resolveFile(pathArg, context);
                 if (!file.exists()) return McpToolResult.error("File does not exist: " + pathArg);
 
                 List<String> lines = readFileLines(file);
@@ -256,7 +284,7 @@ public class EditorMcpServer implements McpServer {
 
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File file = new File(pathArg);
+                File file = PathResolver.resolveFile(pathArg, context);
                 if (!file.exists()) return McpToolResult.error("File does not exist: " + pathArg);
 
                 List<String> lines = readFileLines(file);
@@ -279,7 +307,7 @@ public class EditorMcpServer implements McpServer {
                 String pathArg = getStringArg(arguments, "path", "");
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File file = new File(pathArg);
+                File file = PathResolver.resolveFile(pathArg, context);
                 if (!file.exists()) return McpToolResult.error("File does not exist: " + pathArg);
 
                 return McpToolResult.success("Saved file: " + file.getAbsolutePath());

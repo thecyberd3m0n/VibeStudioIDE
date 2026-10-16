@@ -8,12 +8,38 @@ import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.terminal.TerminalSessionManager;
+import com.vibestudio.app.view.BaseToolMessageView;
+import com.vibestudio.app.view.TerminalToolMessage;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.json.JSONObject;
 
 public class TerminalMcpServer implements McpServer {
+
+    @Override
+    public int getPriority() {
+        return 2;
+    }
+
+    @Override
+    public BaseToolMessageView createToolMessageView(Context context, String toolName) {
+        return new TerminalToolMessage(context);
+    }
+
+    @Override
+    public CharSequence formatToolCall(String toolName, JSONObject args) {
+        JSONObject formatArgs = args != null ? args : new JSONObject();
+        if ("execute_command".equalsIgnoreCase(toolName) || "execute_command_async".equalsIgnoreCase(toolName)) {
+            return "$ " + formatArgs.optString("command", "");
+        } else if ("send_keystroke".equalsIgnoreCase(toolName)) {
+            return "Keystroke: " + formatArgs.optString("keystroke", "");
+        } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
+            return "Reading terminal buffer (" + formatArgs.optInt("max_lines", 30) + " lines)";
+        }
+        return null;
+    }
 
     private static final String TAG = "TerminalMcpServer";
     private static final String NAME = "terminal";
@@ -21,6 +47,12 @@ public class TerminalMcpServer implements McpServer {
 
     private boolean mIsActive = false;
     private final List<McpTool> mTools;
+    private final ThreadLocal<TerminalSession> mPendingTerminalSessions = new ThreadLocal<>();
+
+    @Override
+    public boolean supportsPlannedDelay(String toolName) {
+        return "execute_command_async".equalsIgnoreCase(toolName);
+    }
 
     public TerminalMcpServer() {
         mTools = new ArrayList<>();
@@ -30,7 +62,13 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 1: execute_command
-        mTools.add(McpTool.builder("execute_command", "Execute a bash shell command in a terminal session. Useful for non-interactive commands.")
+        mTools.add(McpTool.builder("execute_command", "Execute a fast, synchronous bash shell command in a terminal session. Takes no planned delay and returns results directly and instantly without future readout.")
+                .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
+                .build());
+
+        // Tool 1b: execute_command_async
+        mTools.add(McpTool.builder("execute_command_async", "Execute a long-running, background, or server bash shell command in a terminal session asynchronously.")
                 .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
@@ -129,7 +167,8 @@ public class TerminalMcpServer implements McpServer {
                 return McpToolResult.error("Terminal session #" + session.id + " is not running.");
             }
 
-            if ("execute_command".equals(toolName)) {
+            if ("execute_command".equals(toolName) || "execute_command_async".equals(toolName)) {
+                mPendingTerminalSessions.remove();
                 String command = arguments != null ? getStringArg(arguments, "command", "") : "";
                 if (command.isEmpty()) {
                     return McpToolResult.error("Missing 'command' parameter.");
@@ -138,12 +177,14 @@ public class TerminalMcpServer implements McpServer {
                 boolean success = TerminalSessionManager.getInstance().executeCommand(termSession, command);
 
                 if (success) {
+                    mPendingTerminalSessions.set(termSession);
                     return McpToolResult.success("Command dispatched to terminal session #" + session.id + ".");
                 } else {
                     return McpToolResult.error("Failed to dispatch command to session #" + session.id + ".");
                 }
 
             } else if ("send_keystroke".equals(toolName)) {
+                mPendingTerminalSessions.remove();
                 String keystroke = arguments != null ? getStringArg(arguments, "keystroke", "") : "";
                 int keyCode = arguments != null ? getIntArg(arguments, "key_code", -1) : -1;
 
@@ -154,6 +195,7 @@ public class TerminalMcpServer implements McpServer {
                 boolean success = TerminalSessionManager.getInstance().sendKeystroke(termSession, keystroke, keyCode);
 
                 if (success) {
+                    mPendingTerminalSessions.set(termSession);
                     String info = keyCode > 0 ? "keycode: " + keyCode : keystroke;
                     return McpToolResult.success("Keystroke injected into terminal session #" + session.id + ": " + info);
                 } else {
@@ -177,6 +219,44 @@ public class TerminalMcpServer implements McpServer {
             LogViewerService.getInstance().e(TAG, "Error executing MCP tool: " + toolName, e);
             return McpToolResult.error(e.getMessage());
         }
+    }
+
+    @Override
+    public JSONObject onToolCallCompleted(String toolName, Map<String, Object> arguments, Context context, JSONObject result) {
+        if (!"execute_command".equals(toolName) && !"execute_command_async".equals(toolName) && !"send_keystroke".equals(toolName)) {
+            return result;
+        }
+        TerminalSession termSession = mPendingTerminalSessions.get();
+        mPendingTerminalSessions.remove();
+        if (result == null || !"success".equalsIgnoreCase(result.optString("status"))) {
+            return result;
+        }
+
+        try {
+            if (termSession == null) {
+                return result;
+            }
+            String snapshot = captureTerminalSnapshot(termSession);
+            if (!snapshot.isEmpty()) {
+                String output = result.optString("output", "");
+                result.put("output", output + "\n\nTerminal Snapshot:\n" + snapshot);
+            }
+        } catch (Exception e) {
+            LogViewerService.getInstance().w(TAG, "Failed to capture terminal snapshot after tool completion: " + e.getMessage());
+        }
+        return result;
+    }
+
+    private String captureTerminalSnapshot(TerminalSession termSession) {
+        try {
+            if (termSession != null && termSession.isRunning()) {
+                String snapshot = TerminalSessionManager.getInstance().readTerminalOutput(termSession, 30, 0, true, null);
+                return snapshot != null ? snapshot : "";
+            }
+        } catch (Exception e) {
+            LogViewerService.getInstance().w(TAG, "Failed to capture terminal snapshot: " + e.getMessage());
+        }
+        return "";
     }
 
     private String getStringArg(Map<String, Object> args, String key, String defaultValue) {

@@ -7,6 +7,9 @@ import android.view.Gravity;
 import android.widget.TextView;
 
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.mcp.McpClientManager;
+
+import org.json.JSONObject;
 
 public class CustomStatusToolMessage extends BaseToolMessageView {
 
@@ -35,6 +38,14 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
     public void bind(ChatMessage message) {
         removeAllViews();
 
+        String displayText = extractFormattedStatus(message);
+
+        if (displayText == null) {
+            setVisibility(GONE);
+            return;
+        }
+
+        setVisibility(VISIBLE);
         setOrientation(VERTICAL);
         LayoutParams params = new LayoutParams(
                 LayoutParams.WRAP_CONTENT,
@@ -49,12 +60,47 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
         mTvStatusText.setTypeface(null, Typeface.ITALIC);
         mTvStatusText.setGravity(Gravity.CENTER);
 
-        String text = message != null ? message.getText() : "Optimizing Tool Selection";
-        if (text != null && text.contains("get_skill_schema")) {
-            text = "Optimizing Tool Selection";
-        }
-        mTvStatusText.setText(text);
-
+        mTvStatusText.setText(displayText);
         addView(mTvStatusText);
+    }
+
+    @Override
+    public void appendToolMessage(ChatMessage msg) {
+        CharSequence newText = extractFormattedStatus(msg);
+        if (newText == null) {
+            return;
+        }
+        if (mTvStatusText == null) {
+            bind(msg);
+            return;
+        }
+        CharSequence currentText = mTvStatusText.getText();
+        if (currentText == null || currentText.length() == 0) {
+            mTvStatusText.setText(newText);
+        } else {
+            mTvStatusText.append("\n\n");
+            mTvStatusText.append(newText);
+        }
+    }
+
+    private String extractFormattedStatus(ChatMessage msg) {
+        if (msg == null) return null;
+        
+        String toolName = msg.getToolName();
+        if (toolName != null && !toolName.isEmpty()) {
+            JSONObject args = msg.getToolArgs();
+            if (args == null) args = new JSONObject();
+            CharSequence formatted = getMcpClientManager().formatToolCall(toolName, args);
+            if (formatted != null) {
+                return formatted.toString();
+            }
+            return "Executing " + toolName + "...";
+        }
+        
+        return null;
+    }
+
+    private McpClientManager getMcpClientManager() {
+        return new McpClientManager();
     }
 }

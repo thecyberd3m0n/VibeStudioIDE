@@ -19,6 +19,30 @@ import java.util.Map;
 
 public class BrowserMcpServer implements McpServer {
 
+    @Override
+    public int getPriority() {
+        return 2;
+    }
+
+    @Override
+    public CharSequence formatToolCall(String toolName, JSONObject args) {
+        if (args == null) args = new JSONObject();
+        if ("read_browser_logs".equalsIgnoreCase(toolName) || "browser_logs".equalsIgnoreCase(toolName)) {
+            return "Reading browser logs (" + args.optInt("max_lines", 30) + " lines)";
+        }
+        return "Browser Tool [" + toolName + "]: " + args.toString();
+    }
+
+
+    @Override
+    public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
+        if ("read_browser_logs".equalsIgnoreCase(toolName) || "browser_logs".equalsIgnoreCase(toolName)) {
+            return new com.vibestudio.app.view.BrowserLogsToolMessage(context);
+        }
+        return new com.vibestudio.app.view.BrowserToolMessage(context);
+    }
+
+
     private static final String TAG = "BrowserMcpServer";
     private static final String NAME = "browser";
     private static final String DESCRIPTION = "Allows opening a new browser tab via 'browser_open_tab', navigating webview sessions, setting user-agent, clearing cookies, inspecting active URL, clicking elements, typing text, executing JS scripts, taking screenshots, and reading browser console/navigation logs.";

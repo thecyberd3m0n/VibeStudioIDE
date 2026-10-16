@@ -2,15 +2,11 @@ package com.vibestudio.app.chat.tool;
 
 import android.content.Context;
 
-import com.vibestudio.app.chat.model.ToolCall;
 import com.vibestudio.app.chat.model.ToolResult;
 import com.vibestudio.app.chat.truncator.OutputTruncator;
 import com.vibestudio.app.mcp.McpClientManager;
-import com.vibestudio.app.mcp.ToolSessionManager;
-import com.vibestudio.app.mcp.ToolType;
 import com.vibestudio.app.service.ChatService;
 import com.vibestudio.app.service.LogViewerService;
-import com.vibestudio.app.terminal.TerminalSessionManager;
 
 import org.json.JSONObject;
 
@@ -24,55 +20,55 @@ public class ToolExecutionManager {
         this.mMcpClientManager = mcpClientManager;
     }
 
-    public ToolResult executeTool(Context context, ToolCall toolCall) {
-        if (toolCall == null) {
+    public ToolResult executeTool(Context context, JSONObject toolCallObj) {
+        if (toolCallObj == null) {
             JSONObject err = new JSONObject();
             try {
                 err.put("status", "error");
                 err.put("message", "Null tool call provided.");
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LogViewerService.getInstance().e(TAG, "Error constructing JSON error result", e);
+            }
             return new ToolResult("unknown", err);
         }
 
-        String toolName = toolCall.getName();
-        long plannedDelayMs = toolCall.getPlannedDelayMs();
+        String toolName = toolCallObj.optString("tool", "unknown");
+        JSONObject args = toolCallObj.optJSONObject("args");
+        if (args == null) args = new JSONObject();
 
-        // 1. Dispatch/execute command or tool call FIRST before delay
-        JSONObject resultObj = mMcpClientManager.executeToolCall(toolName, toolCall.getArguments(), context);
+        long plannedDelayMs = Math.max(0L, toolCallObj.optLong("planned_delay_ms", 0L));
+        if (plannedDelayMs > 0 && !mMcpClientManager.supportsPlannedDelay(toolName)) {
+            LogViewerService.getInstance().i(TAG, "Reducing planned delay to 0ms for simple/synchronous tool: " + toolName);
+            plannedDelayMs = 0L;
+        }
 
-        // 2. Perform planned delay AFTER executing tool call if requested by Agent
+        JSONObject resultObj;
+        try {
+            // Dispatch/execute command or tool call FIRST before delay
+            resultObj = mMcpClientManager.executeToolCall(toolName, args, context);
+        } catch (Throwable t) {
+            LogViewerService.getInstance().e(TAG, "Exception during execution of tool '" + toolName + "': " + t.getMessage(), t);
+            resultObj = new JSONObject();
+            try {
+                resultObj.put("status", "error");
+                resultObj.put("message", "Tool execution threw exception: " + t.getMessage());
+                resultObj.put("exception", t.getClass().getName());
+                resultObj.put("details", t.toString());
+            } catch (Exception e) {
+                LogViewerService.getInstance().e(TAG, "Error building exception JSON result", e);
+            }
+        }
+
+        // Perform planned delay AFTER executing tool call if supported & requested
         if (plannedDelayMs > 0) {
             LogViewerService.getInstance().i(TAG, "Executing planned delay of " + plannedDelayMs + " ms after dispatching tool: " + toolName);
             performDelay(plannedDelayMs);
         }
 
-        // 3. Snapshot state after execution/delay for terminal operations to send back in loop
-        if ("execute_command".equals(toolName) || "send_keystroke".equals(toolName)) {
-            try {
-                int sessionId = toolCall.getArguments() != null ? toolCall.getArguments().optInt("session_id", -1) : -1;
-                ToolSessionManager sessionManager = ToolSessionManager.getInstance();
-                ToolSessionManager.ToolSession session = null;
-                if (sessionId > 0) {
-                    session = sessionManager.getSession(sessionId);
-                } else {
-                    int activeSessionId = sessionManager.getOrCreateSession(ToolType.TERMINAL, context, false);
-                    session = sessionManager.getSession(activeSessionId);
-                }
-
-                if (session != null && session.getTerminalSession() != null && session.getTerminalSession().isRunning()) {
-                    String snapshot = TerminalSessionManager.getInstance().readTerminalOutput(session.getTerminalSession(), 30, 0, true, null);
-                    if (snapshot != null && !snapshot.isEmpty()) {
-                        String currentResult = resultObj.optString("result", "");
-                        if (!currentResult.isEmpty()) {
-                            resultObj.put("result", currentResult + "\n\nTerminal Snapshot:\n" + snapshot);
-                        } else {
-                            resultObj.put("result", "Terminal Snapshot:\n" + snapshot);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                LogViewerService.getInstance().w(TAG, "Failed to capture terminal snapshot after delay: " + e.getMessage());
-            }
+        try {
+            resultObj = mMcpClientManager.onToolCallCompleted(toolName, args, context, resultObj);
+        } catch (Throwable t) {
+            LogViewerService.getInstance().e(TAG, "Exception completing tool '" + toolName + "': " + t.getMessage(), t);
         }
 
         // Apply 25KB output truncation rule

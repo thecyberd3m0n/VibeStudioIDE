@@ -2,6 +2,10 @@
 
 The `terminal` skill provides control over the active shared terminal session in VibeStudio IDE.
 
+## Command Execution Modes (`execute_command` vs `execute_command_async`)
+- **`execute_command` (Synchronous / Instant)**: Use for quick, non-blocking bash shell commands (e.g., `ls`, `git status`, `cat file`, `pwd`, quick queries). Takes **no planned delay** (`planned_delay_ms: 0`) and returns results directly and instantly without waiting for future readouts, allowing the agent loop to restart immediately.
+- **`execute_command_async` (Asynchronous / Long-running)**: Use for commands that start long-running background tasks, dev servers, watchers, or heavy build processes (e.g., `npm run dev`, `gradlew assembleDebug`, `npm install`). Supports and uses `planned_delay_ms` to pause for process startup or output before capturing initial snapshots. Use `read_terminal_output` to inspect output from ongoing async sessions.
+
 ## Non-Interactive & Automation Best Practices
 - **Prefer Non-Interactive Flags**: Whenever possible, pass non-interactive flags or environment variables to CLI tools to bypass setup wizards (e.g., `npm create vite@latest my-app -- --template react`, `npm init -y`, `CI=true npm test`, `npx --yes ...`).
 - **Auto-respond "No" to telemetry/analytics prompts**: When interactive CLI tools prompt for optional metrics or telemetry sharing (e.g. "share anonymous statistics? y/N", "Send telemetry? y/N"), respond "n" / "N".

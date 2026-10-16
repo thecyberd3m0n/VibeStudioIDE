@@ -1,6 +1,7 @@
 package com.vibestudio.app.chat.compressor;
 
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.mcp.McpClientManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,13 +37,21 @@ public class HistoryCompressor {
 
         int midEndIndex = history.size() - 4;
         StringBuilder summary = new StringBuilder("[Context Summary of previous conversation steps]:\n");
+        boolean hadSkillLoads = false;
         for (int i = 1; i < midEndIndex; i++) {
             ChatMessage msg = history.get(i);
             String text = msg.getText();
+            if (text != null && text.contains(McpClientManager.META_TOOL_GET_SKILL_SCHEMA)) {
+                hadSkillLoads = true;
+            }
             if (text != null && text.length() > 200) {
                 text = text.substring(0, 200) + "...";
             }
             summary.append("- ").append(msg.getSender()).append(": ").append(text).append("\n");
+        }
+
+        if (hadSkillLoads) {
+            summary.append("[Note: Skill schemas loaded during previous steps are permanently retained in System Prompt context]\n");
         }
 
         compressed.add(new ChatMessage("System Tool", summary.toString(), false, ChatMessage.MessageType.TOOL_RESULT));

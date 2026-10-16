@@ -21,9 +21,37 @@ import java.util.Map;
 
 public class FileMcpServer implements McpServer {
 
+    @Override
+    public int getPriority() {
+        return 1;
+    }
+
+    @Override
+    public CharSequence formatToolCall(String toolName, JSONObject args) {
+        if (args == null) args = new JSONObject();
+        String path = args.optString("path", args.optString("src", ""));
+        if ("file_list_directory".equalsIgnoreCase(toolName)) {
+            return "Listing directory: " + path;
+        } else if ("file_create_file".equalsIgnoreCase(toolName)) {
+            return "Creating file: " + path;
+        } else if ("file_delete".equalsIgnoreCase(toolName)) {
+            return "Deleting: " + path;
+        } else if ("file_get_info".equalsIgnoreCase(toolName)) {
+            return "Getting info: " + path;
+        } else if ("file_move".equalsIgnoreCase(toolName) || "file_copy".equalsIgnoreCase(toolName)) {
+            return toolName + ": " + args.optString("src", "") + " -> " + args.optString("dst", "");
+        }
+        return toolName + "(" + args.toString() + ")";
+    }
+
+    @Override
+    public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
+        return new com.vibestudio.app.view.FileToolMessage(context);
+    }
+
     private static final String TAG = "FileMcpServer";
     private static final String NAME = "file";
-    private static final String DESCRIPTION = "Allows traversing filesystem, listing directory contents, creating files/directories, moving, copying, and deleting files within the workspace.";
+    private static final String DESCRIPTION = "Provides workspace file management tools: listing directory contents, creating files or directories, deleting, moving, copying, and retrieving file metadata.";
 
     private boolean mIsActive = false;
     private final List<McpTool> mTools;
@@ -32,42 +60,41 @@ public class FileMcpServer implements McpServer {
         mTools = new ArrayList<>();
 
         // Tool 1: file_list_directory
-        mTools.add(McpTool.builder("file_list_directory", "List files and subdirectories in a workspace target directory.")
-                .addProperty("path", PropertyType.STRING, "Directory path to list (defaults to workspace home dir).", false)
+        mTools.add(McpTool.builder("file_list_directory", "List contents of a directory in the workspace.")
+                .addProperty("path", PropertyType.STRING, "Directory path relative to workspace home (or absolute path). Default: '.'", false)
                 .build());
 
         // Tool 2: file_create_file
-        mTools.add(McpTool.builder("file_create_file", "Create a new file at the specified path with optional initial text content.")
+        mTools.add(McpTool.builder("file_create_file", "Create a new empty file at specified path.")
                 .addProperty("path", PropertyType.STRING, "File path to create.", true)
-                .addProperty("content", PropertyType.STRING, "Optional text content to write into the new file.", false)
                 .build());
 
         // Tool 3: file_create_directory
-        mTools.add(McpTool.builder("file_create_directory", "Create a new directory (and parent directories if missing).")
+        mTools.add(McpTool.builder("file_create_directory", "Create a directory (and parent directories if missing).")
                 .addProperty("path", PropertyType.STRING, "Directory path to create.", true)
                 .build());
 
         // Tool 4: file_delete
         mTools.add(McpTool.builder("file_delete", "Delete a file or directory.")
                 .addProperty("path", PropertyType.STRING, "File or directory path to delete.", true)
-                .addProperty("recursive", PropertyType.BOOLEAN, "Recursive deletion if path is a non-empty directory (default: false).", false)
+                .addProperty("recursive", PropertyType.BOOLEAN, "Set true to delete non-empty directories. Default: false.", false)
                 .build());
 
         // Tool 5: file_move
         mTools.add(McpTool.builder("file_move", "Move or rename a file or directory.")
-                .addProperty("source", PropertyType.STRING, "Source path.", true)
-                .addProperty("destination", PropertyType.STRING, "Destination path.", true)
+                .addProperty("src", PropertyType.STRING, "Source path.", true)
+                .addProperty("dst", PropertyType.STRING, "Destination path.", true)
                 .build());
 
         // Tool 6: file_copy
-        mTools.add(McpTool.builder("file_copy", "Copy a file or directory to a destination path.")
-                .addProperty("source", PropertyType.STRING, "Source path to copy.", true)
-                .addProperty("destination", PropertyType.STRING, "Destination path.", true)
+        mTools.add(McpTool.builder("file_copy", "Copy a file or directory.")
+                .addProperty("src", PropertyType.STRING, "Source path.", true)
+                .addProperty("dst", PropertyType.STRING, "Destination path.", true)
                 .build());
 
         // Tool 7: file_get_info
-        mTools.add(McpTool.builder("file_get_info", "Get metadata, size, and status of a file or directory.")
-                .addProperty("path", PropertyType.STRING, "Target path.", true)
+        mTools.add(McpTool.builder("file_get_info", "Get metadata for a file or directory (size, permissions, timestamps).")
+                .addProperty("path", PropertyType.STRING, "Path to query.", true)
                 .build());
     }
 
@@ -118,22 +145,22 @@ public class FileMcpServer implements McpServer {
     public McpToolResult callTool(String toolName, Map<String, Object> arguments, Context context) {
         try {
             if ("file_list_directory".equals(toolName)) {
-                String pathArg = getStringArg(arguments, "path", "");
+                String pathArg = getStringArg(arguments, "path", ".");
                 File dir = resolveFile(pathArg, context);
                 if (!dir.exists()) {
-                    return McpToolResult.error("Directory does not exist: " + dir.getAbsolutePath());
+                    return McpToolResult.error("Directory does not exist: " + pathArg);
                 }
                 if (!dir.isDirectory()) {
-                    return McpToolResult.error("Path is not a directory: " + dir.getAbsolutePath());
+                    return McpToolResult.error("Path is not a directory: " + pathArg);
                 }
 
-                File[] children = dir.listFiles();
                 JSONArray items = new JSONArray();
+                File[] children = dir.listFiles();
                 if (children != null) {
                     for (File child : children) {
                         JSONObject item = new JSONObject();
                         item.put("name", child.getName());
-                        item.put("type", child.isDirectory() ? "directory" : "file");
+                        item.put("is_directory", child.isDirectory());
                         item.put("size", child.length());
                         item.put("last_modified", child.lastModified());
                         items.put(item);
@@ -141,9 +168,9 @@ public class FileMcpServer implements McpServer {
                 }
 
                 JSONObject res = new JSONObject();
+                res.put("status", "success");
                 res.put("path", dir.getAbsolutePath());
-                res.put("count", children != null ? children.length : 0);
-                res.put("entries", items);
+                res.put("items", items);
                 return McpToolResult.success(res.toString(2));
 
             } else if ("file_create_file".equals(toolName)) {
@@ -151,14 +178,18 @@ public class FileMcpServer implements McpServer {
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
                 File file = resolveFile(pathArg, context);
+                if (file.exists() && !file.isFile()) {
+                    return McpToolResult.error("Path is not a file: " + pathArg);
+                }
                 File parent = file.getParentFile();
                 if (parent != null && !parent.exists()) {
                     parent.mkdirs();
                 }
 
-                String content = getStringArg(arguments, "content", "");
-                try (FileOutputStream fos = new FileOutputStream(file)) {
-                    fos.write(content.getBytes("UTF-8"));
+                if (!file.exists()) {
+                    try (FileOutputStream fos = new FileOutputStream(file)) {
+                        // Empty file creation
+                    }
                 }
                 return McpToolResult.success("File created successfully: " + file.getAbsolutePath());
 
@@ -168,81 +199,77 @@ public class FileMcpServer implements McpServer {
 
                 File dir = resolveFile(pathArg, context);
                 if (dir.exists()) {
-                    return McpToolResult.error("Directory already exists: " + pathArg);
-                }
-                if (dir.mkdirs()) {
-                    return McpToolResult.success("Directory created: " + dir.getAbsolutePath());
-                } else {
+                    if (!dir.isDirectory()) {
+                        return McpToolResult.error("Path is not a directory: " + pathArg);
+                    }
+                } else if (!dir.mkdirs() && !dir.isDirectory()) {
                     return McpToolResult.error("Failed to create directory: " + pathArg);
                 }
+                return McpToolResult.success("Directory created successfully: " + dir.getAbsolutePath());
 
             } else if ("file_delete".equals(toolName)) {
                 String pathArg = getStringArg(arguments, "path", "");
+                boolean recursive = getBooleanArg(arguments, "recursive", false);
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
                 File target = resolveFile(pathArg, context);
-                if (!target.exists()) return McpToolResult.error("Path does not exist: " + pathArg);
+                if (!target.exists()) return McpToolResult.error("Target does not exist: " + pathArg);
 
-                boolean recursive = getBooleanArg(arguments, "recursive", false);
                 boolean deleted = deleteRecursive(target, recursive);
                 if (deleted) {
-                    return McpToolResult.success("Deleted: " + pathArg);
+                    return McpToolResult.success("Deleted successfully: " + target.getAbsolutePath());
                 } else {
-                    return McpToolResult.error("Failed to delete (use recursive=true for non-empty dirs): " + pathArg);
+                    return McpToolResult.error("Failed to delete: " + pathArg + " (try setting recursive: true if directory)");
                 }
 
             } else if ("file_move".equals(toolName)) {
-                String srcArg = getStringArg(arguments, "source", "");
-                String dstArg = getStringArg(arguments, "destination", "");
-                if (srcArg.isEmpty() || dstArg.isEmpty()) {
-                    return McpToolResult.error("Missing 'source' or 'destination' parameter.");
-                }
+                String srcArg = getStringArg(arguments, "src", "");
+                String dstArg = getStringArg(arguments, "dst", "");
+                if (srcArg.isEmpty() || dstArg.isEmpty()) return McpToolResult.error("Missing 'src' or 'dst' parameter.");
 
                 File src = resolveFile(srcArg, context);
                 File dst = resolveFile(dstArg, context);
-                if (!src.exists()) return McpToolResult.error("Source path does not exist: " + srcArg);
+                if (!src.exists()) return McpToolResult.error("Source does not exist: " + srcArg);
 
                 File parent = dst.getParentFile();
                 if (parent != null && !parent.exists()) parent.mkdirs();
 
-                if (src.renameTo(dst)) {
-                    return McpToolResult.success("Moved " + srcArg + " -> " + dstArg);
+                boolean renamed = src.renameTo(dst);
+                if (renamed) {
+                    return McpToolResult.success("Moved successfully to: " + dst.getAbsolutePath());
                 } else {
-                    return McpToolResult.error("Failed to move/rename from " + srcArg + " to " + dstArg);
+                    return McpToolResult.error("Failed to move file/directory.");
                 }
 
             } else if ("file_copy".equals(toolName)) {
-                String srcArg = getStringArg(arguments, "source", "");
-                String dstArg = getStringArg(arguments, "destination", "");
-                if (srcArg.isEmpty() || dstArg.isEmpty()) {
-                    return McpToolResult.error("Missing 'source' or 'destination' parameter.");
-                }
+                String srcArg = getStringArg(arguments, "src", "");
+                String dstArg = getStringArg(arguments, "dst", "");
+                if (srcArg.isEmpty() || dstArg.isEmpty()) return McpToolResult.error("Missing 'src' or 'dst' parameter.");
 
                 File src = resolveFile(srcArg, context);
                 File dst = resolveFile(dstArg, context);
-                if (!src.exists()) return McpToolResult.error("Source path does not exist: " + srcArg);
+                if (!src.exists()) return McpToolResult.error("Source does not exist: " + srcArg);
 
                 copyRecursive(src, dst);
-                return McpToolResult.success("Copied " + srcArg + " -> " + dstArg);
+                return McpToolResult.success("Copied successfully to: " + dst.getAbsolutePath());
 
             } else if ("file_get_info".equals(toolName)) {
                 String pathArg = getStringArg(arguments, "path", "");
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
                 File target = resolveFile(pathArg, context);
-                if (!target.exists()) return McpToolResult.error("Path does not exist: " + pathArg);
+                if (!target.exists()) return McpToolResult.error("Target does not exist: " + pathArg);
 
                 JSONObject info = new JSONObject();
                 info.put("path", target.getAbsolutePath());
-                info.put("name", target.getName());
-                info.put("exists", target.exists());
+                info.put("exists", true);
                 info.put("is_directory", target.isDirectory());
                 info.put("is_file", target.isFile());
                 info.put("size_bytes", target.length());
+                info.put("last_modified_ms", target.lastModified());
                 info.put("can_read", target.canRead());
                 info.put("can_write", target.canWrite());
                 info.put("can_execute", target.canExecute());
-                info.put("last_modified", target.lastModified());
 
                 return McpToolResult.success(info.toString(2));
 
@@ -258,8 +285,7 @@ public class FileMcpServer implements McpServer {
     private boolean deleteRecursive(File file, boolean recursive) {
         if (file.isDirectory()) {
             File[] children = file.listFiles();
-            if (children != null && children.length > 0) {
-                if (!recursive) return false;
+            if (children != null && recursive) {
                 for (File child : children) {
                     deleteRecursive(child, true);
                 }
@@ -288,33 +314,7 @@ public class FileMcpServer implements McpServer {
     }
 
     private File resolveFile(String pathArg, Context context) {
-        String homePath = null;
-        try {
-            homePath = System.getenv("HOME");
-        } catch (Exception ignored) {}
-
-        if (homePath == null || homePath.trim().isEmpty()) {
-            if (context != null) {
-                homePath = new File(context.getFilesDir(), "home").getAbsolutePath();
-            } else {
-                homePath = "/data/data/com.termux/files/home";
-            }
-        }
-
-        if (pathArg == null || pathArg.trim().isEmpty()) {
-            return new File(homePath);
-        }
-
-        String trimmed = pathArg.trim();
-        if (trimmed.startsWith("~")) {
-            trimmed = homePath + trimmed.substring(1);
-        }
-
-        File f = new File(trimmed);
-        if (!f.isAbsolute()) {
-            f = new File(homePath, trimmed);
-        }
-        return f;
+        return PathResolver.resolveFile(pathArg, context);
     }
 
     private String getStringArg(Map<String, Object> args, String key, String defaultValue) {

@@ -5,7 +5,6 @@ import android.content.Context;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
-import com.vibestudio.app.mcp.model.ToolProperty;
 import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONArray;
@@ -17,40 +16,54 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class McpClientManager {
 
     private static final String TAG = "McpClientManager";
+    public static final String META_TOOL_GET_SKILL_SCHEMA = "get_skill_schema";
+
+    public static boolean isMetaTool(String toolName) {
+        return META_TOOL_GET_SKILL_SCHEMA.equalsIgnoreCase(toolName);
+    }
 
     public static class McpServerInfo {
         private final String name;
         private final String description;
         private final boolean isConnected;
+        private final int priority;
 
-        public McpServerInfo(String name, String description, boolean isConnected) {
+        public McpServerInfo(String name, String description, boolean isConnected, int priority) {
             this.name = name;
             this.description = description;
             this.isConnected = isConnected;
+            this.priority = priority;
         }
 
         public String getName() { return name; }
         public String getDescription() { return description; }
         public boolean isConnected() { return isConnected; }
+        public int getPriority() { return priority; }
         public String getStatus() { return isConnected ? "Status: Connected & Ready" : "Status: Disconnected"; }
         public String getColor() { return isConnected ? "#4CAF50" : "#F44336"; }
     }
 
-    private final Map<String, McpServer> mRegisteredServers = new HashMap<>();
+    private final Map<String, McpServer> mRegisteredServers = new LinkedHashMap<>();
+    private final Set<String> mLoadedSkills = ConcurrentHashMap.newKeySet();
+    private final Map<String, JSONObject> mCachedSchemas = new ConcurrentHashMap<>();
 
     public McpClientManager() {
-        registerServer(new TerminalMcpServer());
-        registerServer(new BrowserMcpServer());
         registerServer(new FileMcpServer());
         registerServer(new EditorMcpServer());
+        registerServer(new TerminalMcpServer());
+        registerServer(new BrowserMcpServer());
     }
 
     public void registerServer(McpServer server) {
@@ -60,10 +73,92 @@ public class McpClientManager {
         }
     }
 
+    public McpServer findServerForTool(String toolName) {
+        if (toolName == null) return null;
+        for (McpServer server : mRegisteredServers.values()) {
+            if (server.handlesTool(toolName)) {
+                return server;
+            }
+        }
+        return null;
+    }
+
+    public boolean supportsPlannedDelay(String toolName) {
+        if (toolName == null || isMetaTool(toolName)) {
+            return false;
+        }
+        McpServer server = findServerForTool(toolName);
+        return server != null && server.supportsPlannedDelay(toolName);
+    }
+
+    public CharSequence formatToolCall(String toolName, JSONObject args) {
+        if (isMetaTool(toolName)) {
+            return formatMetaToolCall(args);
+        }
+        McpServer server = findServerForTool(toolName);
+        if (server != null) {
+            CharSequence custom = server.formatToolCall(toolName, args);
+            if (custom != null) {
+                return custom;
+            }
+        }
+        return null;
+    }
+
+    private CharSequence formatMetaToolCall(JSONObject args) {
+        if (args == null) return "loading skill...";
+        List<String> skills = new ArrayList<>();
+
+        JSONArray skillsArray = args.optJSONArray("skills");
+        if (skillsArray == null) {
+            skillsArray = args.optJSONArray("skill_names");
+        }
+
+        if (skillsArray != null) {
+            for (int i = 0; i < skillsArray.length(); i++) {
+                String s = skillsArray.optString(i);
+                if (s != null && !s.trim().isEmpty()) {
+                    skills.add(s.trim());
+                }
+            }
+        } else {
+            String rawSkillName = args.optString("skill_name", args.optString("skill", args.optString("tool", "")));
+            if (!rawSkillName.trim().isEmpty()) {
+                String[] parts = rawSkillName.split(",");
+                for (String part : parts) {
+                    if (!part.trim().isEmpty()) {
+                        skills.add(part.trim());
+                    }
+                }
+            }
+        }
+
+        if (skills.isEmpty()) {
+            return "loading skill...";
+        } else if (skills.size() == 1) {
+            return "loading skill: " + skills.get(0);
+        } else {
+            StringBuilder sb = new StringBuilder("loading skills: ");
+            for (int i = 0; i < skills.size(); i++) {
+                sb.append(skills.get(i));
+                if (i < skills.size() - 1) {
+                    sb.append(", ");
+                }
+            }
+            return sb.toString();
+        }
+    }
+
+    private List<McpServer> getSortedServers() {
+        List<McpServer> sortedList = new ArrayList<>(mRegisteredServers.values());
+        Collections.sort(sortedList, (s1, s2) -> Integer.compare(s1.getPriority(), s2.getPriority()));
+        return sortedList;
+    }
+
     public List<McpServerInfo> getServerInfos() {
         List<McpServerInfo> list = new ArrayList<>();
-        for (McpServer server : mRegisteredServers.values()) {
-            list.add(new McpServerInfo(server.getName(), server.getDescription(), server.isActive()));
+        for (McpServer server : getSortedServers()) {
+            list.add(new McpServerInfo(server.getName(), server.getDescription(), server.isActive(), server.getPriority()));
         }
         return list;
     }
@@ -72,22 +167,58 @@ public class McpClientManager {
         return getServerInfos();
     }
 
+    public void markSkillLoaded(String skillName) {
+        if (skillName != null && !skillName.trim().isEmpty()) {
+            mLoadedSkills.add(skillName.toLowerCase().trim());
+        }
+    }
+
+    public boolean isSkillLoaded(String skillName) {
+        if (skillName == null) return false;
+        return mLoadedSkills.contains(skillName.toLowerCase().trim());
+    }
+
+
+    public String getLoadedSkillsInstructions(Context context) {
+        if (mLoadedSkills.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n=== LOADED SKILLS SCHEMAS (ACTIVE IN CONTEXT) ===\n");
+        sb.append("The following skills are already loaded and ACTIVE in your context window:\n");
+        for (String skillName : mLoadedSkills) {
+            JSONObject schema = getSkillSchema(context, skillName);
+            sb.append("\n--- SKILL: ").append(skillName.toUpperCase()).append(" ---\n");
+            if (schema != null && schema.has("schema")) {
+                JSONObject schemaObj = schema.optJSONObject("schema");
+                if (schemaObj != null) {
+                    sb.append(schemaObj.toString()).append("\n");
+                }
+            }
+        }
+        sb.append("\nIMPORTANT: Do NOT call '").append(META_TOOL_GET_SKILL_SCHEMA).append("' again for any of the above loaded skills. Invoke their action tools directly.\n");
+        return sb.toString();
+    }
+
     public JSONObject getHighLevelCatalog() {
         JSONObject catalog = new JSONObject();
         try {
             JSONArray skills = new JSONArray();
 
-            for (McpServer server : mRegisteredServers.values()) {
+            for (McpServer server : getSortedServers()) {
                 JSONObject skillObj = new JSONObject();
                 skillObj.put("name", server.getName());
                 skillObj.put("description", server.getDescription());
+                skillObj.put("priority_tier", server.getPriority());
+                skillObj.put("is_loaded", isSkillLoaded(server.getName()));
                 skills.put(skillObj);
             }
 
             catalog.put("available_skills", skills);
 
-            McpTool metaTool = McpTool.builder("get_skill_schema", "Fetches detailed parameters and tool schemas for a given skill name when needed.")
-                    .addProperty("skill_name", PropertyType.STRING, "Name of the skill to load (e.g. 'terminal', 'browser', 'file', 'editor')", true)
+            McpTool metaTool = McpTool.builder(META_TOOL_GET_SKILL_SCHEMA, "Fetches detailed parameters and tool schemas for one or multiple skill names in a single batch call.")
+                    .addProperty("skill_name", PropertyType.STRING, "Single skill name (e.g. 'file') or comma-separated list of skills to batch load.", false)
+                    .addProperty("skills", PropertyType.ARRAY, "List of skill names to batch load (e.g. ['file', 'terminal', 'browser']).", false)
                     .build();
 
             catalog.put("meta_tool", metaTool.toJsonSchema());
@@ -97,10 +228,16 @@ public class McpClientManager {
     }
 
     public JSONObject getSkillSchema(Context context, String skillName) {
+        if (skillName != null && mCachedSchemas.containsKey(skillName.toLowerCase())) {
+            markSkillLoaded(skillName.toLowerCase());
+            return mCachedSchemas.get(skillName.toLowerCase());
+        }
+
         JSONObject response = new JSONObject();
         try {
             if (skillName != null && mRegisteredServers.containsKey(skillName.toLowerCase())) {
                 String cleanSkillName = skillName.toLowerCase();
+                markSkillLoaded(cleanSkillName);
                 McpServer server = mRegisteredServers.get(cleanSkillName);
                 if (server != null) {
                     JSONArray toolsArray = new JSONArray();
@@ -120,6 +257,7 @@ public class McpClientManager {
                     }
 
                     response.put("schema", schemaObj);
+                    mCachedSchemas.put(cleanSkillName, response);
                     return response;
                 }
             }
@@ -157,21 +295,21 @@ public class McpClientManager {
 
     public JSONObject executeToolCall(String toolName, JSONObject args, Context context) {
         try {
-            if ("get_skill_schema".equalsIgnoreCase(toolName)) {
-                String skillName = args != null ? args.optString("skill_name") : "";
-                return getSkillSchema(context, skillName);
+            if (isMetaTool(toolName)) {
+                return executeMetaToolGetSkillSchema(args, context);
             }
 
             Map<String, Object> arguments = jsonObjectToMap(args);
 
             for (McpServer server : mRegisteredServers.values()) {
                 if (server.handlesTool(toolName)) {
+                    markSkillLoaded(server.getName());
                     McpToolResult result = server.callTool(toolName, arguments, context);
                     return result.toJsonObject();
                 }
             }
 
-            McpToolResult errResult = McpToolResult.error("Tool execution failed: Unknown tool '" + toolName + "'. Lazy load skill schema via 'get_skill_schema' if not loaded.");
+            McpToolResult errResult = McpToolResult.error("Tool execution failed: Unknown tool '" + toolName + "'. Lazy load skill schema via '" + META_TOOL_GET_SKILL_SCHEMA + "' if not loaded.");
             return errResult.toJsonObject();
 
         } catch (Exception e) {
@@ -179,8 +317,76 @@ public class McpClientManager {
         }
     }
 
+    private JSONObject executeMetaToolGetSkillSchema(JSONObject args, Context context) {
+        List<String> requestedSkills = new ArrayList<>();
+
+        if (args != null) {
+            JSONArray skillsArray = args.optJSONArray("skills");
+            if (skillsArray == null) {
+                skillsArray = args.optJSONArray("skill_names");
+            }
+
+            if (skillsArray != null) {
+                for (int i = 0; i < skillsArray.length(); i++) {
+                    String s = skillsArray.optString(i);
+                    if (s != null && !s.trim().isEmpty()) {
+                        requestedSkills.add(s.trim().toLowerCase());
+                    }
+                }
+            } else {
+                String rawSkillName = args.optString("skill_name", args.optString("skill", args.optString("tool", "")));
+                if (!rawSkillName.trim().isEmpty()) {
+                    String[] parts = rawSkillName.split(",");
+                    for (String part : parts) {
+                        if (!part.trim().isEmpty()) {
+                            requestedSkills.add(part.trim().toLowerCase());
+                        }
+                    }
+                }
+            }
+        }
+
+        if (requestedSkills.isEmpty()) {
+            return McpToolResult.error("Missing skill parameter. Provide 'skill_name' (e.g. 'file') or 'skills' array (e.g. ['file', 'terminal']).").toJsonObject();
+        }
+
+        if (requestedSkills.size() == 1) {
+            return getSkillSchema(context, requestedSkills.get(0));
+        }
+
+        JSONObject batchResponse = new JSONObject();
+        try {
+            JSONArray loadedList = new JSONArray();
+            JSONArray schemasArray = new JSONArray();
+
+            for (String skillName : requestedSkills) {
+                JSONObject schemaRes = getSkillSchema(context, skillName);
+                if ("success".equals(schemaRes.optString("status"))) {
+                    loadedList.put(skillName);
+                }
+                schemasArray.put(schemaRes);
+            }
+
+            batchResponse.put("status", "success");
+            batchResponse.put("loaded_skills", loadedList);
+            batchResponse.put("schemas", schemasArray);
+        } catch (JSONException e) {
+            return McpToolResult.error("Error creating batch schema response: " + e.getMessage()).toJsonObject();
+        }
+
+        return batchResponse;
+    }
+
     public JSONObject executeToolCall(String toolName, JSONObject args) {
         return executeToolCall(toolName, args, null);
+    }
+
+    public JSONObject onToolCallCompleted(String toolName, JSONObject args, Context context, JSONObject result) {
+        McpServer server = findServerForTool(toolName);
+        if (server == null) {
+            return result;
+        }
+        return server.onToolCallCompleted(toolName, jsonObjectToMap(args), context, result);
     }
 
     private Map<String, Object> jsonObjectToMap(JSONObject jsonObj) {

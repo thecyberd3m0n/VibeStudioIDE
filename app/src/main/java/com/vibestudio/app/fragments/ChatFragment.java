@@ -145,7 +145,8 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         mMsgInput.addTextChangedListener(new TextWatcher() {
             @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
@@ -153,7 +154,8 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             }
 
             @Override
-            public void afterTextChanged(Editable s) {}
+            public void afterTextChanged(Editable s) {
+            }
         });
 
         inputRow.addView(mMsgInput);
@@ -233,10 +235,6 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         List<ChatMessage> history = mChatSession.getMessages();
         for (ChatMessage msg : history) {
-            // Do not display raw background TOOL_RESULT messages in UI
-            if (msg.getType() == ChatMessage.MessageType.TOOL_RESULT) {
-                continue;
-            }
             addChatMessageUI(context, msg);
         }
 
@@ -249,7 +247,19 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         // Centralized SOLID check and view creation via ToolMessageFactory
         if (ToolMessageFactory.isToolMessage(msg)) {
-            int childCount = mChatContainer.getChildCount(); if (childCount > 0) { View lastChild = mChatContainer.getChildAt(childCount - 1); if (lastChild instanceof BaseToolMessageView) { BaseToolMessageView lastToolView = (BaseToolMessageView) lastChild; Class<? extends BaseToolMessageView> targetClass = ToolMessageFactory.getToolMessageClass(msg); if (targetClass != null && targetClass.isInstance(lastToolView)) { lastToolView.appendToolMessage(msg); return; } } } BaseToolMessageView toolView = ToolMessageFactory.createToolMessageView(context, msg);
+            int childCount = mChatContainer.getChildCount();
+            if (childCount > 0) {
+                View lastChild = mChatContainer.getChildAt(childCount - 1);
+                if (lastChild instanceof BaseToolMessageView) {
+                    BaseToolMessageView lastToolView = (BaseToolMessageView) lastChild;
+                    BaseToolMessageView newToolView = ToolMessageFactory.createToolMessageView(context, msg);
+                    if (newToolView.getClass().isInstance(lastToolView)) {
+                        lastToolView.appendToolMessage(msg);
+                        return;
+                    }
+                }
+            }
+            BaseToolMessageView toolView = ToolMessageFactory.createToolMessageView(context, msg);
             mChatContainer.addView(toolView);
             return;
         }
@@ -326,10 +336,8 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     public void onMessageAdded(ChatMessage message) {
         Context context = getContext();
         if (context != null) {
-            if (message.getType() != ChatMessage.MessageType.TOOL_RESULT) {
-                addChatMessageUI(context, message);
-                scrollToBottom();
-            }
+            addChatMessageUI(context, message);
+            scrollToBottom();
         }
     }
 

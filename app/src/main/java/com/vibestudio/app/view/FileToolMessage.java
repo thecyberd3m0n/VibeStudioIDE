@@ -35,7 +35,11 @@ public class FileToolMessage extends BaseToolMessageView {
 
     @Override
     protected CharSequence formatToolContent(ChatMessage msg) {
+        if (msg == null) return "";
         String text = msg.getText();
+        if (text != null && text.contains("[MCP Tool Execution Output")) {
+            return null;
+        }
         String displayContent = text;
 
         if (text != null && text.contains("{") && text.contains("\"tool\"")) {
@@ -57,9 +61,9 @@ public class FileToolMessage extends BaseToolMessageView {
                     } else if ("file_delete".equalsIgnoreCase(toolName)) {
                         displayContent = "Deleted path: " + args.optString("path", "");
                     } else if ("file_move".equalsIgnoreCase(toolName)) {
-                        displayContent = "Moved " + args.optString("source", "") + " -> " + args.optString("destination", "");
+                        displayContent = "Moved " + args.optString("src", "") + " -> " + args.optString("dst", "");
                     } else if ("file_copy".equalsIgnoreCase(toolName)) {
-                        displayContent = "Copied " + args.optString("source", "") + " -> " + args.optString("destination", "");
+                        displayContent = "Copied " + args.optString("src", "") + " -> " + args.optString("dst", "");
                     } else if ("file_get_info".equalsIgnoreCase(toolName)) {
                         displayContent = "Inspected info for: " + args.optString("path", "");
                     } else {
