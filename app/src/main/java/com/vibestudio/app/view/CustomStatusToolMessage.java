@@ -79,6 +79,22 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
         if (text == null || text.trim().isEmpty()) return "processing...";
         String trimmed = text.trim();
 
+        // If message is raw MCP Tool Execution Output JSON block, strip raw JSON output
+        String resultHeader = "[MCP Tool Execution Output for ";
+        int headerStart = trimmed.indexOf(resultHeader);
+        if (headerStart >= 0) {
+            int nameStart = headerStart + resultHeader.length();
+            int headerEnd = trimmed.indexOf(']', nameStart);
+            if (headerEnd > nameStart) {
+                String toolName = trimmed.substring(nameStart, headerEnd).trim();
+                CharSequence formatted = getMcpClientManager().formatToolCall(toolName, new JSONObject());
+                if (formatted != null) {
+                    return formatted.toString();
+                }
+                return toolName + " completed";
+            }
+        }
+
         if (!trimmed.startsWith("{") && !trimmed.contains("\"tool\"")) {
             return trimmed;
         }
