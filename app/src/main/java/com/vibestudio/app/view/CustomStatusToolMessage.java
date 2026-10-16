@@ -38,6 +38,15 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
     public void bind(ChatMessage message) {
         removeAllViews();
 
+        String rawText = message != null ? message.getText() : "";
+        String displayText = extractFormattedStatus(rawText);
+
+        if (displayText == null) {
+            setVisibility(GONE);
+            return;
+        }
+
+        setVisibility(VISIBLE);
         setOrientation(VERTICAL);
         LayoutParams params = new LayoutParams(
                 LayoutParams.WRAP_CONTENT,
@@ -52,21 +61,21 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
         mTvStatusText.setTypeface(null, Typeface.ITALIC);
         mTvStatusText.setGravity(Gravity.CENTER);
 
-        String rawText = message != null ? message.getText() : "";
-        String displayText = extractFormattedStatus(rawText);
-
         mTvStatusText.setText(displayText);
         addView(mTvStatusText);
     }
 
     @Override
     public void appendToolMessage(ChatMessage msg) {
+        CharSequence newText = extractFormattedStatus(msg != null ? msg.getText() : null);
+        if (newText == null) {
+            return;
+        }
         if (mTvStatusText == null) {
             bind(msg);
             return;
         }
         CharSequence currentText = mTvStatusText.getText();
-        CharSequence newText = extractFormattedStatus(msg != null ? msg.getText() : null);
         if (currentText == null || currentText.length() == 0) {
             mTvStatusText.setText(newText);
         } else {
@@ -79,20 +88,9 @@ public class CustomStatusToolMessage extends BaseToolMessageView {
         if (text == null || text.trim().isEmpty()) return "processing...";
         String trimmed = text.trim();
 
-        // If message is raw MCP Tool Execution Output JSON block, strip raw JSON output
-        String resultHeader = "[MCP Tool Execution Output for ";
-        int headerStart = trimmed.indexOf(resultHeader);
-        if (headerStart >= 0) {
-            int nameStart = headerStart + resultHeader.length();
-            int headerEnd = trimmed.indexOf(']', nameStart);
-            if (headerEnd > nameStart) {
-                String toolName = trimmed.substring(nameStart, headerEnd).trim();
-                CharSequence formatted = getMcpClientManager().formatToolCall(toolName, new JSONObject());
-                if (formatted != null) {
-                    return formatted.toString();
-                }
-                return toolName + " completed";
-            }
+        // Do NOT display raw MCP tool execution results to the user (used for LLM context/logs)
+        if (trimmed.contains("[MCP Tool Execution Output")) {
+            return null;
         }
 
         if (!trimmed.startsWith("{") && !trimmed.contains("\"tool\"")) {
