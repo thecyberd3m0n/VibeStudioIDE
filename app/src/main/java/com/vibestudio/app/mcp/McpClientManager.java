@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -50,14 +51,15 @@ public class McpClientManager {
         public String getColor() { return isConnected ? "#4CAF50" : "#F44336"; }
     }
 
-    private final Map<String, McpServer> mRegisteredServers = new HashMap<>();
+    private final Map<String, McpServer> mRegisteredServers = new LinkedHashMap<>();
     private final Set<String> mLoadedSkills = new HashSet<>();
 
     public McpClientManager() {
-        registerServer(new TerminalMcpServer());
-        registerServer(new BrowserMcpServer());
+        // Registered in Tier priority order: Tier 1 (Simpler/Lightweight) -> Tier 2 (Complex/Heavyweight)
         registerServer(new FileMcpServer());
         registerServer(new EditorMcpServer());
+        registerServer(new TerminalMcpServer());
+        registerServer(new BrowserMcpServer());
     }
 
     public void registerServer(McpServer server) {
@@ -151,7 +153,7 @@ public class McpClientManager {
             catalog.put("available_skills", skills);
 
             McpTool metaTool = McpTool.builder(META_TOOL_GET_SKILL_SCHEMA, "Fetches detailed parameters and tool schemas for a given skill name when needed.")
-                    .addProperty("skill_name", PropertyType.STRING, "Name of the skill to load (e.g. 'terminal', 'browser', 'file', 'editor')", true)
+                    .addProperty("skill_name", PropertyType.STRING, "Name of the skill to load (e.g. 'file', 'editor', 'terminal', 'browser')", true)
                     .build();
 
             catalog.put("meta_tool", metaTool.toJsonSchema());
