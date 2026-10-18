@@ -12,13 +12,26 @@
     android:gravity="center_vertical"
     android:padding="12dp">
 
-    <TextView
-        android:id="@+id/tv_file_icon"
+    <FrameLayout
         android:layout_width="36dp"
-        android:layout_height="36dp"
-        android:gravity="center"
-        android:text="📄"
-        android:textSize="20sp" />
+        android:layout_height="36dp">
+
+        <TextView
+            android:id="@+id/tv_file_icon"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="📄"
+            android:textSize="20sp" />
+
+        <ImageView
+            android:id="@+id/img_file_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center"
+            android:visibility="gone"
+            android:contentDescription="File icon" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="0dp"

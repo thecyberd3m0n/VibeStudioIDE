@@ -559,4 +559,72 @@ public class TerminalSessionManager {
             session.finishIfRunning();
         } catch (Exception ignored) {}
     }
+
+    public synchronized String runCommandSync(Context context, String command, File workingDir, int timeoutMs) {
+        if (context == null || command == null || command.isEmpty()) {
+            return null;
+        }
+        try {
+            File filesDir = context.getApplicationContext().getFilesDir();
+            File usrDir = new File(filesDir, "usr");
+            File homeDir = new File(filesDir, "home");
+            if (!homeDir.exists()) homeDir.mkdirs();
+
+            File bashFile = new File(usrDir, "bin/bash");
+            String shellPath = bashFile.exists() ? bashFile.getAbsolutePath() : "/system/bin/sh";
+
+            List<String> envList = new ArrayList<>();
+            envList.add("PREFIX=" + usrDir.getAbsolutePath());
+            envList.add("HOME=" + homeDir.getAbsolutePath());
+            envList.add("PATH=" + new File(usrDir, "bin").getAbsolutePath() + ":" + new File(usrDir, "bin/applets").getAbsolutePath() + ":/system/bin:/system/xbin");
+            envList.add("LD_LIBRARY_PATH=" + new File(usrDir, "lib").getAbsolutePath());
+            envList.add("LD_PRELOAD=" + new File(usrDir, "lib/libtermux-exec.so").getAbsolutePath());
+            envList.add("TMPDIR=" + new File(usrDir, "tmp").getAbsolutePath());
+            envList.add("TERM=xterm-256color");
+            envList.add("LANG=en_US.UTF-8");
+            envList.add("APT_CONFIG=" + new File(usrDir, "etc/apt/apt.conf").getAbsolutePath());
+            envList.add("DPKG_ADMINDIR=" + new File(usrDir, "var/lib/dpkg").getAbsolutePath());
+
+            ProcessBuilder pb = new ProcessBuilder(shellPath, "-c", command);
+            if (workingDir != null && workingDir.isDirectory()) {
+                pb.directory(workingDir);
+            } else {
+                pb.directory(homeDir);
+            }
+            Map<String, String> env = pb.environment();
+            for (String envVar : envList) {
+                int idx = envVar.indexOf('=');
+                if (idx > 0) {
+                    env.put(envVar.substring(0, idx), envVar.substring(idx + 1));
+                }
+            }
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            StringBuilder output = new StringBuilder();
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                char[] buffer = new char[1024];
+                int read;
+                while ((read = reader.read(buffer)) != -1) {
+                    output.append(buffer, 0, read);
+                }
+            }
+
+            if (timeoutMs > 0) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    process.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                } else {
+                    process.waitFor();
+                }
+            } else {
+                process.waitFor();
+            }
+
+            return output.toString();
+        } catch (Exception e) {
+            LogViewerService.getInstance().e(TAG, "Failed to run command synchronously: " + command, e);
+            return null;
+        }
+    }
 }

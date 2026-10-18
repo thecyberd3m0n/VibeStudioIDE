@@ -83,7 +83,7 @@ if [ -x "$PREFIX/bin/apt-get" ]; then
     echo "[vibestudio-bootstrap] Running apt-get update..."
     "$PREFIX/bin/apt-get" update -y || true
     echo "[vibestudio-bootstrap] Installing ca-certificates termux-keyring..."
-    "$PREFIX/bin/apt-get" install -y ca-certificates termux-keyring || true
+    "$PREFIX/bin/apt-get" install -y ca-certificates termux-keyring git || true
     echo "[vibestudio-bootstrap] Running package upgrades (dist-upgrade)..."
     "$PREFIX/bin/apt-get" dist-upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" || "$PREFIX/bin/apt-get" upgrade -y || true
 elif [ -x "$PREFIX/bin/pkg" ] && [ -x "$PREFIX/bin/bash" ]; then
@@ -91,7 +91,7 @@ elif [ -x "$PREFIX/bin/pkg" ] && [ -x "$PREFIX/bin/bash" ]; then
     echo "[vibestudio-bootstrap] Running pkg update..."
     "$PREFIX/bin/bash" "$PREFIX/bin/pkg" update -y || true
     echo "[vibestudio-bootstrap] Installing ca-certificates termux-keyring..."
-    "$PREFIX/bin/bash" "$PREFIX/bin/pkg" install -y ca-certificates termux-keyring || true
+    "$PREFIX/bin/bash" "$PREFIX/bin/pkg" install -y ca-certificates termux-keyring git || true
     echo "[vibestudio-bootstrap] Running pkg upgrade..."
     "$PREFIX/bin/bash" "$PREFIX/bin/pkg" upgrade -y || true
 else

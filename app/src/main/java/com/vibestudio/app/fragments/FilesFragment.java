@@ -1,5 +1,7 @@
 package com.vibestudio.app.fragments;
 
+import com.vibestudio.app.git.GitManager;
+
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
@@ -14,6 +16,7 @@ import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.PopupMenu;
@@ -351,12 +354,21 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             View itemView = inflater.inflate(R.layout.item_file_entry, listContainer, false);
 
             TextView tvIcon = itemView.findViewById(R.id.tv_file_icon);
+            ImageView imgIcon = itemView.findViewById(R.id.img_file_icon);
             TextView tvName = itemView.findViewById(R.id.tv_file_name);
             TextView tvDetails = itemView.findViewById(R.id.tv_file_details);
             TextView btnMenu = itemView.findViewById(R.id.btn_file_menu);
 
             tvName.setText(entry.getName());
-            tvIcon.setText(entry.getIconSymbol());
+            if (entry.getIconResId() != null) {
+                tvIcon.setVisibility(View.GONE);
+                imgIcon.setVisibility(View.VISIBLE);
+                imgIcon.setImageResource(entry.getIconResId());
+            } else {
+                imgIcon.setVisibility(View.GONE);
+                tvIcon.setVisibility(View.VISIBLE);
+                tvIcon.setText(entry.getIconSymbol());
+            }
             tvDetails.setText(entry.getDetailsText(getContext()));
 
             List<FileAction> actions = FileActionRegistry.getAvailableActionsFor(entry);
@@ -521,6 +533,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         popup.getMenu().add(0, 0, 0, "New File");
         popup.getMenu().add(0, 1, 1, "New Directory");
+        popup.getMenu().add(0, 2, 2, "New repository");
 
         popup.setOnMenuItemClickListener(menuItem -> {
             if (menuItem.getItemId() == 0) {
@@ -528,6 +541,9 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 return true;
             } else if (menuItem.getItemId() == 1) {
                 showCreateFolderDialog();
+                return true;
+            } else if (menuItem.getItemId() == 2) {
+                showCreateRepositoryDialog();
                 return true;
             }
             return false;
@@ -567,6 +583,53 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                         }
                     } catch (IOException e) {
                         Toast.makeText(getContext(), "Error creating file: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+        });
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
+
+    private void showCreateRepositoryDialog() {
+        if (getContext() == null) return;
+        Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(themedContext);
+        builder.setTitle("Create New Repository");
+
+        final EditText input = new EditText(themedContext);
+        input.setHint("Repository name");
+        input.setTextColor(0xFFFFFFFF);
+        input.setHintTextColor(0x88FFFFFF);
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        builder.setView(input);
+
+        builder.setPositiveButton("Create", (dialog, which) -> {
+            String repoName = input.getText().toString().trim();
+            if (!repoName.isEmpty()) {
+                File newDir = new File(mCurrentDir, repoName);
+                if (newDir.exists()) {
+                    Toast.makeText(getContext(), "Directory already exists", Toast.LENGTH_SHORT).show();
+                } else {
+                    if (newDir.mkdirs()) {
+                        Context ctx = getContext();
+                        if (ctx != null) {
+                            GitManager.getInstance().initRepository(ctx, newDir, (success, output) -> {
+                                if (getActivity() != null) {
+                                    getActivity().runOnUiThread(() -> {
+                                        if (success) {
+                                            Toast.makeText(getContext(), "Repository initialized", Toast.LENGTH_SHORT).show();
+                                        } else {
+                                            Toast.makeText(getContext(), "Failed to initialize git repository", Toast.LENGTH_SHORT).show();
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                        Toast.makeText(getContext(), "Repository created", Toast.LENGTH_SHORT).show();
+                        navigateToDirectory(newDir, true);
+                    } else {
+                        Toast.makeText(getContext(), "Failed to create repository", Toast.LENGTH_SHORT).show();
                     }
                 }
             }

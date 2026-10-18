@@ -1,6 +1,8 @@
 package com.vibestudio.app.files.model;
 
 import android.content.Context;
+import com.vibestudio.app.git.GitManager;
+import com.vibestudio.app.R;
 import java.io.File;
 
 public class DirectoryEntry extends FileEntry {
@@ -11,13 +13,27 @@ public class DirectoryEntry extends FileEntry {
 
     @Override
     public String getIconSymbol() {
+        if (GitManager.getInstance().isGitRepository(getFile())) {
+            return null;
+        }
         return "📁";
+    }
+
+    @Override
+    public Integer getIconResId() {
+        if (GitManager.getInstance().isGitRepository(getFile())) {
+            return R.drawable.ic_git_repo;
+        }
+        return null;
     }
 
     @Override
     public String getDetailsText(Context context) {
         File[] children = getFile().listFiles();
         int childCount = children != null ? children.length : 0;
+        if (GitManager.getInstance().isGitRepository(getFile())) {
+            return childCount + " items • Git Repository";
+        }
         return childCount + " items";
     }
 

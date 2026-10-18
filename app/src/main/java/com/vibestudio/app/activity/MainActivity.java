@@ -40,6 +40,7 @@ import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
+import com.vibestudio.app.git.GitManager;
 import com.vibestudio.app.util.IntentUtils;
 
 import java.io.File;
@@ -71,6 +72,9 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         TerminalSessionManager.getInstance().setSessionEventListener(filePath -> {
             runOnUiThread(() -> openFileInEditor(filePath));
         });
+
+        // Initialize dedicated background Git PTY session
+        GitManager.getInstance().ensureGitSession(this);
 
         // Gather models for all configured providers on MainActivity start
         AiRouter.getInstance().gatherModelsForConfiguredProviders(this, null);
