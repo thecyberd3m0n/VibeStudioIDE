@@ -622,12 +622,13 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                                         } else {
                                             Toast.makeText(getContext(), "Failed to initialize git repository", Toast.LENGTH_SHORT).show();
                                         }
+                                        loadDirectory(mCurrentDir);
                                     });
                                 }
                             });
                         }
-                        Toast.makeText(getContext(), "Repository created", Toast.LENGTH_SHORT).show();
-                        navigateToDirectory(newDir, true);
+                        Toast.makeText(getContext(), "Creating repository...", Toast.LENGTH_SHORT).show();
+                        loadDirectory(mCurrentDir);
                     } else {
                         Toast.makeText(getContext(), "Failed to create repository", Toast.LENGTH_SHORT).show();
                     }
