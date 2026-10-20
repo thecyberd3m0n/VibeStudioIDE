@@ -1,5 +1,6 @@
 package com.vibestudio.app.fragments;
 
+import com.vibestudio.app.git.GitStatusView;
 import com.vibestudio.app.git.GitManager;
 
 import android.content.Context;
@@ -67,6 +68,13 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     private Button mBtnBottomBarOk;
 
     private List<Uri> mPendingSharedUris = new ArrayList<>();
+
+    private View mLayoutGitChangesBar;
+    private TextView mTvGitChangesLabel;
+    private TextView mTvGitChangesChevron;
+    private FrameLayout mFlGitViewContainer;
+    private GitStatusView mGitStatusView;
+    private boolean mIsGitViewOpen = false;
 
     public interface FileSelectionListener {
         void onFileSelected(File file);
@@ -149,6 +157,16 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         }
 
         mBtnNewFolder.setOnClickListener(v -> showAddMenu(v));
+
+        mLayoutGitChangesBar = view.findViewById(R.id.layout_git_changes_bar);
+        mTvGitChangesLabel = view.findViewById(R.id.tv_git_changes_label);
+        mTvGitChangesChevron = view.findViewById(R.id.tv_git_changes_chevron);
+        mFlGitViewContainer = view.findViewById(R.id.fl_git_view_container);
+
+        View btnGitToggle = view.findViewById(R.id.btn_git_changes_toggle);
+        if (btnGitToggle != null) {
+            btnGitToggle.setOnClickListener(v -> toggleGitView());
+        }
 
         loadDirectory(mCurrentDir);
 
@@ -422,6 +440,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         mCurrentDir = dir;
         updatePathHeader();
+        checkAndUpdateGitStatus();
 
         List<FileEntry> items = fetchDirectoryItems(mCurrentDir);
 
@@ -471,6 +490,84 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         oldView.startAnimation(outAnim);
         newView.startAnimation(inAnim);
+    }
+
+    private void checkAndUpdateGitStatus() {
+        if (mCurrentDir == null || getContext() == null) return;
+
+        boolean isGitRepo = GitManager.getInstance().isGitRepository(mCurrentDir);
+        if (!isGitRepo) {
+            if (mLayoutGitChangesBar != null) mLayoutGitChangesBar.setVisibility(View.GONE);
+            closeGitView();
+            return;
+        }
+
+        if (mLayoutGitChangesBar != null) {
+            mLayoutGitChangesBar.setVisibility(View.VISIBLE);
+        }
+
+        GitManager.getInstance().runGitCommandAsync(getContext(), "diff --stat", mCurrentDir, (success, output) -> {
+            if (getActivity() == null) return;
+            getActivity().runOnUiThread(() -> {
+                int added = 0;
+                int deleted = 0;
+                if (success && output != null && !output.trim().isEmpty()) {
+                    String[] lines = output.split("\n");
+                    String summary = lines[lines.length - 1];
+                    if (summary.contains("insertion")) {
+                        try {
+                            String[] parts = summary.split(",");
+                            for (String part : parts) {
+                                if (part.contains("insertion")) {
+                                    added = Integer.parseInt(part.replaceAll("[^0-9]", ""));
+                                } else if (part.contains("deletion")) {
+                                    deleted = Integer.parseInt(part.replaceAll("[^0-9]", ""));
+                                }
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                }
+                if (mTvGitChangesLabel != null) {
+                    mTvGitChangesLabel.setText("Changes | +" + added + ", -" + deleted);
+                }
+            });
+        });
+    }
+
+    private void toggleGitView() {
+        if (mIsGitViewOpen) {
+            closeGitView();
+        } else {
+            openGitView();
+        }
+    }
+
+    private void openGitView() {
+        if (mFlGitViewContainer == null || mCurrentDir == null) return;
+        mIsGitViewOpen = true;
+
+        if (mGitStatusView == null) {
+            mGitStatusView = new GitStatusView(requireContext());
+            mGitStatusView.setOnCloseListener(this::closeGitView);
+            mFlGitViewContainer.addView(mGitStatusView);
+        }
+
+        mGitStatusView.setRepoDir(mCurrentDir);
+        mFlGitViewContainer.setVisibility(View.VISIBLE);
+
+        if (mTvGitChangesChevron != null) {
+            mTvGitChangesChevron.setText("▼");
+        }
+    }
+
+    private void closeGitView() {
+        mIsGitViewOpen = false;
+        if (mFlGitViewContainer != null) {
+            mFlGitViewContainer.setVisibility(View.GONE);
+        }
+        if (mTvGitChangesChevron != null) {
+            mTvGitChangesChevron.setText("▲");
+        }
     }
 
     public void loadDirectory(File dir) {
