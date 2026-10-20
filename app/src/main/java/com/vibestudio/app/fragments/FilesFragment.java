@@ -611,7 +611,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         mFlGitViewContainer.animate()
                 .translationY(0)
-                .setDuration(250)
+                .setDuration(150)
                 .start();
 
         if (mTvGitChangesChevron != null) {
@@ -626,7 +626,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             if (height == 0) height = 1000;
             mFlGitViewContainer.animate()
                     .translationY(height)
-                    .setDuration(250)
+                    .setDuration(150)
                     .withEndAction(() -> {
                         if (!mIsGitViewOpen && mFlGitViewContainer != null) {
                             mFlGitViewContainer.setVisibility(View.GONE);

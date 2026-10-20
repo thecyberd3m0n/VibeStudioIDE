@@ -131,7 +131,7 @@ public class GitStatusView extends LinearLayout {
                         if (totalDy > threshold) { // Intention: swipe down to dismiss
                             if (mCloseListener != null) mCloseListener.onClose();
                         } else {
-                            animate().translationY(0).setDuration(200).start();
+                            animate().translationY(0).setDuration(150).start();
                         }
                         return true;
                 }
