@@ -12,6 +12,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -264,7 +265,71 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             return;
         }
 
-        // Standard User / Assistant / Error Message Card
+        boolean isErrorMsg = msg.isError() || msg.getType() == ChatMessage.MessageType.ERROR;
+
+        if (isErrorMsg) {
+            LinearLayout card = new LinearLayout(context);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setBackgroundResource(R.drawable.bg_error_card);
+
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+            params.setMargins(0, 0, 0, 16);
+            card.setLayoutParams(params);
+
+            LinearLayout textContainer = new LinearLayout(context);
+            textContainer.setOrientation(LinearLayout.VERTICAL);
+            textContainer.setPadding(18, 14, 18, 14);
+            LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
+            textContainer.setLayoutParams(textParams);
+
+            TextView tvSender = new TextView(context);
+            tvSender.setText(msg.getSender());
+            tvSender.setTextColor(Color.parseColor("#CF6679"));
+            tvSender.setTextSize(12);
+            tvSender.setTypeface(null, Typeface.BOLD);
+            tvSender.setTextIsSelectable(true);
+
+            TextView tvText = new TextView(context);
+            tvText.setText(msg.getText());
+            tvText.setTextColor(Color.parseColor("#FFB4AB"));
+            tvText.setTextSize(14);
+            tvText.setPadding(0, 4, 0, 0);
+            tvText.setTextIsSelectable(true);
+
+            textContainer.addView(tvSender);
+            textContainer.addView(tvText);
+            card.addView(textContainer);
+
+            FrameLayout refreshContainer = new FrameLayout(context);
+            LinearLayout.LayoutParams refreshParams = new LinearLayout.LayoutParams(WRAP_CONTENT, MATCH_PARENT);
+            refreshContainer.setLayoutParams(refreshParams);
+            refreshContainer.setPadding(24, 0, 24, 0);
+            refreshContainer.setFocusable(true);
+            refreshContainer.setClickable(true);
+
+            ImageView iconRefresh = new ImageView(context);
+            iconRefresh.setImageResource(R.drawable.ic_refresh);
+            iconRefresh.setAlpha(0.5f);
+            int iconSizePx = (int) (20 * context.getResources().getDisplayMetrics().density);
+            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(iconSizePx, iconSizePx);
+            iconParams.gravity = Gravity.CENTER;
+            iconRefresh.setLayoutParams(iconParams);
+
+            refreshContainer.addView(iconRefresh);
+
+            refreshContainer.setOnClickListener(v -> {
+                if (mChatSession != null && !mChatSession.isLoading()) {
+                    mChatSession.retry(context);
+                    renderChatHistory(context);
+                }
+            });
+
+            card.addView(refreshContainer);
+            mChatContainer.addView(card);
+            return;
+        }
+
+        // Standard User / Assistant Message Card
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(18, 14, 18, 14);
@@ -272,11 +337,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
         params.setMargins(0, 0, 0, 16);
 
-        if (msg.isError() || msg.getType() == ChatMessage.MessageType.ERROR) {
-            params.gravity = Gravity.LEFT;
-            params.width = MATCH_PARENT;
-            card.setBackgroundResource(R.drawable.bg_error_card);
-        } else if (msg.isUser()) {
+        if (msg.isUser()) {
             params.gravity = Gravity.RIGHT;
             card.setBackgroundColor(Color.parseColor("#3700B3"));
         } else {
@@ -287,9 +348,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         TextView tvSender = new TextView(context);
         tvSender.setText(msg.getSender());
-        if (msg.isError() || msg.getType() == ChatMessage.MessageType.ERROR) {
-            tvSender.setTextColor(Color.parseColor("#CF6679"));
-        } else if (msg.isUser()) {
+        if (msg.isUser()) {
             tvSender.setTextColor(Color.parseColor("#03DAC6"));
         } else {
             tvSender.setTextColor(Color.parseColor("#BB86FC"));
@@ -300,17 +359,14 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         TextView tvText = new TextView(context);
         tvText.setText(msg.getText());
-        if (msg.isError() || msg.getType() == ChatMessage.MessageType.ERROR) {
-            tvText.setTextColor(Color.parseColor("#FFB4AB"));
-        } else {
-            tvText.setTextColor(Color.parseColor("#FFFFFF"));
-        }
+        tvText.setTextColor(Color.parseColor("#FFFFFF"));
         tvText.setTextSize(14);
         tvText.setPadding(0, 4, 0, 0);
         tvText.setTextIsSelectable(true);
 
         card.addView(tvSender);
         card.addView(tvText);
+
         mChatContainer.addView(card);
     }
 

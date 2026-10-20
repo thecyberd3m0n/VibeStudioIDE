@@ -4,6 +4,18 @@ This document outlines the strict architectural principles, code rules, and desi
 
 ---
 
+## ⚡ Pragmatic Engineering & Locality of Behavior
+
+> **Core Philosophy:** Dogmatic "Clean Code" rules (such as "keep methods under 20 lines", "keep classes tiny", or "never duplicate code / DRY at all costs") lead to architectural fragmentation—splitting single operations into dozens of tiny classes, interfaces, and factories. Real elegance is **Locality of Behavior**: being able to read, debug, and understand what the system does without leaving the screen.
+
+1. **The Funnel Pattern Beats Micro-Classes**: A great class or module has narrow, clean entry points and ONE deep, cohesive execution engine. If that engine needs 500 lines to execute a complex domain pipeline, keep those 500 lines together in one place behind a clean boundary instead of spraying them across shallow classes.
+2. **Scoped Functions Over Private Class Methods**: Private methods leak across the entire class, mutate class-level fields, and invite accidental reuse. Define helper functions locally inside the workflow where they are used (or scoped strictly to that execution context). They live there, die there, and delete with the workflow without polluting class state.
+3. **Respect the Timeline & Locality of Behavior (Temporal Locality)**: Code that executes together in time ($T_0 \rightarrow T_1 \rightarrow T_2$) must live together in space. Stepping through code (`F10`) in a debugger should move smoothly down the screen like reading a book, without snapping your viewport across files or up and down like a pinball machine. Understand what the system does without leaving the screen.
+4. **Stop Turning Verbs Into Classes**: If a class holds no state and only exists to wrap a single function (e.g. `ReceivedStringProcessor` or `UserPayloadValidationManager`), it is not an object—it is a function wearing a class trench coat. Use pure functions or plain methods instead.
+5. **Optimize for Deleteability, Not Reusability**: Write code that is easy to remove. When a feature is deprecated, you should be able to delete one method or file without causing a domino collapse across 12 packages and 40 mock tests. Prefer pragmatic local duplication over tight coupling to shared, overly abstract helpers.
+
+---
+
 ## 🏛️ Key Architectural Principles
 
 ### 1. Clean Plugin Architecture & Decentralization

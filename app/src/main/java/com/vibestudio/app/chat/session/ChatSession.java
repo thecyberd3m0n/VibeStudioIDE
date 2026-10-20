@@ -111,6 +111,12 @@ public class ChatSession {
         }
         mIsLoading = true;
         mStopRequested = false;
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                notifyLoading(true);
+            }
+        });
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -188,6 +194,17 @@ public class ChatSession {
         }
 
         String rawReply = response.getContent();
+
+        if (rawReply == null || rawReply.trim().isEmpty()) {
+            LogViewerService.getInstance().w(TAG, "Received empty response content from " + activeProviderName);
+            postErrorResponse("Error: Received empty response from " + activeProviderName + ". Please tap Retry below.");
+            return;
+        }
+
+        if (rawReply.startsWith("Error:")) {
+            postErrorResponse(rawReply);
+            return;
+        }
 
         // Check if response contains a tool call request
         JSONObject toolCallObj = ToolCallParser.parse(rawReply);
