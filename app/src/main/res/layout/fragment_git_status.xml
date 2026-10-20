@@ -33,13 +33,16 @@
             android:src="@drawable/ic_refresh"
             android:contentDescription="Refresh Git status" />
 
-        <ImageButton
+        <TextView
             android:id="@+id/btn_git_close"
             android:layout_width="36dp"
             android:layout_height="36dp"
+            android:gravity="center"
+            android:text="▼"
+            android:textColor="#A0A0B0"
+            android:textSize="16sp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Close Git view"
-            android:src="@android:drawable/ic_menu_close_clear_cancel" />
+            android:contentDescription="Close Git view" />
     </LinearLayout>
 
     <View

@@ -38,7 +38,7 @@ public class GitStatusView extends LinearLayout {
     private Button mBtnPush;
     private Button mBtnPull;
     private ImageButton mBtnRefresh;
-    private ImageButton mBtnClose;
+    private View mBtnClose;
     private LinearLayout mLlContainer;
 
     public interface OnCloseListener {
@@ -127,7 +127,8 @@ public class GitStatusView extends LinearLayout {
                             v.performClick();
                             return true;
                         }
-                        if (totalDy > height / 4) {
+                        float threshold = Math.max(30f, height * 0.15f);
+                        if (totalDy > threshold) { // Intention: swipe down to dismiss
                             if (mCloseListener != null) mCloseListener.onClose();
                         } else {
                             animate().translationY(0).setDuration(200).start();

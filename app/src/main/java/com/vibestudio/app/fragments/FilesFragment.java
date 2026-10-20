@@ -205,9 +205,10 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                             v.performClick();
                             return true;
                         }
-                        if (totalDy < -height / 4) {
+                        float threshold = Math.max(30f, height * 0.15f);
+                        if (totalDy < -threshold) { // Intention: open up
                             openGitView();
-                        } else if (totalDy > height / 4) {
+                        } else if (totalDy > threshold) { // Intention: close down
                             closeGitView();
                         } else {
                             if (mIsGitViewOpen) openGitView(); else closeGitView();
