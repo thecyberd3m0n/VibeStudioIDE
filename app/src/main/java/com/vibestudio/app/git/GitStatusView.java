@@ -45,6 +45,16 @@ public class GitStatusView extends LinearLayout {
         void onClose();
     }
 
+    public interface OnStatusUpdatedListener {
+        void onStatusUpdated();
+    }
+
+    private OnStatusUpdatedListener mStatusUpdatedListener;
+
+    public void setOnStatusUpdatedListener(OnStatusUpdatedListener listener) {
+        this.mStatusUpdatedListener = listener;
+    }
+
     public static class GitFileStatus {
         public String status; // e.g. "M", "A", "D", "??", "MM", etc.
         public String filePath;
@@ -208,8 +218,36 @@ public class GitStatusView extends LinearLayout {
 
                 renderSection("STAGED CHANGES", stagedFiles, true);
                 renderSection("CHANGES", unstagedFiles, false);
+
+                if (mStatusUpdatedListener != null) {
+                    mStatusUpdatedListener.onStatusUpdated();
+                }
             });
         });
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        super.onWindowFocusChanged(hasWindowFocus);
+        if (hasWindowFocus && mRepoDir != null) {
+            refreshStatus();
+        }
+    }
+
+    @Override
+    protected void onVisibilityChanged(View changedView, int visibility) {
+        super.onVisibilityChanged(changedView, visibility);
+        if (visibility == View.VISIBLE && mRepoDir != null) {
+            refreshStatus();
+        }
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (mRepoDir != null) {
+            refreshStatus();
+        }
     }
 
     private void renderSection(String title, List<GitFileStatus> files, boolean isStaged) {

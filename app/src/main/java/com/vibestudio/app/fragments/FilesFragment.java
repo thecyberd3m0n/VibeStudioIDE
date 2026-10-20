@@ -99,6 +99,36 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+        checkAndUpdateGitStatus();
+        if (mIsGitViewOpen && mGitStatusView != null) {
+            mGitStatusView.refreshStatus();
+        }
+    }
+
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (!hidden) {
+            checkAndUpdateGitStatus();
+            if (mIsGitViewOpen && mGitStatusView != null) {
+                mGitStatusView.refreshStatus();
+            }
+        }
+    }
+
+    @Override
+    public void setUserVisibleHint(boolean isVisibleToUser) {
+        super.setUserVisibleHint(isVisibleToUser);
+        if (isVisibleToUser) {
+            checkAndUpdateGitStatus();
+            if (mIsGitViewOpen && mGitStatusView != null) {
+                mGitStatusView.refreshStatus();
+            }
+        }
+    }
+
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
@@ -616,6 +646,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         if (mGitStatusView == null) {
             mGitStatusView = new GitStatusView(requireContext());
             mGitStatusView.setOnCloseListener(this::closeGitView);
+            mGitStatusView.setOnStatusUpdatedListener(this::checkAndUpdateGitStatus);
             mFlGitViewContainer.addView(mGitStatusView);
         }
         mGitStatusView.setRepoDir(mCurrentDir);
@@ -631,7 +662,9 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         mFlGitViewContainer.animate().cancel();
         if (mGitStatusView != null) {
             mGitStatusView.setTranslationY(0);
+            mGitStatusView.refreshStatus();
         }
+        checkAndUpdateGitStatus();
         
         int height = getGitContainerHeight();
 
