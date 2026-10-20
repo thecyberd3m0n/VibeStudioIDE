@@ -23,8 +23,12 @@ import com.vibestudio.app.R;
 import com.vibestudio.app.service.LogViewerService;
 
 import java.io.File;
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class GitStatusView extends LinearLayout {
 
@@ -59,6 +63,8 @@ public class GitStatusView extends LinearLayout {
         public String status; // e.g. "M", "A", "D", "??", "MM", etc.
         public String filePath;
         public boolean isStaged;
+        public int additions;
+        public int deletions;
 
         public GitFileStatus(String status, String filePath, boolean isStaged) {
             this.status = status;
@@ -181,15 +187,48 @@ public class GitStatusView extends LinearLayout {
         this.mCloseListener = listener;
     }
 
+    private Map<String, int[]> parseNumstat(String output) {
+        Map<String, int[]> map = new HashMap<>();
+        if (output == null || output.trim().isEmpty()) return map;
+
+        String[] lines = output.split("\n");
+        for (String line : lines) {
+            String[] parts = line.trim().split("\\s+");
+            if (parts.length >= 3) {
+                try {
+                    int add = "-".equals(parts[0]) ? 0 : Integer.parseInt(parts[0]);
+                    int del = "-".equals(parts[1]) ? 0 : Integer.parseInt(parts[1]);
+                    String path = line.substring(line.indexOf(parts[2])).trim();
+                    if (path.startsWith("\"") && path.endsWith("\"") && path.length() > 2) {
+                        path = path.substring(1, path.length() - 1);
+                    }
+                    map.put(path, new int[]{add, del});
+                } catch (Exception ignored) {}
+            }
+        }
+        return map;
+    }
+
+    private int countFileLines(File file) {
+        if (file == null || !file.exists() || !file.isFile() || file.length() > 1_000_000) return 0;
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            int lines = 0;
+            while (reader.readLine() != null) lines++;
+            return lines;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     public void refreshStatus() {
         if (mRepoDir == null || getContext() == null) return;
 
         GitManager.getInstance().runGitCommandAsync(getContext(), "status --porcelain", mRepoDir, (success, output) -> {
             post(() -> {
                 if (mLlContainer == null) return;
-                mLlContainer.removeAllViews();
 
                 if (!success || output == null) {
+                    mLlContainer.removeAllViews();
                     TextView tvErr = new TextView(getContext());
                     tvErr.setText("Failed to get git status.");
                     tvErr.setTextColor(Color.parseColor("#CF6679"));
@@ -207,6 +246,9 @@ public class GitStatusView extends LinearLayout {
                     String statusIndex = line.substring(0, 1);
                     String statusWorktree = line.substring(1, 2);
                     String filePath = line.substring(3).trim();
+                    if (filePath.startsWith("\"") && filePath.endsWith("\"") && filePath.length() > 2) {
+                        filePath = filePath.substring(1, filePath.length() - 1);
+                    }
 
                     if (!" ".equals(statusIndex) && !"?".equals(statusIndex)) {
                         stagedFiles.add(new GitFileStatus(statusIndex, filePath, true));
@@ -216,12 +258,44 @@ public class GitStatusView extends LinearLayout {
                     }
                 }
 
-                renderSection("STAGED CHANGES", stagedFiles, true);
-                renderSection("CHANGES", unstagedFiles, false);
+                GitManager.getInstance().runGitCommandAsync(getContext(), "diff --cached --numstat", mRepoDir, (s1, stagedNumstat) -> {
+                    GitManager.getInstance().runGitCommandAsync(getContext(), "diff --numstat", mRepoDir, (s2, unstagedNumstat) -> {
+                        post(() -> {
+                            Map<String, int[]> stagedMap = parseNumstat(stagedNumstat);
+                            Map<String, int[]> unstagedMap = parseNumstat(unstagedNumstat);
 
-                if (mStatusUpdatedListener != null) {
-                    mStatusUpdatedListener.onStatusUpdated();
-                }
+                            for (GitFileStatus file : stagedFiles) {
+                                int[] stat = stagedMap.get(file.filePath);
+                                if (stat != null) {
+                                    file.additions = stat[0];
+                                    file.deletions = stat[1];
+                                }
+                            }
+
+                            for (GitFileStatus file : unstagedFiles) {
+                                int[] stat = unstagedMap.get(file.filePath);
+                                if (stat != null) {
+                                    file.additions = stat[0];
+                                    file.deletions = stat[1];
+                                } else if ("??".equals(file.status)) {
+                                    File f = new File(mRepoDir, file.filePath);
+                                    file.additions = countFileLines(f);
+                                    file.deletions = 0;
+                                }
+                            }
+
+                            if (mLlContainer != null) {
+                                mLlContainer.removeAllViews();
+                                renderSection("STAGED CHANGES", stagedFiles, true);
+                                renderSection("CHANGES", unstagedFiles, false);
+                            }
+
+                            if (mStatusUpdatedListener != null) {
+                                mStatusUpdatedListener.onStatusUpdated();
+                            }
+                        });
+                    });
+                });
             });
         });
     }
@@ -316,12 +390,42 @@ public class GitStatusView extends LinearLayout {
             tvPath.setLayoutParams(pathParams);
             row.addView(tvPath);
 
+            LinearLayout llChanges = new LinearLayout(getContext());
+            llChanges.setOrientation(HORIZONTAL);
+            llChanges.setGravity(Gravity.CENTER_VERTICAL);
+
+            if (file.additions > 0) {
+                TextView tvAdd = new TextView(getContext());
+                tvAdd.setText("+" + file.additions);
+                tvAdd.setTextColor(Color.parseColor("#73C991"));
+                tvAdd.setTextSize(12);
+                tvAdd.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+                lp.setMarginEnd(12);
+                tvAdd.setLayoutParams(lp);
+                llChanges.addView(tvAdd);
+            }
+
+            if (file.deletions > 0) {
+                TextView tvDel = new TextView(getContext());
+                tvDel.setText("-" + file.deletions);
+                tvDel.setTextColor(Color.parseColor("#FF6B6B"));
+                tvDel.setTextSize(12);
+                tvDel.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+                lp.setMarginEnd(12);
+                tvDel.setLayoutParams(lp);
+                llChanges.addView(tvDel);
+            }
+
+            row.addView(llChanges);
+
             TextView btnStageUnstage = new TextView(getContext());
             btnStageUnstage.setText(isStaged ? "−" : "+");
             btnStageUnstage.setTextColor(Color.parseColor("#82AAFF"));
-            btnStageUnstage.setTextSize(16);
+            btnStageUnstage.setTextSize(18);
             btnStageUnstage.setTypeface(null, Typeface.BOLD);
-            btnStageUnstage.setPadding(24, 8, 16, 8);
+            btnStageUnstage.setPadding(16, 8, 16, 8);
             btnStageUnstage.setClickable(true);
             btnStageUnstage.setFocusable(true);
             btnStageUnstage.setOnClickListener(v -> {
