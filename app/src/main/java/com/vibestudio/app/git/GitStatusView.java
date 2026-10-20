@@ -91,6 +91,53 @@ public class GitStatusView extends LinearLayout {
             });
         }
 
+        View titleBar = findViewById(R.id.tv_git_title);
+        if (titleBar != null && titleBar.getParent() instanceof View) {
+            View headerBar = (View) titleBar.getParent();
+            final float[] startY = new float[1];
+            final float[] initialTransY = new float[1];
+            final boolean[] isDragging = new boolean[1];
+
+            headerBar.setOnTouchListener((v, event) -> {
+                int height = getHeight();
+                if (height == 0) height = 1000;
+
+                switch (event.getAction()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        startY[0] = event.getRawY();
+                        initialTransY[0] = getTranslationY();
+                        isDragging[0] = false;
+                        return true;
+
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        float dy = event.getRawY() - startY[0];
+                        if (Math.abs(dy) > 10) {
+                            isDragging[0] = true;
+                        }
+                        float targetTrans = initialTransY[0] + dy;
+                        if (targetTrans < 0) targetTrans = 0;
+                        if (targetTrans > height) targetTrans = height;
+                        setTranslationY(targetTrans);
+                        return true;
+
+                    case android.view.MotionEvent.ACTION_UP:
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        float totalDy = event.getRawY() - startY[0];
+                        if (!isDragging[0]) {
+                            v.performClick();
+                            return true;
+                        }
+                        if (totalDy > height / 4) {
+                            if (mCloseListener != null) mCloseListener.onClose();
+                        } else {
+                            animate().translationY(0).setDuration(200).start();
+                        }
+                        return true;
+                }
+                return false;
+            });
+        }
+
         if (mBtnCommit != null) {
             mBtnCommit.setOnClickListener(v -> executeCommit());
         }

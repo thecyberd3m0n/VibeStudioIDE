@@ -168,21 +168,51 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             btnGitToggle.setOnClickListener(v -> toggleGitView());
 
             final float[] startY = new float[1];
+            final float[] initialTranslationY = new float[1];
+            final boolean[] isDragging = new boolean[1];
+
             btnGitToggle.setOnTouchListener((v, event) -> {
+                if (mFlGitViewContainer == null) return false;
+                int height = mFlGitViewContainer.getHeight();
+                if (height == 0) height = 1000;
+
                 switch (event.getAction()) {
                     case android.view.MotionEvent.ACTION_DOWN:
                         startY[0] = event.getRawY();
-                        break;
+                        initialTranslationY[0] = mFlGitViewContainer.getTranslationY();
+                        isDragging[0] = false;
+                        if (!mIsGitViewOpen) {
+                            openGitViewSilent();
+                            mFlGitViewContainer.setTranslationY(height);
+                        }
+                        return true;
+
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        float dy = event.getRawY() - startY[0];
+                        if (Math.abs(dy) > 10) {
+                            isDragging[0] = true;
+                        }
+                        float targetTrans = initialTranslationY[0] + dy;
+                        if (targetTrans < 0) targetTrans = 0;
+                        if (targetTrans > height) targetTrans = height;
+                        mFlGitViewContainer.setTranslationY(targetTrans);
+                        return true;
+
                     case android.view.MotionEvent.ACTION_UP:
-                        float deltaY = startY[0] - event.getRawY();
-                        if (deltaY > 50) { // Swipe up
-                            openGitView();
-                            return true;
-                        } else if (deltaY < -50) { // Swipe down
-                            closeGitView();
+                    case android.view.MotionEvent.ACTION_CANCEL:
+                        float totalDy = event.getRawY() - startY[0];
+                        if (!isDragging[0] && Math.abs(totalDy) < 15) {
+                            v.performClick();
                             return true;
                         }
-                        break;
+                        if (totalDy < -height / 4) {
+                            openGitView();
+                        } else if (totalDy > height / 4) {
+                            closeGitView();
+                        } else {
+                            if (mIsGitViewOpen) openGitView(); else closeGitView();
+                        }
+                        return true;
                 }
                 return false;
             });
@@ -562,18 +592,26 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         }
     }
 
-    private void openGitView() {
+    private void openGitViewSilent() {
         if (mFlGitViewContainer == null || mCurrentDir == null) return;
-        mIsGitViewOpen = true;
-
         if (mGitStatusView == null) {
             mGitStatusView = new GitStatusView(requireContext());
             mGitStatusView.setOnCloseListener(this::closeGitView);
             mFlGitViewContainer.addView(mGitStatusView);
         }
-
         mGitStatusView.setRepoDir(mCurrentDir);
         mFlGitViewContainer.setVisibility(View.VISIBLE);
+    }
+
+    private void openGitView() {
+        if (mFlGitViewContainer == null || mCurrentDir == null) return;
+        mIsGitViewOpen = true;
+        openGitViewSilent();
+
+        mFlGitViewContainer.animate()
+                .translationY(0)
+                .setDuration(250)
+                .start();
 
         if (mTvGitChangesChevron != null) {
             mTvGitChangesChevron.setText("▼");
@@ -583,7 +621,17 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     private void closeGitView() {
         mIsGitViewOpen = false;
         if (mFlGitViewContainer != null) {
-            mFlGitViewContainer.setVisibility(View.GONE);
+            int height = mFlGitViewContainer.getHeight();
+            if (height == 0) height = 1000;
+            mFlGitViewContainer.animate()
+                    .translationY(height)
+                    .setDuration(250)
+                    .withEndAction(() -> {
+                        if (!mIsGitViewOpen && mFlGitViewContainer != null) {
+                            mFlGitViewContainer.setVisibility(View.GONE);
+                        }
+                    })
+                    .start();
         }
         if (mTvGitChangesChevron != null) {
             mTvGitChangesChevron.setText("▲");
