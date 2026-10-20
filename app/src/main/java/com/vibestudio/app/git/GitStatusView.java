@@ -3,7 +3,11 @@ package com.vibestudio.app.git;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.AttributeSet;
+import android.util.TypedValue;
+import android.app.AlertDialog;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -14,33 +18,33 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
-import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.vibestudio.app.R;
-import com.vibestudio.app.service.LogViewerService;
 
 import java.io.File;
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 
-public class GitStatusView extends LinearLayout {
+import com.vibestudio.app.activity.MainActivity;
+import com.vibestudio.app.fragments.EditorFragment;
+import com.vibestudio.app.tab.TabManager;
+import com.vibestudio.app.tab.TabType;
+import java.util.List;
+
+public class GitStatusView extends LinearLayout implements GitManager.GitStateChangeListener {
 
     private static final String TAG = "GitStatusView";
 
     private File mRepoDir;
     private OnCloseListener mCloseListener;
+    private GitRepositoryState mLastState;
 
     private EditText mEtCommitMessage;
-    private Button mBtnCommit;
-    private Button mBtnPush;
-    private Button mBtnPull;
+    private Button mBtnAction;
     private ImageButton mBtnRefresh;
     private View mBtnClose;
     private LinearLayout mLlContainer;
@@ -60,7 +64,7 @@ public class GitStatusView extends LinearLayout {
     }
 
     public static class GitFileStatus {
-        public String status; // e.g. "M", "A", "D", "??", "MM", etc.
+        public String status;
         public String filePath;
         public boolean isStaged;
         public int additions;
@@ -88,9 +92,7 @@ public class GitStatusView extends LinearLayout {
         LayoutInflater.from(context).inflate(R.layout.fragment_git_status, this, true);
 
         mEtCommitMessage = findViewById(R.id.et_commit_message);
-        mBtnCommit = findViewById(R.id.btn_git_commit);
-        mBtnPush = findViewById(R.id.btn_git_push);
-        mBtnPull = findViewById(R.id.btn_git_pull);
+        mBtnAction = findViewById(R.id.btn_git_action);
         mBtnRefresh = findViewById(R.id.btn_git_refresh);
         mBtnClose = findViewById(R.id.btn_git_close);
         mLlContainer = findViewById(R.id.ll_git_items_container);
@@ -165,21 +167,29 @@ public class GitStatusView extends LinearLayout {
             });
         }
 
-        if (mBtnCommit != null) {
-            mBtnCommit.setOnClickListener(v -> executeCommit());
+        if (mBtnAction != null) {
+            mBtnAction.setOnClickListener(v -> handleActionButtonClick());
         }
 
-        if (mBtnPush != null) {
-            mBtnPush.setOnClickListener(v -> executePush());
+        if (mEtCommitMessage != null) {
+            mEtCommitMessage.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                    updateButtonStates();
+                }
+                @Override public void afterTextChanged(Editable s) {}
+            });
         }
 
-        if (mBtnPull != null) {
-            mBtnPull.setOnClickListener(v -> executePull());
-        }
+        updateButtonStates();
     }
 
     public void setRepoDir(File repoDir) {
         this.mRepoDir = repoDir;
+        GitRepositoryState cached = GitManager.getInstance().getCachedState(repoDir);
+        if (cached != null) {
+            renderState(cached);
+        }
         refreshStatus();
     }
 
@@ -187,117 +197,94 @@ public class GitStatusView extends LinearLayout {
         this.mCloseListener = listener;
     }
 
-    private Map<String, int[]> parseNumstat(String output) {
-        Map<String, int[]> map = new HashMap<>();
-        if (output == null || output.trim().isEmpty()) return map;
-
-        String[] lines = output.split("\n");
-        for (String line : lines) {
-            String[] parts = line.trim().split("\\s+");
-            if (parts.length >= 3) {
-                try {
-                    int add = "-".equals(parts[0]) ? 0 : Integer.parseInt(parts[0]);
-                    int del = "-".equals(parts[1]) ? 0 : Integer.parseInt(parts[1]);
-                    String path = line.substring(line.indexOf(parts[2])).trim();
-                    if (path.startsWith("\"") && path.endsWith("\"") && path.length() > 2) {
-                        path = path.substring(1, path.length() - 1);
-                    }
-                    map.put(path, new int[]{add, del});
-                } catch (Exception ignored) {}
-            }
-        }
-        return map;
-    }
-
-    private int countFileLines(File file) {
-        if (file == null || !file.exists() || !file.isFile() || file.length() > 1_000_000) return 0;
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            int lines = 0;
-            while (reader.readLine() != null) lines++;
-            return lines;
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
     public void refreshStatus() {
         if (mRepoDir == null || getContext() == null) return;
+        GitManager.getInstance().refreshRepositoryState(getContext(), mRepoDir, this::renderState);
+    }
 
-        GitManager.getInstance().runGitCommandAsync(getContext(), "status --porcelain", mRepoDir, (success, output) -> {
-            post(() -> {
-                if (mLlContainer == null) return;
+    public void renderState(GitRepositoryState state) {
+        mLastState = state;
+        post(() -> {
+            if (mLlContainer == null) return;
+            mLlContainer.removeAllViews();
 
-                if (!success || output == null) {
-                    mLlContainer.removeAllViews();
-                    TextView tvErr = new TextView(getContext());
-                    tvErr.setText("Failed to get git status.");
-                    tvErr.setTextColor(Color.parseColor("#CF6679"));
-                    tvErr.setPadding(32, 32, 32, 32);
-                    mLlContainer.addView(tvErr);
-                    return;
-                }
+            updateButtonStates();
 
-                List<GitFileStatus> stagedFiles = new ArrayList<>();
-                List<GitFileStatus> unstagedFiles = new ArrayList<>();
+            if (state == null) {
+                TextView tvErr = new TextView(getContext());
+                tvErr.setText("Failed to get git status.");
+                tvErr.setTextColor(Color.parseColor("#CF6679"));
+                tvErr.setPadding(32, 32, 32, 32);
+                mLlContainer.addView(tvErr);
+                return;
+            }
 
-                String[] lines = output.split("\n");
-                for (String line : lines) {
-                    if (line.length() < 3) continue;
-                    String statusIndex = line.substring(0, 1);
-                    String statusWorktree = line.substring(1, 2);
-                    String filePath = line.substring(3).trim();
-                    if (filePath.startsWith("\"") && filePath.endsWith("\"") && filePath.length() > 2) {
-                        filePath = filePath.substring(1, filePath.length() - 1);
-                    }
+            renderSection("STAGED CHANGES", state.stagedFiles, true);
+            renderSection("CHANGES", state.unstagedFiles, false);
 
-                    if (!" ".equals(statusIndex) && !"?".equals(statusIndex)) {
-                        stagedFiles.add(new GitFileStatus(statusIndex, filePath, true));
-                    }
-                    if (!" ".equals(statusWorktree)) {
-                        unstagedFiles.add(new GitFileStatus(statusWorktree.equals("?") ? "??" : statusWorktree, filePath, false));
-                    }
-                }
-
-                GitManager.getInstance().runGitCommandAsync(getContext(), "diff --cached --numstat", mRepoDir, (s1, stagedNumstat) -> {
-                    GitManager.getInstance().runGitCommandAsync(getContext(), "diff --numstat", mRepoDir, (s2, unstagedNumstat) -> {
-                        post(() -> {
-                            Map<String, int[]> stagedMap = parseNumstat(stagedNumstat);
-                            Map<String, int[]> unstagedMap = parseNumstat(unstagedNumstat);
-
-                            for (GitFileStatus file : stagedFiles) {
-                                int[] stat = stagedMap.get(file.filePath);
-                                if (stat != null) {
-                                    file.additions = stat[0];
-                                    file.deletions = stat[1];
-                                }
-                            }
-
-                            for (GitFileStatus file : unstagedFiles) {
-                                int[] stat = unstagedMap.get(file.filePath);
-                                if (stat != null) {
-                                    file.additions = stat[0];
-                                    file.deletions = stat[1];
-                                } else if ("??".equals(file.status)) {
-                                    File f = new File(mRepoDir, file.filePath);
-                                    file.additions = countFileLines(f);
-                                    file.deletions = 0;
-                                }
-                            }
-
-                            if (mLlContainer != null) {
-                                mLlContainer.removeAllViews();
-                                renderSection("STAGED CHANGES", stagedFiles, true);
-                                renderSection("CHANGES", unstagedFiles, false);
-                            }
-
-                            if (mStatusUpdatedListener != null) {
-                                mStatusUpdatedListener.onStatusUpdated();
-                            }
-                        });
-                    });
-                });
-            });
+            if (mStatusUpdatedListener != null) {
+                mStatusUpdatedListener.onStatusUpdated();
+            }
         });
+    }
+
+    private void updateButtonStates() {
+        boolean hasChanges = mLastState != null && mLastState.hasChanges();
+        boolean hasCommitMessage = mEtCommitMessage != null && mEtCommitMessage.getText().toString().trim().length() > 0;
+        boolean needsSync = mLastState != null && mLastState.needsSync();
+
+        if (mBtnAction != null) {
+            if (needsSync) {
+                String syncText = "Sync Changes";
+                if (mLastState.ahead > 0 || mLastState.behind > 0) {
+                    StringBuilder sb = new StringBuilder("Sync Changes (");
+                    if (mLastState.ahead > 0) sb.append("↑").append(mLastState.ahead);
+                    if (mLastState.behind > 0) {
+                        if (mLastState.ahead > 0) sb.append(" ");
+                        sb.append("↓").append(mLastState.behind);
+                    }
+                    sb.append(")");
+                    syncText = sb.toString();
+                }
+                mBtnAction.setText(syncText);
+                mBtnAction.setBackgroundColor(Color.parseColor("#2D2D3A"));
+                mBtnAction.setEnabled(true);
+                mBtnAction.setAlpha(1.0f);
+            } else if (hasChanges || hasCommitMessage) {
+                mBtnAction.setText("Commit");
+                mBtnAction.setBackgroundColor(Color.parseColor("#0E639C"));
+                mBtnAction.setEnabled(true);
+                mBtnAction.setAlpha(1.0f);
+            } else {
+                mBtnAction.setText("Sync Changes");
+                mBtnAction.setBackgroundColor(Color.parseColor("#2D2D3A"));
+                mBtnAction.setEnabled(true);
+                mBtnAction.setAlpha(1.0f);
+            }
+        }
+    }
+
+    private void handleActionButtonClick() {
+        boolean hasChanges = mLastState != null && mLastState.hasChanges();
+        boolean hasCommitMessage = mEtCommitMessage != null && mEtCommitMessage.getText().toString().trim().length() > 0;
+        boolean needsSync = mLastState != null && mLastState.needsSync();
+
+        if (needsSync) {
+            executeSync();
+        } else if (hasChanges || hasCommitMessage) {
+            executeCommit();
+        } else {
+            executeSync();
+        }
+    }
+
+    @Override
+    public void onGitStateChanged(GitRepositoryState state) {
+        if (mRepoDir != null && state != null && state.repoRoot != null) {
+            if (state.repoRoot.getAbsolutePath().equals(mRepoDir.getAbsolutePath())) {
+                renderState(state);
+            }
+        }
     }
 
     @Override
@@ -319,9 +306,16 @@ public class GitStatusView extends LinearLayout {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        GitManager.getInstance().addStateChangeListener(this);
         if (mRepoDir != null) {
             refreshStatus();
         }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        GitManager.getInstance().removeStateChangeListener(this);
     }
 
     private void renderSection(String title, List<GitFileStatus> files, boolean isStaged) {
@@ -349,8 +343,8 @@ public class GitStatusView extends LinearLayout {
         btnActionAll.setClickable(true);
         btnActionAll.setFocusable(true);
         btnActionAll.setOnClickListener(v -> {
-            String cmd = isStaged ? "restore --staged ." : "add .";
-            GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> post(this::refreshStatus));
+            String cmd = "pull && git --no-pager push";
+            GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
         });
         header.addView(btnActionAll);
 
@@ -420,6 +414,66 @@ public class GitStatusView extends LinearLayout {
 
             row.addView(llChanges);
 
+            row.setClickable(true);
+            row.setFocusable(true);
+            TypedValue outValueRow = new TypedValue();
+            if (getContext() != null && getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValueRow, true)) {
+                row.setBackgroundResource(outValueRow.resourceId);
+            }
+            row.setOnClickListener(v -> {
+                File fullFile = new File(mRepoDir, file.filePath);
+                if ("A".equals(file.status) || "??".equals(file.status) || "?".equals(file.status)) {
+                    try {
+                        File emptyTemp = File.createTempFile("git_empty_", "_" + fullFile.getName(), getContext().getCacheDir());
+                        emptyTemp.deleteOnExit();
+                        openDiffView(emptyTemp.getAbsolutePath(), fullFile.getAbsolutePath());
+                    } catch (IOException e) {
+                        openFileInEditor(fullFile.getAbsolutePath());
+                    }
+                } else if ("D".equals(file.status)) {
+                    try {
+                        File tempHeadFile = File.createTempFile("git_head_", "_" + fullFile.getName(), getContext().getCacheDir());
+                        tempHeadFile.deleteOnExit();
+                        File emptyTemp = File.createTempFile("git_empty_", "_" + fullFile.getName(), getContext().getCacheDir());
+                        emptyTemp.deleteOnExit();
+                        String showCmd = "show HEAD:" + file.filePath;
+                        GitManager.getInstance().runGitCommandAsync(getContext(), showCmd, mRepoDir, (success, output) -> {
+                            post(() -> {
+                                try (BufferedWriter writer = new BufferedWriter(new FileWriter(tempHeadFile))) {
+                                    writer.write(success ? output : "");
+                                } catch (IOException ignored) {}
+                                openDiffView(tempHeadFile.getAbsolutePath(), emptyTemp.getAbsolutePath());
+                            });
+                        });
+                    } catch (IOException e) {
+                        openFileInEditor(fullFile.getAbsolutePath());
+                    }
+                } else {
+                    try {
+                        File tempHeadFile = File.createTempFile("git_head_", "_" + fullFile.getName(), getContext().getCacheDir());
+                        tempHeadFile.deleteOnExit();
+                        String showCmd = file.isStaged ? "show HEAD:" + file.filePath : "show :0:" + file.filePath;
+                        GitManager.getInstance().runGitCommandAsync(getContext(), showCmd, mRepoDir, (success, output) -> {
+                            post(() -> {
+                                final String baseContent = (success && output != null) ? output : "";
+                                try (BufferedWriter writer = new BufferedWriter(new FileWriter(tempHeadFile))) {
+                                    writer.write(baseContent);
+                                } catch (IOException ignored) {}
+                                openDiffView(tempHeadFile.getAbsolutePath(), fullFile.getAbsolutePath());
+                            });
+                        });
+                    } catch (IOException e) {
+                        openFileInEditor(fullFile.getAbsolutePath());
+                    }
+                }
+            });
+
+            TypedValue outValueBtn = new TypedValue();
+            int borderlessId = 0;
+            if (getContext() != null && getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValueBtn, true)) {
+                borderlessId = outValueBtn.resourceId;
+            }
+
             TextView btnStageUnstage = new TextView(getContext());
             btnStageUnstage.setText(isStaged ? "−" : "+");
             btnStageUnstage.setTextColor(Color.parseColor("#82AAFF"));
@@ -428,13 +482,49 @@ public class GitStatusView extends LinearLayout {
             btnStageUnstage.setPadding(16, 8, 16, 8);
             btnStageUnstage.setClickable(true);
             btnStageUnstage.setFocusable(true);
+            if (borderlessId != 0) btnStageUnstage.setBackgroundResource(borderlessId);
             btnStageUnstage.setOnClickListener(v -> {
-                String cmd = isStaged ? "restore --staged '" + file.filePath + "'" : "add '" + file.filePath + "'";
-                GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> post(this::refreshStatus));
+                String cmd = "pull && git --no-pager push";
+                GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
             });
             row.addView(btnStageUnstage);
 
+            ImageButton btnRevertFile = new ImageButton(getContext());
+            btnRevertFile.setImageResource(R.drawable.ic_undo);
+            btnRevertFile.setColorFilter(Color.parseColor("#CF6679"));
+            btnRevertFile.setScaleType(ImageButton.ScaleType.CENTER_INSIDE);
+            if (borderlessId != 0) btnRevertFile.setBackgroundResource(borderlessId);
+            else btnRevertFile.setBackgroundResource(android.R.color.transparent);
+            btnRevertFile.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
+
+            int iconSize = dpToPx(28);
+            LinearLayout.LayoutParams revertParams = new LinearLayout.LayoutParams(iconSize, iconSize);
+            revertParams.setMarginStart(dpToPx(16));
+            btnRevertFile.setLayoutParams(revertParams);
+            btnRevertFile.setContentDescription("Revert file changes");
+            btnRevertFile.setOnClickListener(v -> showRevertFileDialog(file));
+            row.addView(btnRevertFile);
+
             mLlContainer.addView(row);
+        }
+    }
+
+    private void openDiffView(String file1, String file2) {
+        if (getContext() instanceof MainActivity) {
+            ((MainActivity) getContext()).openDiffInEditor(file1, file2);
+        } else {
+            EditorFragment frag = EditorFragment.newDiffInstance(file1, file2);
+            String title = "Diff: " + new File(file1).getName() + " ↔ " + new File(file2).getName();
+            TabManager.getInstance().openTab(TabType.EDITOR, title, "🔀", frag, true);
+        }
+    }
+
+    private void openFileInEditor(String path) {
+        if (getContext() instanceof MainActivity) {
+            ((MainActivity) getContext()).openFileInEditor(path);
+        } else {
+            EditorFragment frag = EditorFragment.newInstance(path);
+            TabManager.getInstance().openTab(TabType.EDITOR, new File(path).getName(), "📝", frag, true);
         }
     }
 
@@ -460,31 +550,45 @@ public class GitStatusView extends LinearLayout {
         });
     }
 
-    private void executePush() {
-        Toast.makeText(getContext(), "Pushing changes...", Toast.LENGTH_SHORT).show();
-        GitManager.getInstance().runGitCommandAsync(getContext(), "push", mRepoDir, (success, output) -> {
+    private void executeSync() {
+        if (mRepoDir == null || getContext() == null) return;
+        Toast.makeText(getContext(), "Syncing changes...", Toast.LENGTH_SHORT).show();
+        String cmd = "pull && git --no-pager push";
+        GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> {
             post(() -> {
                 if (success) {
-                    Toast.makeText(getContext(), "Push successful", Toast.LENGTH_SHORT).show();
-                    refreshStatus();
+                    Toast.makeText(getContext(), "Sync successful", Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(getContext(), "Push output: " + output, Toast.LENGTH_LONG).show();
+                    Toast.makeText(getContext(), "Sync output: " + output, Toast.LENGTH_LONG).show();
                 }
+                refreshStatus();
             });
         });
     }
 
-    private void executePull() {
-        Toast.makeText(getContext(), "Pulling changes...", Toast.LENGTH_SHORT).show();
-        GitManager.getInstance().runGitCommandAsync(getContext(), "pull", mRepoDir, (success, output) -> {
-            post(() -> {
-                if (success) {
-                    Toast.makeText(getContext(), "Pull successful", Toast.LENGTH_SHORT).show();
-                    refreshStatus();
-                } else {
-                    Toast.makeText(getContext(), "Pull output: " + output, Toast.LENGTH_LONG).show();
-                }
-            });
-        });
+    private int dpToPx(int dp) {
+        if (getContext() == null) return dp;
+        float density = getContext().getResources().getDisplayMetrics().density;
+        return Math.round(dp * density);
+    }
+
+    private void showRevertFileDialog(GitFileStatus file) {
+        if (getContext() == null) return;
+        new AlertDialog.Builder(getContext())
+                .setTitle("Revert File")
+                .setMessage("Are you sure you want to revert changes in " + file.filePath + "?")
+                .setPositiveButton("Revert", (dialog, which) -> {
+                    String cmd;
+                    if ("??".equals(file.status)) {
+                        cmd = "clean -f '" + file.filePath + "'";
+                    } else if (file.isStaged) {
+                        cmd = "checkout HEAD -- '" + file.filePath + "'";
+                    } else {
+                        cmd = "checkout -- '" + file.filePath + "'";
+                    }
+                    GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 }

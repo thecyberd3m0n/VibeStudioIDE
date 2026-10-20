@@ -13,7 +13,7 @@ public class DirectoryEntry extends FileEntry {
 
     @Override
     public String getIconSymbol() {
-        if (GitManager.getInstance().isGitRepository(getFile())) {
+        if (GitManager.getInstance().isGitRoot(getFile())) {
             return null;
         }
         return "📁";
@@ -21,7 +21,7 @@ public class DirectoryEntry extends FileEntry {
 
     @Override
     public Integer getIconResId() {
-        if (GitManager.getInstance().isGitRepository(getFile())) {
+        if (GitManager.getInstance().isGitRoot(getFile())) {
             return R.drawable.ic_git_repo;
         }
         return null;
@@ -31,7 +31,7 @@ public class DirectoryEntry extends FileEntry {
     public String getDetailsText(Context context) {
         File[] children = getFile().listFiles();
         int childCount = children != null ? children.length : 0;
-        if (GitManager.getInstance().isGitRepository(getFile())) {
+        if (GitManager.getInstance().isGitRoot(getFile())) {
             return childCount + " items • Git Repository";
         }
         return childCount + " items";

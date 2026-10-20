@@ -190,6 +190,30 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         );
     }
 
+    public void openDiffInEditor(String file1Path, String file2Path) {
+        String f1 = new File(file1Path).getName();
+        String f2 = new File(file2Path).getName();
+        String tabTitle = "Diff: " + f1 + " ↔ " + f2;
+
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == TabType.EDITOR && tab.getTitle() != null && tab.getTitle().startsWith("Diff: ")) {
+                if (tabTitle.equals(tab.getTitle())) {
+                    mTabManager.selectTab(tab);
+                    return;
+                }
+            }
+        }
+
+        EditorFragment fragment = EditorFragment.newDiffInstance(file1Path, file2Path);
+        mTabManager.openTab(
+                TabType.EDITOR,
+                tabTitle,
+                "🔀",
+                fragment,
+                true
+        );
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();

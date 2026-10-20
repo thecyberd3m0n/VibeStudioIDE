@@ -37,7 +37,13 @@ public class EditorMcpServer implements McpServer {
         if (args == null) args = new JSONObject();
         String path = args.optString("path", "");
         if ("editor_open".equalsIgnoreCase(toolName)) {
+            String file2 = args.optString("file2", "");
+            if (!file2.isEmpty()) {
+                return "Opened diff in editor: " + path + " ↔ " + file2;
+            }
             return "Opened in editor: " + path;
+        } else if ("editor_diff".equalsIgnoreCase(toolName)) {
+            return "Opened diff in editor: " + args.optString("file1", "") + " ↔ " + args.optString("file2", "");
         } else if ("editor_read_file".equalsIgnoreCase(toolName)) {
             int start = args.optInt("start_line", 1);
             int end = args.optInt("end_line", 100);
@@ -57,7 +63,7 @@ public class EditorMcpServer implements McpServer {
 
     private static final String TAG = "EditorMcpServer";
     private static final String NAME = "editor";
-    private static final String DESCRIPTION = "Provides token-efficient single-file read and modification tools: line-range reading, targeted line replacements, search and replace, line insertion, opening file in tab, and saving changes.";
+    private static final String DESCRIPTION = "Provides token-efficient file reading, single/dual file diff viewing, and modification tools: line-range reading, targeted line replacements, search and replace, line insertion, diff visualizer, opening file in tab, and saving changes.";
 
     private boolean mIsActive = false;
     private final List<McpTool> mTools;
@@ -66,11 +72,18 @@ public class EditorMcpServer implements McpServer {
         mTools = new ArrayList<>();
 
         // Tool 1: editor_open
-        mTools.add(McpTool.builder("editor_open", "Open a file in an Editor tab view within VibeStudio IDE.")
-                .addProperty("path", PropertyType.STRING, "File path to open.", true)
+        mTools.add(McpTool.builder("editor_open", "Open a file or compare two files in a Diff view in an Editor tab view within VibeStudio IDE.")
+                .addProperty("path", PropertyType.STRING, "File path to open (or first/base file for diff).", true)
+                .addProperty("file2", PropertyType.STRING, "Optional second file path to open in a diff comparison view against the first file.", false)
                 .build());
 
-        // Tool 2: editor_read_file
+        // Tool 2: editor_diff
+        mTools.add(McpTool.builder("editor_diff", "Open two files in a unified diff comparison view in an Editor tab view.")
+                .addProperty("file1", PropertyType.STRING, "First (original/base) file path.", true)
+                .addProperty("file2", PropertyType.STRING, "Second (modified/target) file path.", true)
+                .build());
+
+        // Tool 3: editor_read_file
         mTools.add(McpTool.builder("editor_read_file", "Read lines from a file with optional range filtering for token efficiency.")
                 .addProperty("path", PropertyType.STRING, "File path to read.", true)
                 .addProperty("start_line", PropertyType.INTEGER, "1-based start line number (default: 1).", false)
@@ -78,7 +91,7 @@ public class EditorMcpServer implements McpServer {
                 .addProperty("max_lines", PropertyType.INTEGER, "Maximum lines to return for token safety (default: 100).", false)
                 .build());
 
-        // Tool 3: editor_replace_lines
+        // Tool 4: editor_replace_lines
         mTools.add(McpTool.builder("editor_replace_lines", "Replace a target range of lines (start_line to end_line inclusive) with new text content.")
                 .addProperty("path", PropertyType.STRING, "File path.", true)
                 .addProperty("start_line", PropertyType.INTEGER, "1-based start line number.", true)
@@ -86,21 +99,21 @@ public class EditorMcpServer implements McpServer {
                 .addProperty("new_content", PropertyType.STRING, "New text content to insert.", true)
                 .build());
 
-        // Tool 4: editor_search_replace
+        // Tool 5: editor_search_replace
         mTools.add(McpTool.builder("editor_search_replace", "Search for a string pattern in a file and replace it.")
                 .addProperty("path", PropertyType.STRING, "File path.", true)
                 .addProperty("search", PropertyType.STRING, "Substring to search for.", true)
                 .addProperty("replace", PropertyType.STRING, "Replacement substring.", true)
                 .build());
 
-        // Tool 5: editor_insert_lines
+        // Tool 6: editor_insert_lines
         mTools.add(McpTool.builder("editor_insert_lines", "Insert text lines at a specified line index in a file.")
                 .addProperty("path", PropertyType.STRING, "File path.", true)
                 .addProperty("line", PropertyType.INTEGER, "1-based line number index before which content will be inserted.", true)
                 .addProperty("content", PropertyType.STRING, "Text content to insert.", true)
                 .build());
 
-        // Tool 6: editor_save
+        // Tool 7: editor_save
         mTools.add(McpTool.builder("editor_save", "Persist current edits of a file to disk.")
                 .addProperty("path", PropertyType.STRING, "File path to save.", true)
                 .build());
@@ -154,17 +167,49 @@ public class EditorMcpServer implements McpServer {
         try {
             if ("editor_open".equals(toolName)) {
                 String pathArg = getStringArg(arguments, "path", "");
+                String file2Arg = getStringArg(arguments, "file2", "");
+
                 if (pathArg.isEmpty()) return McpToolResult.error("Missing 'path' parameter.");
 
-                File file = PathResolver.resolveFile(pathArg, context);
-                if (!file.exists()) return McpToolResult.error("File does not exist: " + pathArg);
+                File file1 = PathResolver.resolveFile(pathArg, context);
+
+                if (!file2Arg.isEmpty()) {
+                    File file2 = PathResolver.resolveFile(file2Arg, context);
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        EditorFragment frag = EditorFragment.newDiffInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
+                        String tabTitle = "Diff: " + file1.getName() + " ↔ " + file2.getName();
+                        TabManager.getInstance().openTab(TabType.EDITOR, tabTitle, "🔀", frag, true);
+                    });
+                    return McpToolResult.success("Opened diff view in editor tab comparing: " + file1.getAbsolutePath() + " and " + file2.getAbsolutePath());
+                }
+
+                if (!file1.exists()) return McpToolResult.error("File does not exist: " + pathArg);
 
                 new Handler(Looper.getMainLooper()).post(() -> {
-                    EditorFragment frag = EditorFragment.newInstance(file.getAbsolutePath());
-                    TabManager.getInstance().openTab(TabType.EDITOR, file.getName(), "📝", frag, true);
+                    EditorFragment frag = EditorFragment.newInstance(file1.getAbsolutePath());
+                    TabManager.getInstance().openTab(TabType.EDITOR, file1.getName(), "📝", frag, true);
                 });
 
-                return McpToolResult.success("Opened editor tab for: " + file.getAbsolutePath());
+                return McpToolResult.success("Opened editor tab for: " + file1.getAbsolutePath());
+
+            } else if ("editor_diff".equals(toolName)) {
+                String file1Arg = getStringArg(arguments, "file1", "");
+                String file2Arg = getStringArg(arguments, "file2", "");
+
+                if (file1Arg.isEmpty() || file2Arg.isEmpty()) {
+                    return McpToolResult.error("Missing 'file1' or 'file2' parameter.");
+                }
+
+                File file1 = PathResolver.resolveFile(file1Arg, context);
+                File file2 = PathResolver.resolveFile(file2Arg, context);
+
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    EditorFragment frag = EditorFragment.newDiffInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
+                    String tabTitle = "Diff: " + file1.getName() + " ↔ " + file2.getName();
+                    TabManager.getInstance().openTab(TabType.EDITOR, tabTitle, "🔀", frag, true);
+                });
+
+                return McpToolResult.success("Opened diff view in editor tab comparing: " + file1.getAbsolutePath() + " and " + file2.getAbsolutePath());
 
             } else if ("editor_read_file".equals(toolName)) {
                 String pathArg = getStringArg(arguments, "path", "");

@@ -142,6 +142,11 @@
       "grammar": "textmate/dart/grammar.json",
       "name": "dart",
       "scopeName": "source.dart"
+    },
+    {
+      "grammar": "textmate/diff/grammar.json",
+      "name": "diff",
+      "scopeName": "source.diff"
     }
   ]
 }

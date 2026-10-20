@@ -30,6 +30,17 @@
             android:typeface="monospace"
             android:layout_marginEnd="12dp" />
 
+        <ImageButton
+            android:id="@+id/btn_undo"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_undo"
+            android:scaleType="centerInside"
+            android:contentDescription="Undo selected changes"
+            android:visibility="gone"
+            android:padding="6dp" />
+
         <Button
             android:id="@+id/btn_save"
             android:layout_width="wrap_content"
@@ -49,10 +60,24 @@
 
     </LinearLayout>
 
-    <io.github.rosemoe.sora.widget.CodeEditor
-        android:id="@+id/code_editor"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1">
+
+        <io.github.rosemoe.sora.widget.CodeEditor
+            android:id="@+id/code_editor"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Overlay container for Checkboxes and Undo buttons on top of changed lines -->
+        <FrameLayout
+            android:id="@+id/overlay_hunks_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipChildren="false"
+            android:clipToPadding="false" />
+
+    </FrameLayout>
 
 </LinearLayout>

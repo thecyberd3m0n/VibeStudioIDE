@@ -59,8 +59,11 @@ public class ChatErrorViewTest {
         assertTrue(cardView instanceof LinearLayout);
         LinearLayout card = (LinearLayout) cardView;
 
-        TextView tvSender = (TextView) card.getChildAt(0);
-        TextView tvText = (TextView) card.getChildAt(1);
+        assertTrue(card.getChildAt(0) instanceof LinearLayout);
+        LinearLayout textContainer = (LinearLayout) card.getChildAt(0);
+
+        TextView tvSender = (TextView) textContainer.getChildAt(0);
+        TextView tvText = (TextView) textContainer.getChildAt(1);
 
         assertEquals("Error", tvSender.getText().toString());
         assertEquals("HTTP 401: Unauthorized API key", tvText.getText().toString());

@@ -552,6 +552,78 @@ public class TerminalSessionManager {
         }
     }
 
+    public String runCommandOnSessionSync(TerminalSession session, String command, int timeoutMs) {
+        if (session == null || !session.isRunning() || command == null || command.isEmpty()) {
+            return null;
+        }
+
+        synchronized (session) {
+            try {
+                long startTime = System.currentTimeMillis();
+                String startMarker = "___CMD_START_" + System.currentTimeMillis() + "_" + ((int) (Math.random() * 10000)) + "___";
+                String endMarker = "___CMD_END_" + System.currentTimeMillis() + "_" + ((int) (Math.random() * 10000)) + "___";
+
+                String execCmd = "echo " + startMarker + " && " + command + " ; echo " + endMarker + "\n";
+                byte[] bytes = execCmd.getBytes(StandardCharsets.UTF_8);
+                session.write(bytes, 0, bytes.length);
+
+                String capturedOutput = null;
+                while (System.currentTimeMillis() - startTime < timeoutMs) {
+                    try {
+                        Thread.sleep(50);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+
+                    String fullTranscript = getSessionOutput(session);
+                    if (fullTranscript != null) {
+                        int echoStartIdx = fullTranscript.indexOf(startMarker);
+                        if (echoStartIdx != -1) {
+                            int stdoutStartIdx = fullTranscript.indexOf(startMarker, echoStartIdx + startMarker.length());
+                            int idxStart = (stdoutStartIdx != -1) ? stdoutStartIdx : echoStartIdx;
+
+                            int echoEndIdx = fullTranscript.indexOf(endMarker, idxStart);
+                            if (echoEndIdx != -1) {
+                                int stdoutEndIdx = fullTranscript.indexOf(endMarker, echoEndIdx + endMarker.length());
+                                int idxEnd = (stdoutEndIdx != -1) ? stdoutEndIdx : echoEndIdx;
+
+                                if (idxEnd > idxStart) {
+                                    capturedOutput = fullTranscript.substring(idxStart + startMarker.length(), idxEnd);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (capturedOutput != null) {
+                    return com.vibestudio.app.git.GitTerminalParser.cleanTerminalOutput(capturedOutput);
+                }
+            } catch (Exception e) {
+                LogViewerService.getInstance().e(TAG, "Error executing command on TerminalSession", e);
+            }
+        }
+        return null;
+    }
+
+    public synchronized String getSessionOutput(TerminalSession session) {
+        if (session == null || !session.isRunning()) {
+            return "(Managed session is inactive)";
+        }
+        try {
+            TerminalEmulator emulator = session.getEmulator();
+            if (emulator == null) return "(TerminalEmulator is null)";
+            TerminalBuffer buffer = emulator.getScreen();
+            if (buffer == null) return "(TerminalBuffer is null)";
+            String text = buffer.getTranscriptTextWithFullLinesJoined();
+            return text != null && !text.trim().isEmpty() ? text.trim() : "(No stdin/stdout output recorded in PTY)";
+        } catch (Exception e) {
+            LogViewerService.getInstance().e(TAG, "Error reading session output buffer", e);
+            return "Error reading session buffer: " + e.getMessage();
+        }
+    }
+
     public synchronized void closeSession(TerminalSession session) {
         if (session == null) return;
         mViews.remove(session);

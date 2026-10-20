@@ -1,22 +1,33 @@
 package com.vibestudio.app.fragments;
 
+import com.vibestudio.app.git.GitManager;
+
+import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Looper;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import android.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 
-import com.vibestudio.app.editor.TextMateManager;
 import com.vibestudio.app.R;
+import com.vibestudio.app.editor.TextMateManager;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
@@ -28,25 +39,69 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import io.github.rosemoe.sora.widget.schemes.EditorColorScheme;
 import io.github.rosemoe.sora.widget.schemes.SchemeDarcula;
 import io.github.rosemoe.sora.widget.CodeEditor;
+import io.github.rosemoe.sora.event.ScrollEvent;
 import io.github.rosemoe.sora.event.ContentChangeEvent;
 
 public class EditorFragment extends Fragment {
 
     private static final String TAG = "EditorFragment";
     private static final String ARG_FILE_PATH = "file_path";
+    private static final String ARG_FILE1_PATH = "file1_path";
+    private static final String ARG_FILE2_PATH = "file2_path";
+    private static final String ARG_IS_DIFF_MODE = "is_diff_mode";
 
     private CodeEditor mCodeEditor;
     private TextView mTvFilePath;
     private Button mBtnSave;
+    private ImageButton mBtnUndo;
+    private FrameLayout mFlOverlayContainer;
+
     private String mFilePath;
+    private String mFile1Path;
+    private String mFile2Path;
+    private boolean mIsDiffMode = false;
+
     private String mSavedContent = "";
     private boolean mIsLoading = false;
     private boolean mIsSaving = false;
     private boolean mIsModified = false;
+    private boolean mHasTrailingNewline = false;
+
+    private final List<DiffHunk> mDiffHunks = new ArrayList<>();
+    private List<DiffLine> mCurrentDiffLines = new ArrayList<>();
+
+    public static class DiffHunk {
+        public int line2Start; // 0-based start in modified file
+        public int line2Count; // deleted/replaced line count
+        public int editorStartLine; // 0-based line index in diff editor view
+        public List<String> deletedLines = new ArrayList<>();
+        public List<String> addedLines = new ArrayList<>();
+
+        public DiffHunk(int line2Start, int line2Count, int editorStartLine) {
+            this.line2Start = line2Start;
+            this.line2Count = line2Count;
+            this.editorStartLine = editorStartLine;
+        }
+    }
+
+    public static class DiffLine {
+        public enum Type { UNCHANGED, ADDED, DELETED, HEADER }
+        public Type type;
+        public String text;
+
+        public DiffLine(Type type, String text) {
+            this.type = type;
+            this.text = text;
+        }
+    }
 
     public static EditorFragment newInstance() {
         return new EditorFragment();
@@ -61,11 +116,27 @@ public class EditorFragment extends Fragment {
         return fragment;
     }
 
+    public static EditorFragment newDiffInstance(String file1Path, String file2Path) {
+        EditorFragment fragment = new EditorFragment();
+        fragment.mFile1Path = file1Path;
+        fragment.mFile2Path = file2Path;
+        fragment.mIsDiffMode = true;
+        Bundle args = new Bundle();
+        args.putString(ARG_FILE1_PATH, file1Path);
+        args.putString(ARG_FILE2_PATH, file2Path);
+        args.putBoolean(ARG_IS_DIFF_MODE, true);
+        fragment.setArguments(args);
+        return fragment;
+    }
+
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (getArguments() != null) {
             mFilePath = getArguments().getString(ARG_FILE_PATH);
+            mFile1Path = getArguments().getString(ARG_FILE1_PATH);
+            mFile2Path = getArguments().getString(ARG_FILE2_PATH);
+            mIsDiffMode = getArguments().getBoolean(ARG_IS_DIFF_MODE, false);
         }
     }
 
@@ -76,6 +147,8 @@ public class EditorFragment extends Fragment {
         mCodeEditor = view.findViewById(R.id.code_editor);
         mTvFilePath = view.findViewById(R.id.tv_file_path);
         mBtnSave = view.findViewById(R.id.btn_save);
+        mBtnUndo = view.findViewById(R.id.btn_undo);
+        mFlOverlayContainer = view.findViewById(R.id.overlay_hunks_container);
 
         if (mBtnSave != null) {
             mBtnSave.setOnClickListener(v -> performSave());
@@ -85,30 +158,254 @@ public class EditorFragment extends Fragment {
         updateSaveButtonState(false);
 
         if (mCodeEditor != null) {
-            TextMateManager.getInstance().applyLanguageAndTheme(getContext(), mCodeEditor, mFilePath);
+            SchemeDarcula darkScheme = new SchemeDarcula();
+            darkScheme.setColor(EditorColorScheme.WHOLE_BACKGROUND, 0xFF1E1E2E);
+            darkScheme.setColor(EditorColorScheme.LINE_NUMBER_BACKGROUND, 0xFF181825);
+            mCodeEditor.setColorScheme(darkScheme);
 
             Typeface monoTypeface = FontUtils.getMonospaceTypeface(getContext());
             mCodeEditor.setTypefaceText(monoTypeface);
             mCodeEditor.setTypefaceLineNumber(monoTypeface);
 
-            mCodeEditor.setText("");
-            mCodeEditor.setTextSize(14f);
-
-            if (mFilePath != null && !mFilePath.isEmpty()) {
-                loadFileContent(mFilePath);
-            }
-
-            mCodeEditor.subscribeEvent(ContentChangeEvent.class, (event, unsubscribe) -> {
-                if (!mIsLoading && !mIsSaving && mCodeEditor != null) {
-                    String current = mCodeEditor.getText().toString();
-                    boolean modified = (mFilePath != null && !mFilePath.isEmpty())
-                            ? !current.equals(mSavedContent)
-                            : !current.isEmpty();
-                    runOnMainThread(() -> updateSaveButtonState(modified));
+            if (mIsDiffMode) {
+                if (mBtnSave != null) mBtnSave.setVisibility(View.GONE);
+                if (mBtnUndo != null) {
+                    mBtnUndo.setVisibility(View.VISIBLE);
+                    mBtnUndo.setOnClickListener(v -> showRevertAllDialog());
                 }
-            });
+                mCodeEditor.setTextSize(14f);
+                mCodeEditor.setEditable(false);
+
+                mCodeEditor.subscribeEvent(ScrollEvent.class, (event, unsubscribe) -> runOnMainThread(this::updateHunkOverlayPositions));
+                mCodeEditor.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+                    @Override
+                    public void onGlobalLayout() {
+                        updateHunkOverlayPositions();
+                    }
+                });
+
+                loadDiffContent(mFile1Path, mFile2Path);
+            } else {
+                if (mBtnUndo != null) mBtnUndo.setVisibility(View.GONE);
+                mCodeEditor.setText("");
+                mCodeEditor.setTextSize(14f);
+
+                if (mFilePath != null && !mFilePath.isEmpty()) {
+                    loadFileContent(mFilePath);
+                }
+
+                mCodeEditor.subscribeEvent(ContentChangeEvent.class, (event, unsubscribe) -> {
+                    if (!mIsLoading && !mIsSaving && mCodeEditor != null) {
+                        String current = mCodeEditor.getText().toString();
+                        boolean modified = (mFilePath != null && !mFilePath.isEmpty())
+                                ? !current.equals(mSavedContent)
+                                : !current.isEmpty();
+                        runOnMainThread(() -> updateSaveButtonState(modified));
+                    }
+                });
+            }
         }
         return view;
+    }
+
+    void updateHunkOverlayPositions() {
+        if (!mIsDiffMode || mFlOverlayContainer == null || mCodeEditor == null || getContext() == null) {
+            Log.d(TAG, "updateHunkOverlayPositions skipped: mIsDiffMode=" + mIsDiffMode
+                    + ", mFlOverlayContainer=" + (mFlOverlayContainer != null)
+                    + ", mCodeEditor=" + (mCodeEditor != null)
+                    + ", context=" + (getContext() != null));
+            return;
+        }
+        mFlOverlayContainer.removeAllViews();
+
+        int lineHeight = mCodeEditor.getRowHeight();
+        if (lineHeight <= 0) {
+            Log.d(TAG, "updateHunkOverlayPositions postponed: invalid lineHeight=" + lineHeight);
+            mCodeEditor.postDelayed(this::updateHunkOverlayPositions, 100);
+            return;
+        }
+
+        int offsetY = mCodeEditor.getOffsetY();
+        int paddingTop = mCodeEditor.getPaddingTop();
+        int containerHeight = mFlOverlayContainer.getHeight();
+        if (containerHeight <= 0) containerHeight = mCodeEditor.getHeight();
+
+        Log.d(TAG, "updateHunkOverlayPositions running: diffLines=" + (mCurrentDiffLines != null ? mCurrentDiffLines.size() : 0)
+                + ", diffHunks=" + (mDiffHunks != null ? mDiffHunks.size() : 0)
+                + ", lineHeight=" + lineHeight + ", containerHeight=" + containerHeight);
+
+        int bgCount = 0;
+        // 1. Draw line backgrounds for added and deleted lines
+        if (mCurrentDiffLines != null) {
+            for (int i = 0; i < mCurrentDiffLines.size(); i++) {
+                DiffLine line = mCurrentDiffLines.get(i);
+                if (line.type == DiffLine.Type.ADDED || line.type == DiffLine.Type.DELETED) {
+                    int lineTop = mCodeEditor.getRowTop(i) - offsetY + paddingTop;
+                    if (containerHeight > 0 && (lineTop + lineHeight < -lineHeight || lineTop > containerHeight + lineHeight)) {
+                        continue;
+                    }
+
+                    View bgView = new View(getContext());
+                    bgView.setClickable(false);
+                    bgView.setFocusable(false);
+                    int color = (line.type == DiffLine.Type.ADDED) ? 0x30388E3C : 0x30D32F2F; // Green/Red tint background
+                    bgView.setBackgroundColor(color);
+
+                    FrameLayout.LayoutParams bgLp = new FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, lineHeight);
+                    bgLp.topMargin = lineTop;
+                    bgView.setLayoutParams(bgLp);
+                    mFlOverlayContainer.addView(bgView);
+                    bgCount++;
+                }
+            }
+        }
+
+        int btnCount = 0;
+        // 2. Draw revert buttons for each diff hunk on the right edge
+        int btnSize = dpToPx(28);
+        if (mDiffHunks != null) {
+            for (DiffHunk hunk : mDiffHunks) {
+                int lineTop = mCodeEditor.getRowTop(hunk.editorStartLine) - offsetY + paddingTop;
+                if (containerHeight > 0 && (lineTop + lineHeight < -lineHeight || lineTop > containerHeight + lineHeight)) {
+                    continue;
+                }
+
+                ImageButton btnRevertHunk = new ImageButton(getContext());
+                btnRevertHunk.setImageResource(R.drawable.ic_undo);
+                btnRevertHunk.setColorFilter(Color.parseColor("#CF6679"));
+                btnRevertHunk.setScaleType(ImageButton.ScaleType.CENTER_INSIDE);
+                btnRevertHunk.setBackgroundResource(android.R.color.transparent);
+                btnRevertHunk.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
+
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(btnSize, btnSize);
+                lp.gravity = Gravity.TOP | Gravity.END;
+                lp.topMargin = lineTop + dpToPx(2);
+                lp.rightMargin = dpToPx(16);
+                btnRevertHunk.setLayoutParams(lp);
+
+                btnRevertHunk.setOnClickListener(v -> revertSingleHunk(hunk));
+                mFlOverlayContainer.addView(btnRevertHunk);
+                btnCount++;
+            }
+        }
+
+        Log.d(TAG, "updateHunkOverlayPositions complete: rendered " + bgCount + " line background overlays and " + btnCount + " revert buttons.");
+    }
+
+    private int dpToPx(int dp) {
+        if (getContext() == null) return dp;
+        float density = getContext().getResources().getDisplayMetrics().density;
+        return Math.round(dp * density);
+    }
+
+    private void showRevertAllDialog() {
+        if (getContext() == null || !mIsDiffMode || mFile2Path == null) return;
+
+        new AlertDialog.Builder(getContext())
+                .setTitle("Revert File")
+                .setMessage("Do you want to revert this file to index?")
+                .setPositiveButton("Revert", (dialog, which) -> revertAllToFile1())
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void revertAllToFile1() {
+        if (!mIsDiffMode || mFile1Path == null || mFile2Path == null) return;
+        try {
+            File targetFile = new File(mFile2Path);
+            boolean file1HadTrailing = checkTrailingNewline(new File(mFile1Path));
+            List<String> baseLines = readLinesFromFile(mFile1Path);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < baseLines.size(); i++) {
+                if (i > 0) sb.append("\n");
+                sb.append(baseLines.get(i));
+            }
+            if (file1HadTrailing && sb.length() > 0 && !sb.toString().endsWith("\n")) {
+                sb.append("\n");
+            }
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(targetFile))) {
+                writer.write(sb.toString());
+            }
+            if (getContext() != null) {
+                Toast.makeText(getContext(), "Reverted file to index", Toast.LENGTH_SHORT).show();
+            }
+            loadDiffContent(mFile1Path, mFile2Path);
+
+            File repoRoot = GitManager.getInstance().findGitRoot(targetFile);
+            if (repoRoot != null && getContext() != null) {
+                GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), repoRoot, null);
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to revert file to index", e);
+            if (getContext() != null) {
+                Toast.makeText(getContext(), "Failed to revert: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void revertSingleHunk(DiffHunk hunk) {
+        if (!mIsDiffMode || mFile2Path == null) return;
+        List<DiffHunk> singleList = new ArrayList<>();
+        singleList.add(hunk);
+        applyHunkRevert(singleList, "Reverted change");
+    }
+
+    private void applyHunkRevert(List<DiffHunk> hunksToRevert, String successMsg) {
+        File file2 = new File(mFile2Path);
+        try {
+            List<String> lines2 = readLinesFromFile(mFile2Path);
+
+            Collections.sort(hunksToRevert, (h1, h2) -> Integer.compare(h2.line2Start, h1.line2Start));
+
+            for (DiffHunk hunk : hunksToRevert) {
+                int start = hunk.line2Start;
+                int countToRemove = hunk.line2Count;
+
+                for (int i = 0; i < countToRemove && start < lines2.size(); i++) {
+                    lines2.remove(start);
+                }
+
+                for (int i = 0; i < hunk.deletedLines.size(); i++) {
+                    int insertIndex = start + i;
+                    if (insertIndex <= lines2.size()) {
+                        lines2.add(insertIndex, hunk.deletedLines.get(i));
+                    } else {
+                        lines2.add(hunk.deletedLines.get(i));
+                    }
+                }
+            }
+
+            boolean file2HadTrailing = checkTrailingNewline(file2);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < lines2.size(); i++) {
+                if (i > 0) sb.append("\n");
+                sb.append(lines2.get(i));
+            }
+            if (file2HadTrailing && sb.length() > 0 && !sb.toString().endsWith("\n")) {
+                sb.append("\n");
+            }
+
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(file2))) {
+                writer.write(sb.toString());
+            }
+
+            if (getContext() != null) {
+                Toast.makeText(getContext(), successMsg, Toast.LENGTH_SHORT).show();
+            }
+
+            loadDiffContent(mFile1Path, mFile2Path);
+
+            File repoRoot = GitManager.getInstance().findGitRoot(file2);
+            if (repoRoot != null && getContext() != null) {
+                GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), repoRoot, null);
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to revert diff changes", e);
+            if (getContext() != null) {
+                Toast.makeText(getContext(), "Failed to revert: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void runOnMainThread(Runnable runnable) {
@@ -121,7 +418,11 @@ public class EditorFragment extends Fragment {
 
     private void updateFilePathUI() {
         if (mTvFilePath != null) {
-            if (mFilePath != null && !mFilePath.isEmpty()) {
+            if (mIsDiffMode) {
+                String name1 = mFile1Path != null ? new File(mFile1Path).getName() : "HEAD";
+                String name2 = mFile2Path != null ? new File(mFile2Path).getName() : "Worktree";
+                mTvFilePath.setText("Diff: " + name1 + " ↔ " + name2);
+            } else if (mFilePath != null && !mFilePath.isEmpty()) {
                 mTvFilePath.setText(mFilePath);
             } else {
                 mTvFilePath.setText("No file open");
@@ -135,7 +436,6 @@ public class EditorFragment extends Fragment {
             mBtnSave.setEnabled(modified);
             mBtnSave.setAlpha(modified ? 1.0f : 0.4f);
         }
-
         updateTabTitleWithStar(modified);
     }
 
@@ -152,6 +452,10 @@ public class EditorFragment extends Fragment {
     }
 
     private String getBaseTitle(TabItem tab) {
+        if (mIsDiffMode) {
+            String name2 = mFile2Path != null ? new File(mFile2Path).getName() : "Diff";
+            return "Diff: " + name2;
+        }
         if (mFilePath != null && !mFilePath.isEmpty()) {
             return new File(mFilePath).getName();
         }
@@ -173,6 +477,189 @@ public class EditorFragment extends Fragment {
         }
     }
 
+    public void loadDiffContent(String file1Path, String file2Path) {
+        this.mFile1Path = file1Path;
+        this.mFile2Path = file2Path;
+        this.mIsDiffMode = true;
+        updateFilePathUI();
+
+        if (mCodeEditor != null && getContext() != null) {
+            TextMateManager.getInstance().applyLanguageAndTheme(getContext(), mCodeEditor, "file.diff");
+        }
+
+        List<String> lines1 = readLinesFromFile(file1Path);
+        List<String> lines2 = readLinesFromFile(file2Path);
+
+        List<DiffLine> diffLines = new ArrayList<>();
+        diffLines.add(new DiffLine(DiffLine.Type.HEADER, "--- " + (mFile1Path != null ? new File(mFile1Path).getName() : "HEAD")));
+        diffLines.add(new DiffLine(DiffLine.Type.HEADER, "+++ " + (mFile2Path != null ? new File(mFile2Path).getName() : "Working Tree")));
+        diffLines.addAll(computeDiff(lines1, lines2));
+        mCurrentDiffLines = diffLines;
+        extractDiffHunks(diffLines);
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < diffLines.size(); i++) {
+            if (i > 0) sb.append("\n");
+            sb.append(diffLines.get(i).text);
+        }
+
+        if (mCodeEditor != null) {
+            mCodeEditor.setText(sb.toString());
+            mCodeEditor.post(this::updateHunkOverlayPositions);
+            mCodeEditor.postDelayed(this::updateHunkOverlayPositions, 100);
+            mCodeEditor.postDelayed(this::updateHunkOverlayPositions, 300);
+        }
+    }
+
+    public List<DiffLine> computeDiff(List<String> lines1, List<String> lines2) {
+        List<DiffLine> result = new ArrayList<>();
+        if (lines1 == null) lines1 = Collections.emptyList();
+        if (lines2 == null) lines2 = Collections.emptyList();
+
+        int n = lines1.size();
+        int m = lines2.size();
+
+        int start = 0;
+        while (start < n && start < m && lines1.get(start).equals(lines2.get(start))) {
+            result.add(new DiffLine(DiffLine.Type.UNCHANGED, " " + lines1.get(start)));
+            start++;
+        }
+
+        int end1 = n - 1;
+        int end2 = m - 1;
+        while (end1 >= start && end2 >= start && lines1.get(end1).equals(lines2.get(end2))) {
+            end1--;
+            end2--;
+        }
+
+        int subN = end1 - start + 1;
+        int subM = end2 - start + 1;
+
+        if (subN > 0 || subM > 0) {
+            if (subN == 0) {
+                for (int j = start; j <= end2; j++) {
+                    result.add(new DiffLine(DiffLine.Type.ADDED, "+" + lines2.get(j)));
+                }
+            } else if (subM == 0) {
+                for (int i = start; i <= end1; i++) {
+                    result.add(new DiffLine(DiffLine.Type.DELETED, "-" + lines1.get(i)));
+                }
+            } else {
+                int[][] lcs = new int[subN + 1][subM + 1];
+                for (int i = 0; i < subN; i++) {
+                    for (int j = 0; j < subM; j++) {
+                        if (lines1.get(start + i).equals(lines2.get(start + j))) {
+                            lcs[i + 1][j + 1] = lcs[i][j] + 1;
+                        } else {
+                            lcs[i + 1][j + 1] = Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+                        }
+                    }
+                }
+
+                int i = subN, j = subM;
+                List<DiffLine> reverseDiff = new ArrayList<>();
+                while (i > 0 || j > 0) {
+                    if (i > 0 && j > 0 && lines1.get(start + i - 1).equals(lines2.get(start + j - 1))) {
+                        reverseDiff.add(new DiffLine(DiffLine.Type.UNCHANGED, " " + lines1.get(start + i - 1)));
+                        i--;
+                        j--;
+                    } else if (j > 0 && (i == 0 || lcs[i][j - 1] >= lcs[i - 1][j])) {
+                        reverseDiff.add(new DiffLine(DiffLine.Type.ADDED, "+" + lines2.get(start + j - 1)));
+                        j--;
+                    } else if (i > 0 && (j == 0 || lcs[i][j - 1] < lcs[i - 1][j])) {
+                        reverseDiff.add(new DiffLine(DiffLine.Type.DELETED, "-" + lines1.get(start + i - 1)));
+                        i--;
+                    }
+                }
+                Collections.reverse(reverseDiff);
+                result.addAll(reverseDiff);
+            }
+        }
+
+        for (int k = end1 + 1; k < n; k++) {
+            result.add(new DiffLine(DiffLine.Type.UNCHANGED, " " + lines1.get(k)));
+        }
+
+        return result;
+    }
+
+    public void extractDiffHunks(List<DiffLine> diffLines) {
+        mDiffHunks.clear();
+
+        int line2Index = 0;
+        int editorLineIndex = 0;
+
+        DiffHunk currentHunk = null;
+
+        for (DiffLine line : diffLines) {
+            if (line.type == DiffLine.Type.HEADER) {
+                editorLineIndex++;
+                continue;
+            }
+
+            if (line.type == DiffLine.Type.UNCHANGED) {
+                if (currentHunk != null) {
+                    mDiffHunks.add(currentHunk);
+                    currentHunk = null;
+                }
+                line2Index++;
+            } else if (line.type == DiffLine.Type.DELETED) {
+                if (currentHunk == null) {
+                    currentHunk = new DiffHunk(line2Index, 0, editorLineIndex);
+                }
+                currentHunk.deletedLines.add(line.text.length() >= 1 ? line.text.substring(1) : "");
+            } else if (line.type == DiffLine.Type.ADDED) {
+                if (currentHunk == null) {
+                    currentHunk = new DiffHunk(line2Index, 0, editorLineIndex);
+                }
+                currentHunk.line2Count++;
+                currentHunk.addedLines.add(line.text.length() >= 1 ? line.text.substring(1) : "");
+                line2Index++;
+            }
+
+            editorLineIndex++;
+        }
+
+        if (currentHunk != null) {
+            mDiffHunks.add(currentHunk);
+        }
+    }
+
+    public List<DiffHunk> getDiffHunks() {
+        return mDiffHunks;
+    }
+
+    public List<String> readLinesFromFile(String filePath) {
+        List<String> lines = new ArrayList<>();
+        if (filePath == null) return lines;
+        File file = new File(filePath);
+        if (!file.exists()) return lines;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.endsWith("\r")) {
+                    line = line.substring(0, line.length() - 1);
+                }
+                lines.add(line);
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error reading lines from file: " + filePath, e);
+        }
+        return lines;
+    }
+
+    public static boolean checkTrailingNewline(File file) {
+        if (file == null || !file.exists() || !file.isFile() || file.length() == 0) return false;
+        try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
+            raf.seek(file.length() - 1);
+            byte b = raf.readByte();
+            return b == '\n';
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public void loadFileContent(String filePath) {
         this.mFilePath = filePath;
         updateFilePathUI();
@@ -181,6 +668,8 @@ public class EditorFragment extends Fragment {
         }
 
         File file = new File(filePath);
+        mHasTrailingNewline = checkTrailingNewline(file);
+
         if (!file.exists()) {
             LogViewerService.getInstance().w(TAG, "File does not exist: " + filePath);
             mSavedContent = "";
@@ -224,10 +713,19 @@ public class EditorFragment extends Fragment {
             parent.mkdirs();
         }
 
+        if (mHasTrailingNewline && !content.isEmpty() && !content.endsWith("\n")) {
+            content = content + "\n";
+        }
+
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
             writer.write(content);
             mSavedContent = content;
             updateSaveButtonState(false);
+
+            File repoRootSave = GitManager.getInstance().findGitRoot(file);
+            if (repoRootSave != null && getContext() != null) {
+                GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), repoRootSave, null);
+            }
         } catch (IOException e) {
             Log.e(TAG, "Error writing file: " + filePath, e);
             LogViewerService.getInstance().e(TAG, "Failed to save file: " + filePath + " - " + e.getMessage());
@@ -244,6 +742,25 @@ public class EditorFragment extends Fragment {
         return mCodeEditor;
     }
 
+    public FrameLayout getOverlayContainer() {
+        return mFlOverlayContainer;
+    }
+
+    void setTestViews(FrameLayout container, CodeEditor editor) {
+        this.mFlOverlayContainer = container;
+        this.mCodeEditor = editor;
+        this.mIsDiffMode = true;
+    }
+
+    void setTestDiffLinesAndHunks(List<DiffLine> lines) {
+        this.mCurrentDiffLines = lines;
+        extractDiffHunks(lines);
+    }
+
+    public List<DiffLine> getCurrentDiffLines() {
+        return mCurrentDiffLines;
+    }
+
     public boolean isModified() {
         return mIsModified;
     }
@@ -254,5 +771,7 @@ public class EditorFragment extends Fragment {
         mCodeEditor = null;
         mTvFilePath = null;
         mBtnSave = null;
+        mBtnUndo = null;
+        mFlOverlayContainer = null;
     }
 }

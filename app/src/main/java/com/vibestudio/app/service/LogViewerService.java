@@ -16,7 +16,7 @@ import java.util.Locale;
 public class LogViewerService {
 
     private static final String TAG = "LogViewerService";
-    private static final int MAX_LOG_SIZE_BYTES = 50 * 1024; // 50 KB limit
+    private static final int MAX_LOG_SIZE_BYTES = 10 * 1024; // 10 KB limit
 
     private static LogViewerService sInstance;
 

@@ -73,46 +73,17 @@
             android:inputType="textMultiLine"
             android:maxLines="3" />
 
-        <LinearLayout
+        <Button
+            android:id="@+id/btn_git_action"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="8dp">
-
-            <Button
-                android:id="@+id/btn_git_commit"
-                android:layout_width="0dp"
-                android:layout_height="36dp"
-                android:layout_weight="1"
-                android:text="✓ Commit"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:background="#0E639C"
-                android:paddingHorizontal="8dp" />
-
-            <Button
-                android:id="@+id/btn_git_push"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:layout_marginStart="8dp"
-                android:text="⬆ Push"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:background="#2D2D3A"
-                android:paddingHorizontal="12dp" />
-
-            <Button
-                android:id="@+id/btn_git_pull"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:layout_marginStart="8dp"
-                android:text="⬇ Pull"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:background="#2D2D3A"
-                android:paddingHorizontal="12dp" />
-        </LinearLayout>
+            android:layout_height="36dp"
+            android:layout_marginTop="8dp"
+            android:text="✓ Commit"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:background="#0E639C"
+            android:paddingHorizontal="8dp" />
     </LinearLayout>
 
     <View
