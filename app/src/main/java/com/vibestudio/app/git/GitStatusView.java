@@ -99,13 +99,19 @@ public class GitStatusView extends LinearLayout {
             final boolean[] isDragging = new boolean[1];
 
             headerBar.setOnTouchListener((v, event) -> {
-                int height = getHeight();
-                if (height == 0) height = 1000;
+                View target = (getParent() instanceof View) ? (View) getParent() : this;
+                int height = target.getHeight();
+                if (height <= 0 && target.getParent() instanceof View) {
+                    height = ((View) target.getParent()).getHeight();
+                }
+                if (height <= 0) height = target.getMeasuredHeight();
+                if (height <= 0) height = 1000;
 
                 switch (event.getAction()) {
                     case android.view.MotionEvent.ACTION_DOWN:
                         startY[0] = event.getRawY();
-                        initialTransY[0] = getTranslationY();
+                        setTranslationY(0);
+                        initialTransY[0] = target.getTranslationY();
                         isDragging[0] = false;
                         return true;
 
@@ -117,21 +123,25 @@ public class GitStatusView extends LinearLayout {
                         float targetTrans = initialTransY[0] + dy;
                         if (targetTrans < 0) targetTrans = 0;
                         if (targetTrans > height) targetTrans = height;
-                        setTranslationY(targetTrans);
+                        target.setTranslationY(targetTrans);
                         return true;
 
                     case android.view.MotionEvent.ACTION_UP:
                     case android.view.MotionEvent.ACTION_CANCEL:
                         float totalDy = event.getRawY() - startY[0];
-                        if (!isDragging[0]) {
+                        if (!isDragging[0] && Math.abs(totalDy) < 15) {
                             v.performClick();
                             return true;
                         }
                         float threshold = Math.max(30f, height * 0.15f);
-                        if (totalDy > threshold) { // Intention: swipe down to dismiss
-                            if (mCloseListener != null) mCloseListener.onClose();
+                        if (totalDy > threshold) {
+                            if (mCloseListener != null) {
+                                mCloseListener.onClose();
+                            } else {
+                                target.animate().translationY(height).setDuration(200).start();
+                            }
                         } else {
-                            animate().translationY(0).setDuration(150).start();
+                            target.animate().translationY(0).setDuration(200).start();
                         }
                         return true;
                 }

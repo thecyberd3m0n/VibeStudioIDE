@@ -178,12 +178,13 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                     case android.view.MotionEvent.ACTION_DOWN:
                         startY[0] = event.getRawY();
                         ensureGitViewPrepared();
-                        int height = mFlGitViewContainer.getHeight();
-                        if (height <= 0) height = mFlGitViewContainer.getMeasuredHeight();
-                        if (height <= 0) height = 1000;
+                        int height = getGitContainerHeight();
 
-                        if (!mIsGitViewOpen && mFlGitViewContainer.getTranslationY() <= 0) {
+                        if (!mIsGitViewOpen) {
                             mFlGitViewContainer.setTranslationY(height);
+                        }
+                        if (mGitStatusView != null) {
+                            mGitStatusView.setTranslationY(0);
                         }
                         initialTranslationY[0] = mFlGitViewContainer.getTranslationY();
                         isDragging[0] = false;
@@ -194,8 +195,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                         if (Math.abs(dy) > 10) {
                             isDragging[0] = true;
                         }
-                        int containerHeight = mFlGitViewContainer.getHeight();
-                        if (containerHeight <= 0) containerHeight = 1000;
+                        int containerHeight = getGitContainerHeight();
                         float targetTrans = initialTranslationY[0] + dy;
                         if (targetTrans < 0) targetTrans = 0;
                         if (targetTrans > containerHeight) targetTrans = containerHeight;
@@ -209,12 +209,11 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                             v.performClick();
                             return true;
                         }
-                        int viewHeight = mFlGitViewContainer.getHeight();
-                        if (viewHeight <= 0) viewHeight = 1000;
+                        int viewHeight = getGitContainerHeight();
                         float threshold = Math.max(30f, viewHeight * 0.15f);
-                        if (totalDy < -threshold) { // Intention: open up
+                        if (totalDy < -threshold) {
                             openGitView();
-                        } else if (totalDy > threshold) { // Intention: close down
+                        } else if (totalDy > threshold) {
                             closeGitView();
                         } else {
                             if (mIsGitViewOpen) openGitView(); else closeGitView();
@@ -591,6 +590,19 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         });
     }
 
+    private int getGitContainerHeight() {
+        if (mFlGitViewContainer == null) return 1000;
+        int h = mFlGitViewContainer.getHeight();
+        if (h > 0) return h;
+        if (mFlGitViewContainer.getParent() instanceof View) {
+            h = ((View) mFlGitViewContainer.getParent()).getHeight();
+            if (h > 0) return h;
+        }
+        h = mFlGitViewContainer.getMeasuredHeight();
+        if (h > 0) return h;
+        return 1000;
+    }
+
     private void toggleGitView() {
         if (mIsGitViewOpen) {
             closeGitView();
@@ -607,6 +619,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             mFlGitViewContainer.addView(mGitStatusView);
         }
         mGitStatusView.setRepoDir(mCurrentDir);
+        mGitStatusView.setTranslationY(0);
         mFlGitViewContainer.setVisibility(View.VISIBLE);
     }
 
@@ -616,9 +629,11 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         ensureGitViewPrepared();
 
         mFlGitViewContainer.animate().cancel();
+        if (mGitStatusView != null) {
+            mGitStatusView.setTranslationY(0);
+        }
         
-        int height = mFlGitViewContainer.getHeight();
-        if (height <= 0) height = 1000;
+        int height = getGitContainerHeight();
 
         if (mFlGitViewContainer.getTranslationY() >= height) {
             mFlGitViewContainer.setTranslationY(height);
@@ -638,8 +653,10 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         mIsGitViewOpen = false;
         if (mFlGitViewContainer != null) {
             mFlGitViewContainer.animate().cancel();
-            int height = mFlGitViewContainer.getHeight();
-            if (height <= 0) height = 1000;
+            if (mGitStatusView != null) {
+                mGitStatusView.setTranslationY(0);
+            }
+            int height = getGitContainerHeight();
 
             mFlGitViewContainer.animate()
                     .translationY(height)
