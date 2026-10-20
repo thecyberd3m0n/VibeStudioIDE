@@ -52,16 +52,6 @@ public class GitManager {
             fullCommand = "cd " + quotePath(repoDir.getAbsolutePath()) + " && " + fullCommand;
         }
 
-        if (mGitSession != null && mGitSession.isRunning()) {
-            boolean sent = TerminalSessionManager.getInstance().executeCommand(mGitSession, fullCommand);
-            if (sent) {
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException ignored) {}
-                return TerminalSessionManager.getInstance().readTerminalOutput(mGitSession, 50, 0, true, null);
-            }
-        }
-
         return TerminalSessionManager.getInstance().runCommandSync(context, fullCommand, repoDir, 30000);
     }
 

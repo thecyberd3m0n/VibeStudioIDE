@@ -166,6 +166,26 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         View btnGitToggle = view.findViewById(R.id.btn_git_changes_toggle);
         if (btnGitToggle != null) {
             btnGitToggle.setOnClickListener(v -> toggleGitView());
+
+            final float[] startY = new float[1];
+            btnGitToggle.setOnTouchListener((v, event) -> {
+                switch (event.getAction()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        startY[0] = event.getRawY();
+                        break;
+                    case android.view.MotionEvent.ACTION_UP:
+                        float deltaY = startY[0] - event.getRawY();
+                        if (deltaY > 50) { // Swipe up
+                            openGitView();
+                            return true;
+                        } else if (deltaY < -50) { // Swipe down
+                            closeGitView();
+                            return true;
+                        }
+                        break;
+                }
+                return false;
+            });
         }
 
         loadDirectory(mCurrentDir);
