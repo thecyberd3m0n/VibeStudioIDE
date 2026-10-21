@@ -343,7 +343,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         btnActionAll.setClickable(true);
         btnActionAll.setFocusable(true);
         btnActionAll.setOnClickListener(v -> {
-            String cmd = "pull && git --no-pager push";
+            String cmd = isStaged ? "reset HEAD" : "add -A";
             GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
         });
         header.addView(btnActionAll);
@@ -452,7 +452,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                     try {
                         File tempHeadFile = File.createTempFile("git_head_", "_" + fullFile.getName(), getContext().getCacheDir());
                         tempHeadFile.deleteOnExit();
-                        String showCmd = file.isStaged ? "show HEAD:" + file.filePath : "show :0:" + file.filePath;
+                        String showCmd = "show HEAD:" + file.filePath;
                         GitManager.getInstance().runGitCommandAsync(getContext(), showCmd, mRepoDir, (success, output) -> {
                             post(() -> {
                                 final String baseContent = (success && output != null) ? output : "";
@@ -484,7 +484,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             btnStageUnstage.setFocusable(true);
             if (borderlessId != 0) btnStageUnstage.setBackgroundResource(borderlessId);
             btnStageUnstage.setOnClickListener(v -> {
-                String cmd = "pull && git --no-pager push";
+                String safePath = file.filePath.replace("'", "'\''");
+                String cmd = isStaged ? "reset HEAD -- '" + safePath + "'" : "add -- '" + safePath + "'";
                 GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
             });
             row.addView(btnStageUnstage);
@@ -573,17 +574,18 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
 
     private void showRevertFileDialog(GitFileStatus file) {
         if (getContext() == null) return;
+        String safePath = file.filePath.replace("'", "'\''");
         new AlertDialog.Builder(getContext())
                 .setTitle("Revert File")
                 .setMessage("Are you sure you want to revert changes in " + file.filePath + "?")
                 .setPositiveButton("Revert", (dialog, which) -> {
                     String cmd;
                     if ("??".equals(file.status)) {
-                        cmd = "clean -f '" + file.filePath + "'";
+                        cmd = "clean -f -- '" + safePath + "'";
                     } else if (file.isStaged) {
-                        cmd = "checkout HEAD -- '" + file.filePath + "'";
+                        cmd = "checkout HEAD -- '" + safePath + "'";
                     } else {
-                        cmd = "checkout -- '" + file.filePath + "'";
+                        cmd = "checkout -- '" + safePath + "'";
                     }
                     GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
                 })

@@ -77,6 +77,8 @@ public class EditorFragment extends Fragment {
 
     private final List<DiffHunk> mDiffHunks = new ArrayList<>();
     private List<DiffLine> mCurrentDiffLines = new ArrayList<>();
+    private final List<View> mBgOverlayViews = new ArrayList<>();
+    private final List<ImageButton> mBtnOverlayViews = new ArrayList<>();
 
     public static class DiffHunk {
         public int line2Start; // 0-based start in modified file
@@ -176,14 +178,7 @@ public class EditorFragment extends Fragment {
                 mCodeEditor.setTextSize(14f);
                 mCodeEditor.setEditable(false);
 
-                mCodeEditor.subscribeEvent(ScrollEvent.class, (event, unsubscribe) -> runOnMainThread(this::updateHunkOverlayPositions));
-                mCodeEditor.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-                    @Override
-                    public void onGlobalLayout() {
-                        updateHunkOverlayPositions();
-                    }
-                });
-
+                setupScrollSync();
                 loadDiffContent(mFile1Path, mFile2Path);
             } else {
                 if (mBtnUndo != null) mBtnUndo.setVisibility(View.GONE);
@@ -208,89 +203,161 @@ public class EditorFragment extends Fragment {
         return view;
     }
 
-    void updateHunkOverlayPositions() {
-        if (!mIsDiffMode || mFlOverlayContainer == null || mCodeEditor == null || getContext() == null) {
-            Log.d(TAG, "updateHunkOverlayPositions skipped: mIsDiffMode=" + mIsDiffMode
-                    + ", mFlOverlayContainer=" + (mFlOverlayContainer != null)
-                    + ", mCodeEditor=" + (mCodeEditor != null)
-                    + ", context=" + (getContext() != null));
-            return;
-        }
+    public void rebuildOverlayViews() {
+        if (mFlOverlayContainer == null || getContext() == null) return;
         mFlOverlayContainer.removeAllViews();
+        mBgOverlayViews.clear();
+        mBtnOverlayViews.clear();
+
+        if (!mIsDiffMode || mCodeEditor == null) return;
 
         int lineHeight = mCodeEditor.getRowHeight();
         if (lineHeight <= 0) {
-            Log.d(TAG, "updateHunkOverlayPositions postponed: invalid lineHeight=" + lineHeight);
-            mCodeEditor.postDelayed(this::updateHunkOverlayPositions, 100);
-            return;
+            lineHeight = dpToPx(20);
+            if (lineHeight <= 0) lineHeight = dpToPx(20);
         }
 
-        int offsetY = mCodeEditor.getOffsetY();
-        int paddingTop = mCodeEditor.getPaddingTop();
-        int containerHeight = mFlOverlayContainer.getHeight();
-        if (containerHeight <= 0) containerHeight = mCodeEditor.getHeight();
-
-        Log.d(TAG, "updateHunkOverlayPositions running: diffLines=" + (mCurrentDiffLines != null ? mCurrentDiffLines.size() : 0)
-                + ", diffHunks=" + (mDiffHunks != null ? mDiffHunks.size() : 0)
-                + ", lineHeight=" + lineHeight + ", containerHeight=" + containerHeight);
-
-        int bgCount = 0;
-        // 1. Draw line backgrounds for added and deleted lines
+        // 1. Pre-create background highlight views for added and deleted lines
         if (mCurrentDiffLines != null) {
             for (int i = 0; i < mCurrentDiffLines.size(); i++) {
                 DiffLine line = mCurrentDiffLines.get(i);
                 if (line.type == DiffLine.Type.ADDED || line.type == DiffLine.Type.DELETED) {
-                    int lineTop = mCodeEditor.getRowTop(i) - offsetY + paddingTop;
-                    if (containerHeight > 0 && (lineTop + lineHeight < -lineHeight || lineTop > containerHeight + lineHeight)) {
-                        continue;
-                    }
-
                     View bgView = new View(getContext());
                     bgView.setClickable(false);
                     bgView.setFocusable(false);
-                    int color = (line.type == DiffLine.Type.ADDED) ? 0x30388E3C : 0x30D32F2F; // Green/Red tint background
+                    int color = (line.type == DiffLine.Type.ADDED) ? 0x602E7D32 : 0x60C62828;
                     bgView.setBackgroundColor(color);
 
                     FrameLayout.LayoutParams bgLp = new FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, lineHeight);
-                    bgLp.topMargin = lineTop;
                     bgView.setLayoutParams(bgLp);
+                    bgView.setVisibility(View.GONE);
                     mFlOverlayContainer.addView(bgView);
-                    bgCount++;
+                    mBgOverlayViews.add(bgView);
                 }
             }
         }
 
-        int btnCount = 0;
-        // 2. Draw revert buttons for each diff hunk on the right edge
+        // 2. Pre-create revert buttons for each diff hunk with rounded button styling
         int btnSize = dpToPx(28);
         if (mDiffHunks != null) {
             for (DiffHunk hunk : mDiffHunks) {
-                int lineTop = mCodeEditor.getRowTop(hunk.editorStartLine) - offsetY + paddingTop;
-                if (containerHeight > 0 && (lineTop + lineHeight < -lineHeight || lineTop > containerHeight + lineHeight)) {
-                    continue;
-                }
-
                 ImageButton btnRevertHunk = new ImageButton(getContext());
                 btnRevertHunk.setImageResource(R.drawable.ic_undo);
                 btnRevertHunk.setColorFilter(Color.parseColor("#CF6679"));
                 btnRevertHunk.setScaleType(ImageButton.ScaleType.CENTER_INSIDE);
-                btnRevertHunk.setBackgroundResource(android.R.color.transparent);
+
+                GradientDrawable btnBg = new GradientDrawable();
+                btnBg.setShape(GradientDrawable.RECTANGLE);
+                btnBg.setCornerRadius(dpToPx(14));
+                btnBg.setColor(Color.parseColor("#2A2D3E"));
+                btnBg.setStroke(dpToPx(1), Color.parseColor("#4C4D68"));
+                btnRevertHunk.setBackground(btnBg);
+
                 btnRevertHunk.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
 
                 FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(btnSize, btnSize);
                 lp.gravity = Gravity.TOP | Gravity.END;
-                lp.topMargin = lineTop + dpToPx(2);
                 lp.rightMargin = dpToPx(16);
                 btnRevertHunk.setLayoutParams(lp);
+                btnRevertHunk.setVisibility(View.GONE);
 
                 btnRevertHunk.setOnClickListener(v -> revertSingleHunk(hunk));
                 mFlOverlayContainer.addView(btnRevertHunk);
-                btnCount++;
+                mBtnOverlayViews.add(btnRevertHunk);
             }
         }
 
-        Log.d(TAG, "updateHunkOverlayPositions complete: rendered " + bgCount + " line background overlays and " + btnCount + " revert buttons.");
+        updateHunkOverlayPositions();
+    }
+
+        private void setupScrollSync() {
+        if (mCodeEditor == null) return;
+
+        mCodeEditor.subscribeEvent(ScrollEvent.class, (event, unsubscribe) -> updateHunkOverlayPositions());
+
+        mCodeEditor.getViewTreeObserver().addOnScrollChangedListener(this::updateHunkOverlayPositions);
+
+        mCodeEditor.getViewTreeObserver().addOnPreDrawListener(() -> {
+            if (mIsDiffMode && mCodeEditor != null) {
+                updateHunkOverlayPositions();
+            }
+            return true;
+        });
+    }
+
+    public void updateHunkOverlayPositions() {
+        if (!mIsDiffMode || mFlOverlayContainer == null || mCodeEditor == null || getContext() == null) {
+            return;
+        }
+
+        int lineHeight = mCodeEditor.getRowHeight();
+        if (lineHeight <= 0) {
+            lineHeight = dpToPx(20);
+            if (lineHeight <= 0) lineHeight = dpToPx(20);
+        }
+
+        if (mCurrentDiffLines != null && !mCurrentDiffLines.isEmpty() && mBgOverlayViews.isEmpty() && mBtnOverlayViews.isEmpty()) {
+            rebuildOverlayViews();
+            return;
+        }
+
+        int offsetY = mCodeEditor.getOffsetY();
+        int containerHeight = mFlOverlayContainer.getHeight();
+        if (containerHeight <= 0) containerHeight = mCodeEditor.getHeight();
+
+        // 1. Update line backgrounds via translationY
+        if (mCurrentDiffLines != null) {
+            int bgIdx = 0;
+            for (int i = 0; i < mCurrentDiffLines.size(); i++) {
+                DiffLine line = mCurrentDiffLines.get(i);
+                if (line.type == DiffLine.Type.ADDED || line.type == DiffLine.Type.DELETED) {
+                    if (bgIdx < mBgOverlayViews.size()) {
+                        View bgView = mBgOverlayViews.get(bgIdx);
+                        ViewGroup.LayoutParams lp = bgView.getLayoutParams();
+                        if (lp.height != lineHeight) {
+                            lp.height = lineHeight;
+                            bgView.setLayoutParams(lp);
+                        }
+
+                        int lineTop = mCodeEditor.getRowTop(i) - offsetY;
+                        if (containerHeight > 0 && (lineTop + lineHeight < -lineHeight || lineTop > containerHeight + lineHeight)) {
+                            bgView.setVisibility(View.GONE);
+                        } else {
+                            bgView.setVisibility(View.VISIBLE);
+                            bgView.setTranslationY(lineTop);
+                            bgView.setTranslationX(-mCodeEditor.getOffsetX());
+                        }
+                    }
+                    bgIdx++;
+                }
+            }
+        }
+
+        // 2. Update revert buttons via translationY with vertical centering across ALL lines in the hunk
+        int btnSize = dpToPx(28);
+        if (mDiffHunks != null) {
+            int btnIdx = 0;
+            for (DiffHunk hunk : mDiffHunks) {
+                if (btnIdx < mBtnOverlayViews.size()) {
+                    ImageButton btn = mBtnOverlayViews.get(btnIdx);
+                    int totalHunkLines = hunk.deletedLines.size() + hunk.addedLines.size();
+                    if (totalHunkLines <= 0) totalHunkLines = 1;
+
+                    int hunkTop = mCodeEditor.getRowTop(hunk.editorStartLine) - offsetY;
+                    int totalHunkHeight = totalHunkLines * lineHeight;
+                    float btnTop = hunkTop + (totalHunkHeight - btnSize) / 2f;
+
+                    if (containerHeight > 0 && (hunkTop + totalHunkHeight < -lineHeight || hunkTop > containerHeight + lineHeight)) {
+                        btn.setVisibility(View.GONE);
+                    } else {
+                        btn.setVisibility(View.VISIBLE);
+                        btn.setTranslationY(btnTop);
+                    }
+                }
+                btnIdx++;
+            }
+        }
     }
 
     private int dpToPx(int dp) {
@@ -409,10 +476,10 @@ public class EditorFragment extends Fragment {
     }
 
     private void runOnMainThread(Runnable runnable) {
-        if (getActivity() != null) {
-            getActivity().runOnUiThread(runnable);
-        } else if (Looper.myLooper() == Looper.getMainLooper()) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
             runnable.run();
+        } else if (getActivity() != null) {
+            getActivity().runOnUiThread(runnable);
         }
     }
 
@@ -483,17 +550,14 @@ public class EditorFragment extends Fragment {
         this.mIsDiffMode = true;
         updateFilePathUI();
 
-        if (mCodeEditor != null && getContext() != null) {
-            TextMateManager.getInstance().applyLanguageAndTheme(getContext(), mCodeEditor, "file.diff");
+        if (mCodeEditor != null && getContext() != null && file2Path != null) {
+            TextMateManager.getInstance().applyLanguageAndTheme(getContext(), mCodeEditor, file2Path);
         }
 
         List<String> lines1 = readLinesFromFile(file1Path);
         List<String> lines2 = readLinesFromFile(file2Path);
 
-        List<DiffLine> diffLines = new ArrayList<>();
-        diffLines.add(new DiffLine(DiffLine.Type.HEADER, "--- " + (mFile1Path != null ? new File(mFile1Path).getName() : "HEAD")));
-        diffLines.add(new DiffLine(DiffLine.Type.HEADER, "+++ " + (mFile2Path != null ? new File(mFile2Path).getName() : "Working Tree")));
-        diffLines.addAll(computeDiff(lines1, lines2));
+        List<DiffLine> diffLines = new ArrayList<>(computeDiff(lines1, lines2));
         mCurrentDiffLines = diffLines;
         extractDiffHunks(diffLines);
 
@@ -505,9 +569,8 @@ public class EditorFragment extends Fragment {
 
         if (mCodeEditor != null) {
             mCodeEditor.setText(sb.toString());
+            rebuildOverlayViews();
             mCodeEditor.post(this::updateHunkOverlayPositions);
-            mCodeEditor.postDelayed(this::updateHunkOverlayPositions, 100);
-            mCodeEditor.postDelayed(this::updateHunkOverlayPositions, 300);
         }
     }
 
@@ -521,7 +584,7 @@ public class EditorFragment extends Fragment {
 
         int start = 0;
         while (start < n && start < m && lines1.get(start).equals(lines2.get(start))) {
-            result.add(new DiffLine(DiffLine.Type.UNCHANGED, " " + lines1.get(start)));
+            result.add(new DiffLine(DiffLine.Type.UNCHANGED, lines1.get(start)));
             start++;
         }
 
@@ -538,11 +601,11 @@ public class EditorFragment extends Fragment {
         if (subN > 0 || subM > 0) {
             if (subN == 0) {
                 for (int j = start; j <= end2; j++) {
-                    result.add(new DiffLine(DiffLine.Type.ADDED, "+" + lines2.get(j)));
+                    result.add(new DiffLine(DiffLine.Type.ADDED, lines2.get(j)));
                 }
             } else if (subM == 0) {
                 for (int i = start; i <= end1; i++) {
-                    result.add(new DiffLine(DiffLine.Type.DELETED, "-" + lines1.get(i)));
+                    result.add(new DiffLine(DiffLine.Type.DELETED, lines1.get(i)));
                 }
             } else {
                 int[][] lcs = new int[subN + 1][subM + 1];
@@ -560,14 +623,14 @@ public class EditorFragment extends Fragment {
                 List<DiffLine> reverseDiff = new ArrayList<>();
                 while (i > 0 || j > 0) {
                     if (i > 0 && j > 0 && lines1.get(start + i - 1).equals(lines2.get(start + j - 1))) {
-                        reverseDiff.add(new DiffLine(DiffLine.Type.UNCHANGED, " " + lines1.get(start + i - 1)));
+                        reverseDiff.add(new DiffLine(DiffLine.Type.UNCHANGED, lines1.get(start + i - 1)));
                         i--;
                         j--;
                     } else if (j > 0 && (i == 0 || lcs[i][j - 1] >= lcs[i - 1][j])) {
-                        reverseDiff.add(new DiffLine(DiffLine.Type.ADDED, "+" + lines2.get(start + j - 1)));
+                        reverseDiff.add(new DiffLine(DiffLine.Type.ADDED, lines2.get(start + j - 1)));
                         j--;
                     } else if (i > 0 && (j == 0 || lcs[i][j - 1] < lcs[i - 1][j])) {
-                        reverseDiff.add(new DiffLine(DiffLine.Type.DELETED, "-" + lines1.get(start + i - 1)));
+                        reverseDiff.add(new DiffLine(DiffLine.Type.DELETED, lines1.get(start + i - 1)));
                         i--;
                     }
                 }
@@ -577,7 +640,7 @@ public class EditorFragment extends Fragment {
         }
 
         for (int k = end1 + 1; k < n; k++) {
-            result.add(new DiffLine(DiffLine.Type.UNCHANGED, " " + lines1.get(k)));
+            result.add(new DiffLine(DiffLine.Type.UNCHANGED, lines1.get(k)));
         }
 
         return result;
@@ -607,13 +670,13 @@ public class EditorFragment extends Fragment {
                 if (currentHunk == null) {
                     currentHunk = new DiffHunk(line2Index, 0, editorLineIndex);
                 }
-                currentHunk.deletedLines.add(line.text.length() >= 1 ? line.text.substring(1) : "");
+                currentHunk.deletedLines.add(line.text != null ? line.text : "");
             } else if (line.type == DiffLine.Type.ADDED) {
                 if (currentHunk == null) {
                     currentHunk = new DiffHunk(line2Index, 0, editorLineIndex);
                 }
                 currentHunk.line2Count++;
-                currentHunk.addedLines.add(line.text.length() >= 1 ? line.text.substring(1) : "");
+                currentHunk.addedLines.add(line.text != null ? line.text : "");
                 line2Index++;
             }
 

@@ -21,7 +21,7 @@ public class LogViewerServiceTest {
 
     @Test
     public void testLogCacheSizeCap() {
-        // Append lines until total exceeds 10 KB (10,240 bytes)
+        // Append lines until total exceeds 5 KB (5,120 bytes)
         String thousandCharLine = new String(new char[1000]).replace('\0', 'A');
         for (int i = 0; i < 20; i++) {
             mService.i("TestTag", thousandCharLine);
@@ -30,7 +30,7 @@ public class LogViewerServiceTest {
         String allLogs = mService.getAllLogs();
         int totalBytes = allLogs.getBytes().length;
 
-        assertTrue("Log buffer bytes (" + totalBytes + ") should be <= 10240 bytes", totalBytes <= 10240);
+        assertTrue("Log buffer bytes (" + totalBytes + ") should be <= 5120 bytes", totalBytes <= 5120);
     }
 
     @Test

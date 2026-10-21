@@ -16,13 +16,14 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.termux.terminal.TerminalSession;
 import com.vibestudio.app.R;
@@ -30,6 +31,10 @@ import com.vibestudio.app.git.GitManager;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.terminal.TerminalSessionManager;
 import com.vibestudio.app.util.FontUtils;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class LogViewerFragment extends Fragment implements LogViewerService.OnLogListener {
 
@@ -47,8 +52,9 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     private LinearLayout mLlProcessContainer;
 
     private TextView mTvLogDetailTitle;
-    private TextView mTvLogContent;
-    private ScrollView mScrollView;
+    private RecyclerView mRvLogContent;
+    private LogAdapter mLogAdapter;
+    private LinearLayoutManager mLayoutManager;
     private Button mBtnBack;
     private Button mBtnCopy;
     private Button mBtnClear;
@@ -67,11 +73,14 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         mLlProcessContainer = view.findViewById(R.id.ll_process_container);
 
         mTvLogDetailTitle = view.findViewById(R.id.tv_log_detail_title);
-        mTvLogContent = view.findViewById(R.id.tv_log_content);
-        if (mTvLogContent != null) {
-            mTvLogContent.setTypeface(FontUtils.getMonospaceTypeface(getContext()));
+        mRvLogContent = view.findViewById(R.id.rv_log_content);
+        if (mRvLogContent != null) {
+            mLayoutManager = new LinearLayoutManager(getContext());
+            mRvLogContent.setLayoutManager(mLayoutManager);
+            mLogAdapter = new LogAdapter(getContext());
+            mRvLogContent.setAdapter(mLogAdapter);
         }
-        mScrollView = view.findViewById(R.id.log_scroll_view);
+
         mBtnBack = view.findViewById(R.id.btn_back_to_processes);
         mBtnCopy = view.findViewById(R.id.btn_copy_logs);
         mBtnClear = view.findViewById(R.id.btn_clear_logs);
@@ -85,10 +94,10 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         if (mBtnCopy != null) {
             mBtnCopy.setOnClickListener(v -> {
                 Context context = getContext();
-                if (context != null && mTvLogContent != null) {
+                if (context != null && mLogAdapter != null) {
                     ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
                     String label = mCurrentMode == Mode.GLOBAL_LOGCAT ? "VibeStudio Logcat" : "VibeStudio Git PTY Logs";
-                    ClipData clip = ClipData.newPlainText(label, mTvLogContent.getText().toString());
+                    ClipData clip = ClipData.newPlainText(label, mLogAdapter.getAllText());
                     if (clipboard != null) {
                         clipboard.setPrimaryClip(clip);
                         Toast.makeText(context, "Logs copied to clipboard!", Toast.LENGTH_SHORT).show();
@@ -102,8 +111,8 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
                 if (mCurrentMode == Mode.GLOBAL_LOGCAT) {
                     mLogService.clear();
                 } else if (mCurrentMode == Mode.GIT_PTY) {
-                    if (mTvLogContent != null) {
-                        mTvLogContent.setText("(PTY log cleared)");
+                    if (mLogAdapter != null) {
+                        mLogAdapter.setLines(Arrays.asList("(PTY log cleared)"));
                     }
                 }
             });
@@ -149,7 +158,7 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         // 1. Global Logcat Process Entry
         int globalPid = Process.myPid();
         String globalPath = context.getFilesDir() != null ? context.getFilesDir().getAbsolutePath() : "App Process";
-        addProcessCard(context, "Global Logcat", "System & app stdout/stderr (~10KB max)",
+        addProcessCard(context, "Global Logcat", "System & app stdout/stderr (~5KB max)",
                 globalPid, globalPath, true, () -> openLogDetail(Mode.GLOBAL_LOGCAT));
 
         // 2. Git Managed PTY Process Entry
@@ -250,10 +259,10 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
 
         if (mode == Mode.GLOBAL_LOGCAT) {
             if (mTvLogDetailTitle != null) {
-                mTvLogDetailTitle.setText("Global Logcat (~10KB Max)");
+                mTvLogDetailTitle.setText("Global Logcat (~5KB Max)");
             }
-            if (mTvLogContent != null) {
-                mTvLogContent.setText(mLogService.getAllLogs());
+            if (mLogAdapter != null) {
+                mLogAdapter.setLines(mLogService.getLogList());
             }
             mLogService.addListener(this);
             scrollToBottom();
@@ -263,8 +272,8 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
             }
             TerminalSession gitSession = GitManager.getInstance().getGitSession();
             String output = TerminalSessionManager.getInstance().getSessionOutput(gitSession);
-            if (mTvLogContent != null) {
-                mTvLogContent.setText(output);
+            if (mLogAdapter != null) {
+                mLogAdapter.setLines(output != null ? Arrays.asList(output.split("\n")) : new ArrayList<>());
             }
             mLogService.addListener(this);
             scrollToBottom();
@@ -275,8 +284,8 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     public void onLogAdded(String logEntry) {
         if (mCurrentMode == Mode.GLOBAL_LOGCAT) {
             mHandler.post(() -> {
-                if (mTvLogContent != null) {
-                    mTvLogContent.append(logEntry + "\n");
+                if (mLogAdapter != null) {
+                    mLogAdapter.appendLine(logEntry);
                     scrollToBottom();
                 }
             });
@@ -284,8 +293,8 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
             mHandler.post(() -> {
                 TerminalSession gitSession = GitManager.getInstance().getGitSession();
                 String output = TerminalSessionManager.getInstance().getSessionOutput(gitSession);
-                if (mTvLogContent != null) {
-                    mTvLogContent.setText(output);
+                if (mLogAdapter != null) {
+                    mLogAdapter.setLines(output != null ? Arrays.asList(output.split("\n")) : new ArrayList<>());
                     scrollToBottom();
                 }
             });
@@ -296,22 +305,88 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     public void onLogsCleared() {
         if (mCurrentMode == Mode.GLOBAL_LOGCAT) {
             mHandler.post(() -> {
-                if (mTvLogContent != null) {
-                    mTvLogContent.setText("");
+                if (mLogAdapter != null) {
+                    mLogAdapter.clear();
                 }
             });
         } else if (mCurrentMode == Mode.GIT_PTY) {
             mHandler.post(() -> {
-                if (mTvLogContent != null) {
-                    mTvLogContent.setText("(PTY log cleared)");
+                if (mLogAdapter != null) {
+                    mLogAdapter.setLines(Arrays.asList("(PTY log cleared)"));
                 }
             });
         }
     }
 
     private void scrollToBottom() {
-        if (mScrollView != null) {
-            mScrollView.post(() -> mScrollView.fullScroll(ScrollView.FOCUS_DOWN));
+        if (mRvLogContent != null && mLogAdapter != null && mLogAdapter.getItemCount() > 0) {
+            mRvLogContent.post(() -> mRvLogContent.smoothScrollToPosition(mLogAdapter.getItemCount() - 1));
+        }
+    }
+
+    private static class LogAdapter extends RecyclerView.Adapter<LogAdapter.LogViewHolder> {
+
+        private final List<String> mLogLines = new ArrayList<>();
+        private final Context mContext;
+
+        public LogAdapter(Context context) {
+            mContext = context;
+        }
+
+        public void setLines(List<String> lines) {
+            mLogLines.clear();
+            if (lines != null) {
+                mLogLines.addAll(lines);
+            }
+            notifyDataSetChanged();
+        }
+
+        public void appendLine(String line) {
+            mLogLines.add(line);
+            notifyItemInserted(mLogLines.size() - 1);
+        }
+
+        public void clear() {
+            mLogLines.clear();
+            notifyDataSetChanged();
+        }
+
+        public String getAllText() {
+            StringBuilder sb = new StringBuilder();
+            for (String line : mLogLines) {
+                sb.append(line).append("\n");
+            }
+            return sb.toString();
+        }
+
+        @NonNull
+        @Override
+        public LogViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_log_line, parent, false);
+            return new LogViewHolder(view);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull LogViewHolder holder, int position) {
+            String text = mLogLines.get(position);
+            holder.mTvLine.setText(text);
+            if (mContext != null) {
+                holder.mTvLine.setTypeface(FontUtils.getMonospaceTypeface(mContext));
+            }
+        }
+
+        @Override
+        public int getItemCount() {
+            return mLogLines.size();
+        }
+
+        static class LogViewHolder extends RecyclerView.ViewHolder {
+            TextView mTvLine;
+
+            public LogViewHolder(@NonNull View itemView) {
+                super(itemView);
+                mTvLine = itemView.findViewById(R.id.tv_log_line);
+            }
         }
     }
 }

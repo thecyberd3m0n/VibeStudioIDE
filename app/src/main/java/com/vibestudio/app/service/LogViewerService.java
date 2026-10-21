@@ -16,7 +16,7 @@ import java.util.Locale;
 public class LogViewerService {
 
     private static final String TAG = "LogViewerService";
-    private static final int MAX_LOG_SIZE_BYTES = 10 * 1024; // 10 KB limit
+    private static final int MAX_LOG_SIZE_BYTES = 5 * 1024; // 5 KB limit
 
     private static LogViewerService sInstance;
 
@@ -136,6 +136,10 @@ public class LogViewerService {
     public synchronized void e(String tag, String message, Throwable t) {
         String msg = message + (t != null ? "\n" + Log.getStackTraceString(t) : "");
         log("ERROR", tag, msg);
+    }
+
+    public synchronized List<String> getLogList() {
+        return new ArrayList<>(mLogBuffer);
     }
 
     public synchronized String getAllLogs() {

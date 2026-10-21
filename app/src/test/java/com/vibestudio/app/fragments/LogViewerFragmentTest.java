@@ -70,7 +70,7 @@ public class LogViewerFragmentTest {
 
         TextView titleView = view.findViewById(R.id.tv_log_detail_title);
         assertNotNull(titleView);
-        assertEquals("Global Logcat (~10KB Max)", titleView.getText().toString());
+        assertEquals("Global Logcat (~5KB Max)", titleView.getText().toString());
 
         // Click Back
         View btnBack = view.findViewById(R.id.btn_back_to_processes);

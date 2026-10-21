@@ -95,25 +95,15 @@
                 android:backgroundTint="#CF6679" />
         </LinearLayout>
 
-        <!-- Scrollable Log Output -->
-        <ScrollView
-            android:id="@+id/log_scroll_view"
+        <!-- Efficient Recycled Log Output -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_log_content"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:background="#1E1E24"
-            android:fillViewport="true"
-            android:padding="12dp">
-
-            <TextView
-                android:id="@+id/tv_log_content"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textColor="#CDD6F4"
-                android:textSize="12sp"
-                android:typeface="monospace"
-                android:textIsSelectable="true" />
-        </ScrollView>
+            android:padding="8dp"
+            android:scrollbars="vertical" />
     </LinearLayout>
 
 </FrameLayout>
