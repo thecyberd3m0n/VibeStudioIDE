@@ -286,12 +286,15 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             updateChangesetBar(context);
         });
 
-        Button btnKeepAll = new Button(context);
+        TextView btnKeepAll = new TextView(context);
         btnKeepAll.setText("Keep");
         btnKeepAll.setTextColor(Color.WHITE);
         btnKeepAll.setTextSize(11);
+        btnKeepAll.setTypeface(null, Typeface.BOLD);
         btnKeepAll.setGravity(Gravity.CENTER);
-        btnKeepAll.setPadding(dpToPx(context, 8), 0, dpToPx(context, 8), 0);
+        btnKeepAll.setPadding(dpToPx(context, 10), 0, dpToPx(context, 10), 0);
+        btnKeepAll.setClickable(true);
+        btnKeepAll.setFocusable(true);
         
         android.graphics.drawable.GradientDrawable keepBg = new android.graphics.drawable.GradientDrawable();
         keepBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
@@ -299,7 +302,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         keepBg.setColor(Color.parseColor("#0E639C"));
         btnKeepAll.setBackground(keepBg);
 
-        LinearLayout.LayoutParams keepParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 28));
+        LinearLayout.LayoutParams keepParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 26));
         keepParams.setMargins(6, 0, 6, 0);
         btnKeepAll.setLayoutParams(keepParams);
         btnKeepAll.setOnClickListener(v -> {
@@ -309,12 +312,15 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         });
         headerRow.addView(btnKeepAll);
 
-        Button btnUndoAll = new Button(context);
+        TextView btnUndoAll = new TextView(context);
         btnUndoAll.setText("Undo");
         btnUndoAll.setTextColor(Color.WHITE);
         btnUndoAll.setTextSize(11);
+        btnUndoAll.setTypeface(null, Typeface.BOLD);
         btnUndoAll.setGravity(Gravity.CENTER);
-        btnUndoAll.setPadding(dpToPx(context, 8), 0, dpToPx(context, 8), 0);
+        btnUndoAll.setPadding(dpToPx(context, 10), 0, dpToPx(context, 10), 0);
+        btnUndoAll.setClickable(true);
+        btnUndoAll.setFocusable(true);
 
         android.graphics.drawable.GradientDrawable undoBg = new android.graphics.drawable.GradientDrawable();
         undoBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
@@ -322,7 +328,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         undoBg.setColor(Color.parseColor("#A93226"));
         btnUndoAll.setBackground(undoBg);
 
-        LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 28));
+        LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 26));
         btnUndoAll.setLayoutParams(undoParams);
         btnUndoAll.setOnClickListener(v -> {
             boolean ok = tracker.rollbackAll();
