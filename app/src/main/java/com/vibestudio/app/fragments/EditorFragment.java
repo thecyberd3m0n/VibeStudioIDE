@@ -1000,6 +1000,7 @@ public class EditorFragment extends Fragment {
     void setTestDiffLinesAndHunks(List<DiffLine> lines) {
         this.mCurrentDiffLines = lines;
         extractDiffHunks(lines);
+        rebuildOverlayViews();
     }
 
     public List<DiffLine> getCurrentDiffLines() {

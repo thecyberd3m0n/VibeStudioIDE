@@ -5,7 +5,52 @@
     android:orientation="vertical"
     android:background="#121216">
 
-    <!-- Branch Selector Dropdown Bar (Above SOURCE CONTROL) -->
+    <!-- Header bar (SOURCE CONTROL title on top) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#1A1A22"
+        android:paddingHorizontal="16dp">
+
+        <TextView
+            android:id="@+id/tv_git_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="SOURCE CONTROL"
+            android:textColor="#E0E0E0"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.05" />
+
+        <ImageButton
+            android:id="@+id/btn_git_refresh"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_refresh"
+            android:contentDescription="Refresh Git status" />
+
+        <TextView
+            android:id="@+id/btn_git_close"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:gravity="center"
+            android:text="▼"
+            android:textColor="#A0A0B0"
+            android:textSize="16sp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Close Git view" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#262630" />
+
+    <!-- Branch Selector Dropdown Bar (Below SOURCE CONTROL) -->
     <LinearLayout
         android:id="@+id/ll_branch_selector"
         android:layout_width="match_parent"
@@ -44,51 +89,6 @@
             android:textColor="#A0A0B0"
             android:textSize="10sp"
             android:layout_marginStart="8dp" />
-    </LinearLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#262630" />
-
-    <!-- Header bar -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="#1A1A22"
-        android:paddingHorizontal="16dp">
-
-        <TextView
-            android:id="@+id/tv_git_title"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="SOURCE CONTROL"
-            android:textColor="#E0E0E0"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.05" />
-
-        <ImageButton
-            android:id="@+id/btn_git_refresh"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_refresh"
-            android:contentDescription="Refresh Git status" />
-
-        <TextView
-            android:id="@+id/btn_git_close"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:gravity="center"
-            android:text="▼"
-            android:textColor="#A0A0B0"
-            android:textSize="16sp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Close Git view" />
     </LinearLayout>
 
     <View
