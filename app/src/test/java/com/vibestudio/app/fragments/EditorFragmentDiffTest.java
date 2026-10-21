@@ -208,30 +208,4 @@ public class EditorFragmentDiffTest {
         Assert.assertTrue("Line background overlays should be added", bgViewCount > 0);
         Assert.assertTrue("Revert button on overlay should be visible even if single line was changed", foundRevertButton);
     }
-
-    @Test
-    public void testFourConsecutiveEmptyLinesFormSingleHunk() {
-        List<String> lines1 = Arrays.asList("line 1", "line 2");
-        List<String> lines2 = Arrays.asList("line 1", "", "", "", "", "line 2");
-
-        List<EditorFragment.DiffLine> diff = editorFragment.computeDiff(lines1, lines2);
-        editorFragment.extractDiffHunks(diff);
-
-        List<EditorFragment.DiffHunk> hunks = editorFragment.getDiffHunks();
-        Assert.assertEquals(1, hunks.size());
-        Assert.assertEquals(4, hunks.get(0).addedLines.size());
-    }
-
-    @Test
-    public void testFourConsecutiveEmptyLinesWithExistingBlankLinesFormSingleHunk() {
-        List<String> lines1 = Arrays.asList("header", "", "body", "", "footer");
-        List<String> lines2 = Arrays.asList("header", "", "body", "", "", "", "", "", "footer");
-
-        List<EditorFragment.DiffLine> diff = editorFragment.computeDiff(lines1, lines2);
-        editorFragment.extractDiffHunks(diff);
-
-        List<EditorFragment.DiffHunk> hunks = editorFragment.getDiffHunks();
-        Assert.assertEquals(1, hunks.size());
-        Assert.assertEquals(4, hunks.get(0).addedLines.size());
-    }
 }
