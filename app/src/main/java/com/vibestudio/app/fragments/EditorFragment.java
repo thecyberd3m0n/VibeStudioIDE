@@ -82,6 +82,7 @@ public class EditorFragment extends Fragment {
     private final List<View> mBtnOverlayViews = new ArrayList<>();
 
     public interface OnDiffRevertListener {
+        boolean onAcceptHunk(EditorFragment fragment, DiffHunk hunk, String file1Path, String file2Path);
         boolean onRevertHunk(EditorFragment fragment, DiffHunk hunk, String file1Path, String file2Path);
         boolean onRevertAll(EditorFragment fragment, String file1Path, String file2Path);
     }
@@ -484,10 +485,21 @@ public class EditorFragment extends Fragment {
         }
 
         if (HunkOption.OPTION_ACCEPT.equalsIgnoreCase(option.getId())) {
-            defaultApplyHunkAccept(hunk);
+            acceptSingleHunk(hunk);
         } else if (HunkOption.OPTION_REVERT.equalsIgnoreCase(option.getId())) {
             revertSingleHunk(hunk);
         }
+    }
+
+    private void acceptSingleHunk(DiffHunk hunk) {
+        if (!mIsDiffMode || mFile1Path == null || hunk == null) return;
+
+        if (mOnDiffRevertListener != null) {
+            boolean handled = mOnDiffRevertListener.onAcceptHunk(this, hunk, mFile1Path, mFile2Path);
+            if (handled) return;
+        }
+
+        defaultApplyHunkAccept(hunk);
     }
 
     public boolean defaultApplyHunkAccept(DiffHunk hunk) {

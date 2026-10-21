@@ -207,9 +207,18 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         EditorFragment fragment = EditorFragment.newDiffInstance(file1Path, file2Path);
         fragment.setOnDiffRevertListener(new EditorFragment.OnDiffRevertListener() {
             @Override
+            public boolean onAcceptHunk(EditorFragment frag, EditorFragment.DiffHunk hunk, String file1, String file2) {
+                boolean ok = frag.defaultApplyHunkAccept(hunk);
+                notifyGitRefresh(file2);
+                refreshActiveChatChangeset();
+                return true;
+            }
+
+            @Override
             public boolean onRevertHunk(EditorFragment frag, EditorFragment.DiffHunk hunk, String file1, String file2) {
                 boolean ok = frag.defaultApplyHunkRevert(hunk);
                 notifyGitRefresh(file2);
+                refreshActiveChatChangeset();
                 return true;
             }
 
@@ -217,6 +226,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             public boolean onRevertAll(EditorFragment frag, String file1, String file2) {
                 boolean ok = frag.defaultApplyRevertAll();
                 notifyGitRefresh(file2);
+                refreshActiveChatChangeset();
                 return true;
             }
 
@@ -239,6 +249,15 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                 fragment,
                 true
         );
+    }
+
+    private void refreshActiveChatChangeset() {
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == TabType.CHAT && tab.getFragment() instanceof ChatFragment) {
+                ChatFragment cf = (ChatFragment) tab.getFragment();
+                cf.refreshChangeset();
+            }
+        }
     }
 
     @Override

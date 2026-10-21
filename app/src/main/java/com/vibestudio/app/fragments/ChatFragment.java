@@ -234,6 +234,13 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     
     private boolean mIsChangesetExpanded = true;
 
+    public void refreshChangeset() {
+        Context context = getContext();
+        if (context != null) {
+            updateChangesetBar(context);
+        }
+    }
+
     private void updateChangesetBar(Context context) {
         if (mChangesetBar == null || mChatSession == null) return;
         WorkspaceChangesetTracker tracker = mChatSession.getChangesetTracker(context);
@@ -435,6 +442,37 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             mBtnActionButton.setBackgroundResource(R.drawable.round_send_button_bg);
             mTvActionIcon.setText("➔");
             mTvActionIcon.setTextColor(Color.parseColor("#121212"));
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        Context context = getContext();
+        if (context != null) {
+            updateChangesetBar(context);
+        }
+    }
+
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (!hidden) {
+            Context context = getContext();
+            if (context != null) {
+                updateChangesetBar(context);
+            }
+        }
+    }
+
+    @Override
+    public void setUserVisibleHint(boolean isVisibleToUser) {
+        super.setUserVisibleHint(isVisibleToUser);
+        if (isVisibleToUser) {
+            Context context = getContext();
+            if (context != null) {
+                updateChangesetBar(context);
+            }
         }
     }
 

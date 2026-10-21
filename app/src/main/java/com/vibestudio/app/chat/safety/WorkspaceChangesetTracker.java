@@ -120,8 +120,81 @@ public class WorkspaceChangesetTracker {
     }
 
     public List<FileChangeRecord> getChanges() {
+        refreshState();
         synchronized (mTrackedChanges) {
             return new ArrayList<>(mTrackedChanges.values());
+        }
+    }
+
+    /**
+     * Validates and cleans up stale/resolved tracked file changes.
+     * Checks if current file content matches the backup content (in MODIFIED case),
+     * or if CREATED file was removed, or DELETED file was restored.
+     */
+    public void refreshState() {
+        synchronized (mTrackedChanges) {
+            List<String> keys = new ArrayList<>(mTrackedChanges.keySet());
+            for (String key : keys) {
+                FileChangeRecord record = mTrackedChanges.get(key);
+                if (record == null) continue;
+
+                File currentFile = new File(record.getFilePath());
+                File backupFile = record.getBackupFile();
+
+                boolean shouldRemove = false;
+
+                switch (record.getChangeType()) {
+                    case CREATED:
+                        // If file no longer exists, created change is resolved
+                        if (!currentFile.exists()) {
+                            shouldRemove = true;
+                        }
+                        break;
+                    case DELETED:
+                        // If file now exists and matches backup, deleted change is restored/resolved
+                        if (currentFile.exists() && backupFile != null && backupFile.exists() && filesAreEqual(currentFile, backupFile)) {
+                            shouldRemove = true;
+                        }
+                        break;
+                    case MODIFIED:
+                        // If current file matches backup content, modification has been resolved/reverted/accepted to match base
+                        if (!currentFile.exists() && (backupFile == null || !backupFile.exists())) {
+                            shouldRemove = true;
+                        } else if (currentFile.exists() && backupFile != null && backupFile.exists() && filesAreEqual(currentFile, backupFile)) {
+                            shouldRemove = true;
+                        }
+                        break;
+                }
+
+                if (shouldRemove) {
+                    if (backupFile != null && backupFile.exists()) {
+                        backupFile.delete();
+                    }
+                    mTrackedChanges.remove(key);
+                }
+            }
+        }
+    }
+
+    private static boolean filesAreEqual(File f1, File f2) {
+        if (!f1.exists() || !f2.exists()) return false;
+        if (f1.length() != f2.length()) return false;
+
+        try (FileInputStream fis1 = new FileInputStream(f1);
+             FileInputStream fis2 = new FileInputStream(f2)) {
+            byte[] buf1 = new byte[8192];
+            byte[] buf2 = new byte[8192];
+            int r1, r2;
+            while ((r1 = fis1.read(buf1)) != -1) {
+                r2 = fis2.read(buf2);
+                if (r1 != r2) return false;
+                for (int i = 0; i < r1; i++) {
+                    if (buf1[i] != buf2[i]) return false;
+                }
+            }
+            return fis2.read(buf2) == -1;
+        } catch (IOException e) {
+            return false;
         }
     }
 
