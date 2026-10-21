@@ -325,7 +325,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         android.graphics.drawable.GradientDrawable undoBg = new android.graphics.drawable.GradientDrawable();
         undoBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
         undoBg.setCornerRadius(dpToPx(context, 4));
-        undoBg.setColor(Color.parseColor("#A93226"));
+        undoBg.setColor(Color.parseColor("#3A3E4B"));
         btnUndoAll.setBackground(undoBg);
 
         LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 26));
