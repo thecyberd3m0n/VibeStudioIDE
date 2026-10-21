@@ -7,6 +7,9 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.Spannable;
+import android.text.SpannableStringBuilder;
+import android.text.style.ForegroundColorSpan;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -308,7 +311,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         Button btnUndoAll = new Button(context);
         btnUndoAll.setText("Undo");
-        btnUndoAll.setTextColor(Color.parseColor("#CCCCCC"));
+        btnUndoAll.setTextColor(Color.WHITE);
         btnUndoAll.setTextSize(11);
         btnUndoAll.setGravity(Gravity.CENTER);
         btnUndoAll.setPadding(dpToPx(context, 8), 0, dpToPx(context, 8), 0);
@@ -316,7 +319,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         android.graphics.drawable.GradientDrawable undoBg = new android.graphics.drawable.GradientDrawable();
         undoBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
         undoBg.setCornerRadius(dpToPx(context, 4));
-        undoBg.setColor(Color.parseColor("#33333D"));
+        undoBg.setColor(Color.parseColor("#A93226"));
         btnUndoAll.setBackground(undoBg);
 
         LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 28));
@@ -380,6 +383,30 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
                 LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
                 tvFileName.setLayoutParams(nameParams);
                 fileRow.addView(tvFileName);
+
+                int[] stats = WorkspaceChangesetTracker.getLineStats(record);
+                int additions = stats[0];
+                int deletions = stats[1];
+
+                TextView tvStats = new TextView(context);
+                tvStats.setTextSize(11);
+                tvStats.setPadding(dpToPx(context, 6), 0, dpToPx(context, 6), 0);
+
+                SpannableStringBuilder statsBuilder = new SpannableStringBuilder();
+                int addStart = statsBuilder.length();
+                statsBuilder.append("+").append(String.valueOf(additions));
+                statsBuilder.setSpan(new ForegroundColorSpan(Color.parseColor("#4EC9B0")), addStart, statsBuilder.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+                int sepStart = statsBuilder.length();
+                statsBuilder.append(" / ");
+                statsBuilder.setSpan(new ForegroundColorSpan(Color.parseColor("#7A828E")), sepStart, statsBuilder.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+                int delStart = statsBuilder.length();
+                statsBuilder.append("-").append(String.valueOf(deletions));
+                statsBuilder.setSpan(new ForegroundColorSpan(Color.parseColor("#E06C75")), delStart, statsBuilder.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+                tvStats.setText(statsBuilder);
+                fileRow.addView(tvStats);
 
                 // Clicking row opens diff view in MainActivity
                 fileRow.setOnClickListener(v -> {

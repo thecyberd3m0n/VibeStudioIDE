@@ -2,11 +2,14 @@ package com.vibestudio.app.chat.safety;
 
 import com.vibestudio.app.service.LogViewerService;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -44,6 +47,10 @@ public class WorkspaceChangesetTracker {
 
         public File getBackupFile() {
             return backupFile;
+        }
+
+        public int[] getLineStats() {
+            return WorkspaceChangesetTracker.getLineStats(this);
         }
     }
 
@@ -174,6 +181,113 @@ public class WorkspaceChangesetTracker {
                 }
             }
         }
+    }
+
+    public static int[] getLineStats(FileChangeRecord record) {
+        if (record == null) return new int[]{0, 0};
+        File currentFile = new File(record.getFilePath());
+        File backupFile = record.getBackupFile();
+
+        if (record.getChangeType() == ChangeType.CREATED) {
+            int lines = countLines(currentFile);
+            return new int[]{lines, 0};
+        } else if (record.getChangeType() == ChangeType.DELETED) {
+            int lines = countLines(backupFile);
+            return new int[]{0, lines};
+        } else {
+            List<String> lines1 = readLines(backupFile);
+            List<String> lines2 = readLines(currentFile);
+            return computeDiffStats(lines1, lines2);
+        }
+    }
+
+    private static int countLines(File file) {
+        if (file == null || !file.exists()) return 0;
+        int count = 0;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            while (reader.readLine() != null) {
+                count++;
+            }
+        } catch (IOException e) {
+            // ignore
+        }
+        return count;
+    }
+
+    private static List<String> readLines(File file) {
+        if (file == null || !file.exists()) return Collections.emptyList();
+        List<String> lines = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.add(line);
+            }
+        } catch (IOException e) {
+            // ignore
+        }
+        return lines;
+    }
+
+    public static int[] computeDiffStats(List<String> lines1, List<String> lines2) {
+        if (lines1 == null) lines1 = Collections.emptyList();
+        if (lines2 == null) lines2 = Collections.emptyList();
+
+        int n = lines1.size();
+        int m = lines2.size();
+
+        int start = 0;
+        while (start < n && start < m && lines1.get(start).equals(lines2.get(start))) {
+            start++;
+        }
+
+        int end1 = n - 1;
+        int end2 = m - 1;
+        while (end1 >= start && end2 >= start && lines1.get(end1).equals(lines2.get(end2))) {
+            end1--;
+            end2--;
+        }
+
+        int subN = end1 - start + 1;
+        int subM = end2 - start + 1;
+
+        if (subN <= 0 && subM <= 0) {
+            return new int[]{0, 0};
+        }
+        if (subN <= 0) {
+            return new int[]{subM, 0};
+        }
+        if (subM <= 0) {
+            return new int[]{0, subN};
+        }
+
+        int[][] lcs = new int[subN + 1][subM + 1];
+        for (int i = 0; i < subN; i++) {
+            for (int j = 0; j < subM; j++) {
+                if (lines1.get(start + i).equals(lines2.get(start + j))) {
+                    lcs[i + 1][j + 1] = lcs[i][j] + 1;
+                } else {
+                    lcs[i + 1][j + 1] = Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+                }
+            }
+        }
+
+        int i = subN, j = subM;
+        int additions = 0;
+        int deletions = 0;
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && lines1.get(start + i - 1).equals(lines2.get(start + j - 1))) {
+                i--;
+                j--;
+            } else if (j > 0 && (i == 0 || lcs[i][j - 1] >= lcs[i - 1][j])) {
+                additions++;
+                j--;
+            } else if (i > 0 && (j == 0 || lcs[i][j - 1] < lcs[i - 1][j])) {
+                deletions++;
+                i--;
+            }
+        }
+
+        return new int[]{additions, deletions};
     }
 
     private static boolean filesAreEqual(File f1, File f2) {
