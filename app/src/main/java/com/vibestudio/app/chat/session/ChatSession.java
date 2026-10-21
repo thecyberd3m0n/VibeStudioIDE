@@ -281,8 +281,22 @@ public class ChatSession {
             // 3. Changeset Pre-edit Tracking
             if (context != null) {
                 WorkspaceChangesetTracker tracker = getChangesetTracker(context);
-                if ("file_create_file".equalsIgnoreCase(toolName) || "editor_write_file".equalsIgnoreCase(toolName) || "file_move".equalsIgnoreCase(toolName)) {
+                if ("file_create_file".equalsIgnoreCase(toolName)
+                        || "file_create_directory".equalsIgnoreCase(toolName)
+                        || "editor_replace_lines".equalsIgnoreCase(toolName)
+                        || "editor_search_replace".equalsIgnoreCase(toolName)
+                        || "editor_insert_lines".equalsIgnoreCase(toolName)
+                        || "editor_save".equalsIgnoreCase(toolName)
+                        || "editor_write_file".equalsIgnoreCase(toolName)) {
                     if (targetPath != null) tracker.recordPreEditState(targetPath);
+                } else if ("file_move".equalsIgnoreCase(toolName)) {
+                    String srcPath = args.optString("src", null);
+                    String dstPath = args.optString("dst", null);
+                    if (srcPath != null) tracker.recordPreDeleteState(srcPath);
+                    if (dstPath != null) tracker.recordPreEditState(dstPath);
+                } else if ("file_copy".equalsIgnoreCase(toolName)) {
+                    String dstPath = args.optString("dst", null);
+                    if (dstPath != null) tracker.recordPreEditState(dstPath);
                 } else if ("file_delete".equalsIgnoreCase(toolName)) {
                     if (targetPath != null) tracker.recordPreDeleteState(targetPath);
                 }

@@ -609,6 +609,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         Context context = getContext();
         if (context != null) {
             addChatMessageUI(context, message);
+            updateChangesetBar(context);
             scrollToBottom();
         }
     }

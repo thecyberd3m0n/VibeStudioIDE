@@ -57,8 +57,19 @@ public class WorkspaceChangesetTracker {
         }
     }
 
-    public void recordPreEditState(String path) {
-        if (path == null || path.trim().isEmpty()) return;
+    private String normalizePath(String rawPath) {
+        if (rawPath == null || rawPath.trim().isEmpty()) return "";
+        File file = new File(rawPath);
+        try {
+            return file.getCanonicalPath();
+        } catch (IOException e) {
+            return file.getAbsolutePath();
+        }
+    }
+
+    public void recordPreEditState(String rawPath) {
+        String path = normalizePath(rawPath);
+        if (path.isEmpty()) return;
         File targetFile = new File(path);
 
         if (mTrackedChanges.containsKey(path)) {
@@ -74,8 +85,9 @@ public class WorkspaceChangesetTracker {
         }
     }
 
-    public void recordPreDeleteState(String path) {
-        if (path == null || path.trim().isEmpty()) return;
+    public void recordPreDeleteState(String rawPath) {
+        String path = normalizePath(rawPath);
+        if (path.isEmpty()) return;
         File targetFile = new File(path);
         if (!targetFile.exists() || mTrackedChanges.containsKey(path)) return;
 
