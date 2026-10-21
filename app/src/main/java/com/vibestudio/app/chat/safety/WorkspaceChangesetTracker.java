@@ -9,7 +9,7 @@ import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -47,7 +47,7 @@ public class WorkspaceChangesetTracker {
         }
     }
 
-    private final Map<String, FileChangeRecord> mTrackedChanges = Collections.synchronizedMap(new HashMap<>());
+    private final Map<String, FileChangeRecord> mTrackedChanges = Collections.synchronizedMap(new LinkedHashMap<>());
     private final File mBackupDir;
 
     public WorkspaceChangesetTracker(File cacheDir) {
@@ -67,7 +67,7 @@ public class WorkspaceChangesetTracker {
         }
 
         if (!targetFile.exists()) {
-            mTrackedChanges.put(path, new FileChangeRecord(path, ChangeType.CREATED, null));
+            mTrackedChanges.put(path, new FileChangeRecord(path, ChangeType.CREATED, createEmptyTempFile()));
         } else {
             File backup = createBackup(targetFile);
             mTrackedChanges.put(path, new FileChangeRecord(path, ChangeType.MODIFIED, backup));
@@ -81,6 +81,19 @@ public class WorkspaceChangesetTracker {
 
         File backup = createBackup(targetFile);
         mTrackedChanges.put(path, new FileChangeRecord(path, ChangeType.DELETED, backup));
+    }
+
+    private File createEmptyTempFile() {
+        try {
+            File emptyFile = File.createTempFile("empty_", ".tmp", mBackupDir);
+            try (FileOutputStream fos = new FileOutputStream(emptyFile)) {
+                fos.write(new byte[0]);
+            }
+            return emptyFile;
+        } catch (IOException e) {
+            LogViewerService.getInstance().e(TAG, "Failed to create empty temp file", e);
+            return null;
+        }
     }
 
     private File createBackup(File targetFile) {
@@ -100,28 +113,44 @@ public class WorkspaceChangesetTracker {
         }
     }
 
+    public boolean rollbackSingle(FileChangeRecord record) {
+        if (record == null) return false;
+        boolean success = true;
+        synchronized (mTrackedChanges) {
+            File target = new File(record.getFilePath());
+            switch (record.getChangeType()) {
+                case CREATED:
+                    if (target.exists()) {
+                        if (!target.delete()) success = false;
+                    }
+                    break;
+                case MODIFIED:
+                case DELETED:
+                    if (record.getBackupFile() != null && record.getBackupFile().exists()) {
+                        try {
+                            copyFile(record.getBackupFile(), target);
+                        } catch (IOException e) {
+                            LogViewerService.getInstance().e(TAG, "Failed to restore backup for " + record.getFilePath(), e);
+                            success = false;
+                        }
+                    }
+                    break;
+            }
+            if (record.getBackupFile() != null && record.getBackupFile().exists()) {
+                record.getBackupFile().delete();
+            }
+            mTrackedChanges.remove(record.getFilePath());
+        }
+        return success;
+    }
+
     public boolean rollbackAll() {
         boolean success = true;
         synchronized (mTrackedChanges) {
-            for (FileChangeRecord record : mTrackedChanges.values()) {
-                File target = new File(record.getFilePath());
-                switch (record.getChangeType()) {
-                    case CREATED:
-                        if (target.exists()) {
-                            if (!target.delete()) success = false;
-                        }
-                        break;
-                    case MODIFIED:
-                    case DELETED:
-                        if (record.getBackupFile() != null && record.getBackupFile().exists()) {
-                            try {
-                                copyFile(record.getBackupFile(), target);
-                            } catch (IOException e) {
-                                LogViewerService.getInstance().e(TAG, "Failed to restore backup for " + record.getFilePath(), e);
-                                success = false;
-                            }
-                        }
-                        break;
+            List<FileChangeRecord> list = new ArrayList<>(mTrackedChanges.values());
+            for (FileChangeRecord record : list) {
+                if (!rollbackSingle(record)) {
+                    success = false;
                 }
             }
             clear();

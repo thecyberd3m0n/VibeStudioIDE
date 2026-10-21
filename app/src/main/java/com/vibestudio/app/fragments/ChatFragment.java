@@ -1,5 +1,7 @@
 package com.vibestudio.app.fragments;
 
+import java.io.File;
+
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -17,6 +19,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.HorizontalScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -228,6 +231,9 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     }
 
     
+    
+    private boolean mIsChangesetExpanded = true;
+
     private void updateChangesetBar(Context context) {
         if (mChangesetBar == null || mChatSession == null) return;
         WorkspaceChangesetTracker tracker = mChatSession.getChangesetTracker(context);
@@ -240,45 +246,149 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         }
 
         mChangesetBar.removeAllViews();
+        mChangesetBar.setOrientation(LinearLayout.VERTICAL);
         mChangesetBar.setVisibility(View.VISIBLE);
 
+        // Header Row (Summary + Toggle Icon + Keep All + Undo All)
+        LinearLayout headerRow = new LinearLayout(context);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setPadding(0, 0, 0, mIsChangesetExpanded ? 8 : 0);
+
+        TextView tvToggle = new TextView(context);
+        tvToggle.setText(mIsChangesetExpanded ? "▼ " : "▶ ");
+        tvToggle.setTextColor(Color.parseColor("#80D0FF"));
+        tvToggle.setTextSize(12);
+        tvToggle.setPadding(0, 0, 8, 0);
+        headerRow.addView(tvToggle);
+
         TextView infoText = new TextView(context);
-        infoText.setText("⚡ " + changes.size() + " file change(s) pending");
+        infoText.setText("⚡ Agent Changes (" + changes.size() + ")");
         infoText.setTextColor(Color.parseColor("#FFD166"));
         infoText.setTextSize(13);
         infoText.setTypeface(null, Typeface.BOLD);
         LinearLayout.LayoutParams infoParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
         infoText.setLayoutParams(infoParams);
-        mChangesetBar.addView(infoText);
+        headerRow.addView(infoText);
 
-        Button btnKeep = new Button(context);
-        btnKeep.setText("Keep");
-        btnKeep.setTextColor(Color.WHITE);
-        btnKeep.setTextSize(12);
-        btnKeep.setBackgroundColor(Color.parseColor("#2E7D32"));
-        LinearLayout.LayoutParams keepParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 36));
-        keepParams.setMargins(8, 0, 8, 0);
-        btnKeep.setLayoutParams(keepParams);
-        btnKeep.setOnClickListener(v -> {
+        headerRow.setOnClickListener(v -> {
+            mIsChangesetExpanded = !mIsChangesetExpanded;
+            updateChangesetBar(context);
+        });
+
+        Button btnKeepAll = new Button(context);
+        btnKeepAll.setText("Keep");
+        btnKeepAll.setTextColor(Color.WHITE);
+        btnKeepAll.setTextSize(11);
+        btnKeepAll.setBackgroundColor(Color.parseColor("#2E7D32"));
+        LinearLayout.LayoutParams keepParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 32));
+        keepParams.setMargins(6, 0, 6, 0);
+        btnKeepAll.setLayoutParams(keepParams);
+        btnKeepAll.setOnClickListener(v -> {
             tracker.clear();
             updateChangesetBar(context);
-            Toast.makeText(context, "Changes kept.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, "All agent changes kept.", Toast.LENGTH_SHORT).show();
         });
-        mChangesetBar.addView(btnKeep);
+        headerRow.addView(btnKeepAll);
 
-        Button btnUndo = new Button(context);
-        btnUndo.setText("Undo");
-        btnUndo.setTextColor(Color.WHITE);
-        btnUndo.setTextSize(12);
-        btnUndo.setBackgroundColor(Color.parseColor("#C62828"));
-        LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 36));
-        btnUndo.setLayoutParams(undoParams);
-        btnUndo.setOnClickListener(v -> {
+        Button btnUndoAll = new Button(context);
+        btnUndoAll.setText("Undo");
+        btnUndoAll.setTextColor(Color.WHITE);
+        btnUndoAll.setTextSize(11);
+        btnUndoAll.setBackgroundColor(Color.parseColor("#C62828"));
+        LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 32));
+        btnUndoAll.setLayoutParams(undoParams);
+        btnUndoAll.setOnClickListener(v -> {
             boolean ok = tracker.rollbackAll();
             updateChangesetBar(context);
-            Toast.makeText(context, ok ? "Changes reverted!" : "Failed to revert some changes.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, ok ? "All agent changes reverted!" : "Failed to revert some changes.", Toast.LENGTH_SHORT).show();
         });
-        mChangesetBar.addView(btnUndo);
+        headerRow.addView(btnUndoAll);
+
+        mChangesetBar.addView(headerRow);
+
+        // Expandable List of Edited Files
+        if (mIsChangesetExpanded) {
+            ScrollView fileListScroll = new ScrollView(context);
+            int maxListHeight = dpToPx(context, 140);
+            LinearLayout.LayoutParams listScrollParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+            if (changes.size() > 3) listScrollParams.height = maxListHeight;
+            fileListScroll.setLayoutParams(listScrollParams);
+            
+
+            LinearLayout fileContainer = new LinearLayout(context);
+            fileContainer.setOrientation(LinearLayout.VERTICAL);
+
+            for (WorkspaceChangesetTracker.FileChangeRecord record : changes) {
+                File file = new File(record.getFilePath());
+                String relativeName = mChatSession.getWorkspacePath() != null
+                        ? file.getAbsolutePath().replace(mChatSession.getWorkspacePath() + "/", "")
+                        : file.getName();
+
+                LinearLayout fileRow = new LinearLayout(context);
+                fileRow.setOrientation(LinearLayout.HORIZONTAL);
+                fileRow.setGravity(Gravity.CENTER_VERTICAL);
+                fileRow.setPadding(8, 8, 8, 8);
+                fileRow.setBackgroundColor(Color.parseColor("#171A21"));
+                LinearLayout.LayoutParams fileRowParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+                fileRowParams.setMargins(0, 4, 0, 4);
+                fileRow.setLayoutParams(fileRowParams);
+
+                TextView tvBadge = new TextView(context);
+                String badgeText = "[M]";
+                int badgeColor = Color.parseColor("#E5C07B");
+                if (record.getChangeType() == WorkspaceChangesetTracker.ChangeType.CREATED) {
+                    badgeText = "[A]";
+                    badgeColor = Color.parseColor("#98C379");
+                } else if (record.getChangeType() == WorkspaceChangesetTracker.ChangeType.DELETED) {
+                    badgeText = "[D]";
+                    badgeColor = Color.parseColor("#E06C75");
+                }
+                tvBadge.setText(badgeText + " ");
+                tvBadge.setTextColor(badgeColor);
+                tvBadge.setTextSize(12);
+                tvBadge.setTypeface(null, Typeface.BOLD);
+                fileRow.addView(tvBadge);
+
+                TextView tvFileName = new TextView(context);
+                tvFileName.setText(relativeName);
+                tvFileName.setTextColor(Color.parseColor("#61AFEF"));
+                tvFileName.setTextSize(12);
+                LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
+                tvFileName.setLayoutParams(nameParams);
+                fileRow.addView(tvFileName);
+
+                // Clicking row opens diff view in MainActivity
+                fileRow.setOnClickListener(v -> {
+                    if (getActivity() instanceof com.vibestudio.app.activity.MainActivity) {
+                        File f1 = record.getBackupFile();
+                        File f2 = new File(record.getFilePath());
+                        if (f1 != null && f2 != null) {
+                            ((com.vibestudio.app.activity.MainActivity) getActivity()).openDiffInEditor(f1.getAbsolutePath(), f2.getAbsolutePath());
+                        }
+                    }
+                });
+
+                Button btnSingleUndo = new Button(context);
+                btnSingleUndo.setText("↩");
+                btnSingleUndo.setTextColor(Color.parseColor("#E06C75"));
+                btnSingleUndo.setTextSize(12);
+                btnSingleUndo.setBackgroundColor(Color.TRANSPARENT);
+                LinearLayout.LayoutParams singleUndoParams = new LinearLayout.LayoutParams(dpToPx(context, 28), dpToPx(context, 28));
+                btnSingleUndo.setLayoutParams(singleUndoParams);
+                btnSingleUndo.setOnClickListener(v -> {
+                    boolean ok = tracker.rollbackSingle(record);
+                    updateChangesetBar(context);
+                    Toast.makeText(context, ok ? "Reverted " + relativeName : "Failed to revert " + relativeName, Toast.LENGTH_SHORT).show();
+                });
+                fileRow.addView(btnSingleUndo);
+
+                fileContainer.addView(fileRow);
+            }
+
+            fileListScroll.addView(fileContainer);
+            mChangesetBar.addView(fileListScroll);
+        }
     }
 
     private int dpToPx(Context context, int dp) {
