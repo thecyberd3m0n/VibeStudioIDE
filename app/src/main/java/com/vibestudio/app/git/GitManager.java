@@ -225,4 +225,24 @@ public class GitManager {
         if (path == null) return "''";
         return "'" + path.replace("'", "'\\''") + "'";
     }
+
+    public static boolean isAuthorIdentityError(String output) {
+        if (output == null) return false;
+        String lower = output.toLowerCase();
+        return lower.contains("author identity unknown")
+            || lower.contains("please tell me who you are")
+            || lower.contains("unable to auto-detect email address")
+            || lower.contains("user.name")
+            || lower.contains("user.email");
+    }
+
+    public void setGitCredentials(Context context, String name, String email, File repoDir, GitCallback callback) {
+        if (name == null) name = "";
+        if (email == null) email = "";
+        String safeName = name.replace("'", "'\''");
+        String safeEmail = email.replace("'", "'\''");
+        String cmd = "config --global user.name '" + safeName + "' && git config --global user.email '" + safeEmail + "'";
+        runGitCommandAsync(context, cmd, repoDir, callback);
+    }
+
 }

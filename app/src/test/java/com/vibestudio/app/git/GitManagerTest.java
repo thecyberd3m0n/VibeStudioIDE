@@ -51,4 +51,16 @@ public class GitManagerTest {
         Assert.assertNotNull(instance1);
         Assert.assertSame(instance1, instance2);
     }
+
+    @Test
+    public void testIsAuthorIdentityError() {
+        Assert.assertTrue(GitManager.isAuthorIdentityError("*** Please tell me who you are.\nRun\n  git config --global user.email 'you@example.com'"));
+        Assert.assertTrue(GitManager.isAuthorIdentityError("fatal: Author identity unknown"));
+        Assert.assertTrue(GitManager.isAuthorIdentityError("fatal: unable to auto-detect email address (got 'user@localhost')"));
+        Assert.assertTrue(GitManager.isAuthorIdentityError("Please set your user.name and user.email"));
+
+        Assert.assertFalse(GitManager.isAuthorIdentityError("[main 1234567] Commit successful"));
+        Assert.assertFalse(GitManager.isAuthorIdentityError("fatal: pathspec 'nonexistent' did not match any files"));
+        Assert.assertFalse(GitManager.isAuthorIdentityError(null));
+    }
 }

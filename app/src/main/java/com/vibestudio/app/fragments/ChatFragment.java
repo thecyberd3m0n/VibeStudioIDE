@@ -11,6 +11,11 @@ import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.style.ForegroundColorSpan;
 import android.text.TextWatcher;
+import android.text.InputFilter;
+import android.text.Spanned;
+import android.text.style.StyleSpan;
+import android.text.style.UnderlineSpan;
+
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -34,6 +39,9 @@ import com.vibestudio.app.R;
 import com.vibestudio.app.chat.connection.ModelConnectionManager;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.chat.session.ChatSession;
+import com.vibestudio.app.chat.skills.Skill;
+import java.util.ArrayList;
+
 import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
 import android.widget.Button;
 import com.vibestudio.app.chat.session.ChatSessionManager;
@@ -43,6 +51,19 @@ import com.vibestudio.app.view.BaseToolMessageView;
 import java.util.List;
 
 public class ChatFragment extends Fragment implements ChatSession.OnChatMessageListener {
+
+    public static class SkillSpan {
+        private final String mSkillName;
+
+        public SkillSpan(String skillName) {
+            this.mSkillName = skillName;
+        }
+
+        public String getSkillName() {
+            return mSkillName;
+        }
+    }
+
 
     private static final String ARG_SESSION_ID = "session_id";
     private static final int MATCH_PARENT = -1;
@@ -58,6 +79,10 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     private TextView mTvActionIcon;
     private ProgressBar mProgressBar;
     private LinearLayout mChangesetBar;
+
+    private LinearLayout mSkillAutocompleteContainer;
+    private ScrollView mSkillAutocompleteScroll;
+    private LinearLayout mSkillAutocompleteList;
 
     public static ChatFragment newInstance(ChatSession session) {
         ChatFragment fragment = new ChatFragment();
@@ -129,6 +154,44 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         mMsgInput.setBackgroundColor(Color.parseColor("#1E1E24"));
         mMsgInput.setPadding(24, 20, 24, 20);
 
+        mMsgInput.setFilters(new InputFilter[] {
+            new InputFilter() {
+                @Override
+                public CharSequence filter(CharSequence source, int start, int end, Spanned dest, int dstart, int dend) {
+                    if (source != null && source.length() == 0 && dend - dstart == 1) {
+                        SkillSpan[] spans = dest.getSpans(0, dest.length(), SkillSpan.class);
+                        for (SkillSpan span : spans) {
+                            int spanStart = dest.getSpanStart(span);
+                            int spanEnd = dest.getSpanEnd(span);
+                            if (spanStart < 0 || spanEnd < 0) continue;
+
+                            boolean touchesSpan = (dstart >= spanStart && dstart <= spanEnd) ||
+                                                  (dstart == spanEnd && dend == spanEnd + 1) ||
+                                                  (dstart == spanEnd && spanEnd < dest.length() && dest.charAt(spanEnd) == ' ');
+
+                            if (touchesSpan) {
+                                final int deleteStart = spanStart;
+                                final int deleteEnd = (spanEnd < dest.length() && dest.charAt(spanEnd) == ' ') ? spanEnd + 1 : spanEnd;
+                                mMsgInput.post(() -> {
+                                    Editable editable = mMsgInput.getText();
+                                    if (editable != null) {
+                                        int st = Math.min(deleteStart, editable.length());
+                                        int en = Math.min(deleteEnd, editable.length());
+                                        if (st >= 0 && en > st) {
+                                            editable.removeSpan(span);
+                                            editable.delete(st, en);
+                                        }
+                                    }
+                                });
+                                return "";
+                            }
+                        }
+                    }
+                    return null;
+                }
+            }
+        });
+
         LinearLayout.LayoutParams inParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
         mMsgInput.setLayoutParams(inParams);
 
@@ -161,10 +224,42 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 updateActionButtonState();
+                checkAndShowSkillAutocomplete(context, s != null ? s.toString() : "");
             }
 
             @Override
             public void afterTextChanged(Editable s) {
+                if (s == null || mChatSession == null) return;
+                String text = s.toString();
+                List<Skill> skills = mChatSession.getAvailableSkills();
+                if (skills == null) return;
+                for (Skill skill : skills) {
+                    String cmd = skill.getSlashCommand();
+                    int index = 0;
+                    while ((index = text.indexOf(cmd, index)) != -1) {
+                        int spanStart = index;
+                        int spanEnd = index + cmd.length();
+
+                        boolean validPre = (spanStart == 0 || Character.isWhitespace(text.charAt(spanStart - 1)));
+                        boolean validPost = (spanEnd == text.length() || Character.isWhitespace(text.charAt(spanEnd)));
+
+                        if (validPre && validPost) {
+                            SkillSpan[] existingSpans = s.getSpans(spanStart, spanEnd, SkillSpan.class);
+                            if (existingSpans.length == 0) {
+                                SkillSpan skillSpan = new SkillSpan(skill.getName());
+                                ForegroundColorSpan colorSpan = new ForegroundColorSpan(Color.parseColor("#388BFD"));
+                                StyleSpan boldSpan = new StyleSpan(Typeface.BOLD);
+                                UnderlineSpan underlineSpan = new UnderlineSpan();
+
+                                s.setSpan(skillSpan, spanStart, spanEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                s.setSpan(colorSpan, spanStart, spanEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                s.setSpan(boldSpan, spanStart, spanEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                s.setSpan(underlineSpan, spanStart, spanEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            }
+                        }
+                        index = spanEnd;
+                    }
+                }
             }
         });
 
@@ -211,7 +306,34 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             layout.addView(topBar);
         }
 
+        // Skill Autocomplete Container (Drop-Up Popup View)
+        mSkillAutocompleteContainer = new LinearLayout(context);
+        mSkillAutocompleteContainer.setOrientation(LinearLayout.VERTICAL);
+        mSkillAutocompleteContainer.setVisibility(View.GONE);
+
+        android.graphics.drawable.GradientDrawable popupBg = new android.graphics.drawable.GradientDrawable();
+        popupBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        popupBg.setCornerRadii(new float[]{
+                dpToPx(context, 8), dpToPx(context, 8),
+                dpToPx(context, 8), dpToPx(context, 8),
+                0, 0, 0, 0
+        });
+        popupBg.setColor(Color.parseColor("#252526"));
+        popupBg.setStroke(dpToPx(context, 1), Color.parseColor("#3A3E4B"));
+        mSkillAutocompleteContainer.setBackground(popupBg);
+        mSkillAutocompleteContainer.setPadding(0, 4, 0, 4);
+
+        mSkillAutocompleteScroll = new ScrollView(context);
+        LinearLayout.LayoutParams popupScrollParams = new LinearLayout.LayoutParams(MATCH_PARENT, dpToPx(context, 160));
+        mSkillAutocompleteScroll.setLayoutParams(popupScrollParams);
+
+        mSkillAutocompleteList = new LinearLayout(context);
+        mSkillAutocompleteList.setOrientation(LinearLayout.VERTICAL);
+        mSkillAutocompleteScroll.addView(mSkillAutocompleteList);
+        mSkillAutocompleteContainer.addView(mSkillAutocompleteScroll);
+
         layout.addView(mChatScroll);
+        layout.addView(mSkillAutocompleteContainer);
         // Changeset Bar
         mChangesetBar = new LinearLayout(context);
         mChangesetBar.setOrientation(LinearLayout.HORIZONTAL);
@@ -235,6 +357,114 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
     
     
+    private void checkAndShowSkillAutocomplete(Context context, String input) {
+        if (mSkillAutocompleteContainer == null || mSkillAutocompleteList == null) return;
+        if (input == null || input.isEmpty()) {
+            mSkillAutocompleteContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        int selectionEnd = mMsgInput.getSelectionEnd();
+        if (selectionEnd <= 0) selectionEnd = input.length();
+        String sub = input.substring(0, selectionEnd);
+
+        int lastSlash = sub.lastIndexOf("/");
+        if (lastSlash < 0) {
+            mSkillAutocompleteContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        if (lastSlash > 0 && !Character.isWhitespace(sub.charAt(lastSlash - 1))) {
+            mSkillAutocompleteContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        String query = sub.substring(lastSlash + 1);
+        if (query.contains(" ")) {
+            mSkillAutocompleteContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        List<Skill> allSkills = getChatSession().getAvailableSkills();
+        List<Skill> matchedSkills = new ArrayList<>();
+        for (Skill s : allSkills) {
+            if (s.getName().toLowerCase().startsWith(query.toLowerCase())
+                    || s.getName().toLowerCase().contains(query.toLowerCase())) {
+                matchedSkills.add(s);
+            }
+        }
+
+        if (matchedSkills.isEmpty()) {
+            mSkillAutocompleteContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        renderSkillAutocompleteList(context, matchedSkills, lastSlash, selectionEnd);
+        mSkillAutocompleteContainer.setVisibility(View.VISIBLE);
+    }
+
+    private void renderSkillAutocompleteList(Context context, List<Skill> skills, int lastSlashIdx, int selectionEnd) {
+        mSkillAutocompleteList.removeAllViews();
+
+        for (Skill skill : skills) {
+            LinearLayout itemRow = new LinearLayout(context);
+            itemRow.setOrientation(LinearLayout.HORIZONTAL);
+            itemRow.setGravity(Gravity.CENTER_VERTICAL);
+            itemRow.setPadding(dpToPx(context, 16), dpToPx(context, 10), dpToPx(context, 16), dpToPx(context, 10));
+            itemRow.setClickable(true);
+            itemRow.setFocusable(true);
+
+            TypedValue outValue = new TypedValue();
+            context.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
+            itemRow.setBackgroundResource(outValue.resourceId);
+
+            TextView tvCmd = new TextView(context);
+            tvCmd.setText(skill.getSlashCommand());
+            tvCmd.setTextColor(Color.parseColor("#80D0FF"));
+            tvCmd.setTextSize(14);
+            tvCmd.setTypeface(null, Typeface.BOLD);
+            tvCmd.setPadding(0, 0, dpToPx(context, 12), 0);
+            itemRow.addView(tvCmd);
+
+            TextView tvDesc = new TextView(context);
+            tvDesc.setText(skill.getDescription());
+            tvDesc.setTextColor(Color.parseColor("#A0A5B5"));
+            tvDesc.setTextSize(12);
+            tvDesc.setSingleLine(true);
+            tvDesc.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            LinearLayout.LayoutParams descParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
+            tvDesc.setLayoutParams(descParams);
+            itemRow.addView(tvDesc);
+
+            itemRow.setOnClickListener(v -> {
+                Editable text = mMsgInput.getText();
+                if (text != null) {
+                    String cmd = skill.getSlashCommand();
+                    String replacement = cmd + " ";
+                    int spanStart = lastSlashIdx;
+                    int spanEnd = lastSlashIdx + cmd.length();
+
+                    text.replace(lastSlashIdx, selectionEnd, replacement);
+
+                    SkillSpan skillSpan = new SkillSpan(skill.getName());
+                    ForegroundColorSpan colorSpan = new ForegroundColorSpan(Color.parseColor("#388BFD"));
+                    StyleSpan boldSpan = new StyleSpan(Typeface.BOLD);
+                    UnderlineSpan underlineSpan = new UnderlineSpan();
+
+                    text.setSpan(skillSpan, spanStart, spanEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    text.setSpan(colorSpan, spanStart, spanEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    text.setSpan(boldSpan, spanStart, spanEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    text.setSpan(underlineSpan, spanStart, spanEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+                    mMsgInput.setSelection(spanStart + replacement.length());
+                }
+                mSkillAutocompleteContainer.setVisibility(View.GONE);
+            });
+
+            mSkillAutocompleteList.addView(itemRow);
+        }
+    }
+
     private boolean mIsChangesetExpanded = true;
 
     public void refreshChangeset() {
@@ -453,6 +683,9 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
     private void onActionButtonClicked(Context context) {
         if (mChatSession == null) return;
+        if (mSkillAutocompleteContainer != null) {
+            mSkillAutocompleteContainer.setVisibility(View.GONE);
+        }
 
         boolean isLoading = mChatSession.isLoading();
         String text = mMsgInput.getText() != null ? mMsgInput.getText().toString() : "";

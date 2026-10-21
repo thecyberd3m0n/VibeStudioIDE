@@ -486,6 +486,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             post(() -> {
                 if (success) {
                     Toast.makeText(getContext(), successMsg, Toast.LENGTH_SHORT).show();
+                } else if (GitManager.isAuthorIdentityError(output)) {
+                    showGitCredentialsDialog(() -> executeGitAction(command, successMsg));
                 } else {
                     Toast.makeText(getContext(), "Action failed: " + output, Toast.LENGTH_LONG).show();
                 }
@@ -752,6 +754,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                     Toast.makeText(getContext(), "Commit successful", Toast.LENGTH_SHORT).show();
                     mEtCommitMessage.setText("");
                     refreshStatus();
+                } else if (GitManager.isAuthorIdentityError(output)) {
+                    showGitCredentialsDialog(() -> executeCommit());
                 } else {
                     Toast.makeText(getContext(), "Commit failed: " + output, Toast.LENGTH_LONG).show();
                 }
@@ -772,6 +776,66 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 refreshStatus();
             });
         });
+    }
+
+
+    private void showGitCredentialsDialog(Runnable onCredentialsConfigured) {
+        if (getContext() == null) return;
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Configure Git Identity");
+
+        LinearLayout layout = new LinearLayout(getContext());
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(12));
+
+        TextView tvMsg = new TextView(getContext());
+        tvMsg.setText("Git author identity is missing. Please enter your name and email:");
+        tvMsg.setTextColor(Color.parseColor("#D4D4D4"));
+        tvMsg.setTextSize(14);
+        tvMsg.setPadding(0, 0, 0, dpToPx(12));
+        layout.addView(tvMsg);
+
+        final EditText etName = new EditText(getContext());
+        etName.setHint("Name (e.g. Developer)");
+        etName.setHintTextColor(Color.parseColor("#777777"));
+        etName.setTextColor(Color.parseColor("#FFFFFF"));
+        etName.setSingleLine(true);
+        layout.addView(etName);
+
+        final EditText etEmail = new EditText(getContext());
+        etEmail.setHint("Email (e.g. dev@example.com)");
+        etEmail.setHintTextColor(Color.parseColor("#777777"));
+        etEmail.setTextColor(Color.parseColor("#FFFFFF"));
+        etEmail.setSingleLine(true);
+        layout.addView(etEmail);
+
+        builder.setView(layout);
+
+        builder.setPositiveButton("Save & Retry", (dialog, which) -> {
+            String name = etName.getText().toString().trim();
+            String email = etEmail.getText().toString().trim();
+            if (name.isEmpty() || email.isEmpty()) {
+                Toast.makeText(getContext(), "Name and email cannot be empty", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            GitManager.getInstance().setGitCredentials(getContext(), name, email, mRepoDir, (success, output) -> {
+                post(() -> {
+                    if (success) {
+                        Toast.makeText(getContext(), "Git identity saved", Toast.LENGTH_SHORT).show();
+                        if (onCredentialsConfigured != null) {
+                            onCredentialsConfigured.run();
+                        }
+                    } else {
+                        Toast.makeText(getContext(), "Failed to save git identity: " + output, Toast.LENGTH_LONG).show();
+                    }
+                });
+            });
+        });
+
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
     }
 
     private int dpToPx(int dp) {

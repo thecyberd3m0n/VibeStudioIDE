@@ -75,6 +75,7 @@ public class WorkspaceChangesetTracker {
     }
 
     public void recordPreEditState(String rawPath) {
+        refreshState();
         String path = normalizePath(rawPath);
         if (path.isEmpty()) return;
         File targetFile = new File(path);
@@ -93,6 +94,7 @@ public class WorkspaceChangesetTracker {
     }
 
     public void recordPreDeleteState(String rawPath) {
+        refreshState();
         String path = normalizePath(rawPath);
         if (path.isEmpty()) return;
         File targetFile = new File(path);
@@ -158,17 +160,31 @@ public class WorkspaceChangesetTracker {
                         }
                         break;
                     case DELETED:
-                        // If file now exists and matches backup, deleted change is restored/resolved
-                        if (currentFile.exists() && backupFile != null && backupFile.exists() && filesAreEqual(currentFile, backupFile)) {
-                            shouldRemove = true;
+                        // If file now exists and matches backup content or has 0 diff stats, deleted change is restored/resolved
+                        if (currentFile.exists() && backupFile != null && backupFile.exists()) {
+                            if (filesAreEqual(currentFile, backupFile)) {
+                                shouldRemove = true;
+                            } else {
+                                int[] stats = computeDiffStats(readLines(backupFile), readLines(currentFile));
+                                if (stats[0] == 0 && stats[1] == 0) {
+                                    shouldRemove = true;
+                                }
+                            }
                         }
                         break;
                     case MODIFIED:
-                        // If current file matches backup content, modification has been resolved/reverted/accepted to match base
+                        // If current file matches backup content or diff stats are [0, 0], modification has been resolved/reverted
                         if (!currentFile.exists() && (backupFile == null || !backupFile.exists())) {
                             shouldRemove = true;
-                        } else if (currentFile.exists() && backupFile != null && backupFile.exists() && filesAreEqual(currentFile, backupFile)) {
-                            shouldRemove = true;
+                        } else if (currentFile.exists() && backupFile != null && backupFile.exists()) {
+                            if (filesAreEqual(currentFile, backupFile)) {
+                                shouldRemove = true;
+                            } else {
+                                int[] stats = computeDiffStats(readLines(backupFile), readLines(currentFile));
+                                if (stats[0] == 0 && stats[1] == 0) {
+                                    shouldRemove = true;
+                                }
+                            }
                         }
                         break;
                 }

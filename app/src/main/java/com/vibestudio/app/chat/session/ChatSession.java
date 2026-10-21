@@ -13,6 +13,8 @@ import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.chat.safety.PermissionPromptManager;
 import com.vibestudio.app.chat.safety.WorkspaceBoundaryGuard;
 import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
+import com.vibestudio.app.chat.skills.Skill;
+import com.vibestudio.app.chat.skills.SkillScanner;
 import com.vibestudio.app.chat.tool.ToolCallParser;
 import com.vibestudio.app.chat.tool.ToolExecutionManager;
 import com.vibestudio.app.mcp.McpClientManager;
@@ -96,6 +98,25 @@ public class ChatSession {
         return mStopRequested;
     }
 
+    public List<Skill> getAvailableSkills() {
+        return SkillScanner.scanSkills(mWorkspacePath);
+    }
+
+    public Skill resolveSkill(String slashCommandOrName) {
+        if (slashCommandOrName == null) return null;
+        String name = slashCommandOrName.trim();
+        if (name.startsWith("/")) {
+            name = name.substring(1);
+        }
+        name = name.toLowerCase();
+        for (Skill skill : getAvailableSkills()) {
+            if (skill.getName().equalsIgnoreCase(name)) {
+                return skill;
+            }
+        }
+        return null;
+    }
+
     public void stopAgentExecution() {
         LogViewerService.getInstance().i(TAG, "Agent execution stop requested by user.");
         mStopRequested = true;
@@ -158,7 +179,32 @@ public class ChatSession {
         if (userText == null || userText.trim().isEmpty()) return;
 
         mStopRequested = false;
-        ChatMessage userMsg = new ChatMessage("User", userText, true);
+        String messageToStore = userText;
+        String trimmed = userText.trim();
+        if (trimmed.startsWith("/")) {
+            int spaceIdx = trimmed.indexOf(" ");
+            String cmdName = spaceIdx > 0 ? trimmed.substring(1, spaceIdx) : trimmed.substring(1);
+            String remaining = spaceIdx > 0 ? trimmed.substring(spaceIdx + 1).trim() : "";
+
+            Skill matchedSkill = resolveSkill(cmdName);
+            if (matchedSkill != null) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("[Skill: ").append(matchedSkill.getName());
+                if (matchedSkill.getDescription() != null && !matchedSkill.getDescription().isEmpty()) {
+                    sb.append(" - ").append(matchedSkill.getDescription());
+                }
+                sb.append("]\n");
+                if (matchedSkill.getContent() != null && !matchedSkill.getContent().isEmpty()) {
+                    sb.append(matchedSkill.getContent()).append("\n");
+                }
+                if (!remaining.isEmpty()) {
+                    sb.append("\nUser Request: ").append(remaining);
+                }
+                messageToStore = sb.toString();
+            }
+        }
+
+        ChatMessage userMsg = new ChatMessage("User", messageToStore, true);
 
         synchronized (this) {
             mMessages.add(userMsg);
