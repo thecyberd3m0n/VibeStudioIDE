@@ -652,7 +652,7 @@ public class EditorFragment extends Fragment {
                 int i = subN, j = subM;
                 List<DiffLine> reverseDiff = new ArrayList<>();
                 while (i > 0 || j > 0) {
-                    if (i > 0 && j > 0 && lines1.get(start + i - 1).equals(lines2.get(start + j - 1))) {
+                    if (i > 0 && j > 0 && lines1.get(start + i - 1).equals(lines2.get(start + j - 1)) && lcs[i][j] == lcs[i - 1][j - 1] + 1) {
                         reverseDiff.add(new DiffLine(DiffLine.Type.UNCHANGED, lines1.get(start + i - 1)));
                         i--;
                         j--;
