@@ -515,6 +515,25 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             ((MainActivity) getContext()).openDiffInEditor(file1, file2);
         } else {
             EditorFragment frag = EditorFragment.newDiffInstance(file1, file2);
+            frag.setOnDiffRevertListener(new EditorFragment.OnDiffRevertListener() {
+                @Override
+                public boolean onRevertHunk(EditorFragment fragment, EditorFragment.DiffHunk hunk, String f1, String f2) {
+                    boolean ok = fragment.defaultApplyHunkRevert(hunk);
+                    if (mRepoDir != null && getContext() != null) {
+                        GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), mRepoDir, null);
+                    }
+                    return true;
+                }
+
+                @Override
+                public boolean onRevertAll(EditorFragment fragment, String f1, String f2) {
+                    boolean ok = fragment.defaultApplyRevertAll();
+                    if (mRepoDir != null && getContext() != null) {
+                        GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), mRepoDir, null);
+                    }
+                    return true;
+                }
+            });
             String title = "Diff: " + new File(file1).getName() + " ↔ " + new File(file2).getName();
             TabManager.getInstance().openTab(TabType.EDITOR, title, "🔀", frag, true);
         }

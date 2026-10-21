@@ -1,6 +1,7 @@
 package com.vibestudio.app.fragments;
 
-import com.vibestudio.app.git.GitManager;
+import android.content.Context;
+
 
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -79,6 +80,18 @@ public class EditorFragment extends Fragment {
     private List<DiffLine> mCurrentDiffLines = new ArrayList<>();
     private final List<View> mBgOverlayViews = new ArrayList<>();
     private final List<ImageButton> mBtnOverlayViews = new ArrayList<>();
+
+    public interface OnDiffRevertListener {
+        boolean onRevertHunk(EditorFragment fragment, DiffHunk hunk, String file1Path, String file2Path);
+        boolean onRevertAll(EditorFragment fragment, String file1Path, String file2Path);
+    }
+
+    private OnDiffRevertListener mOnDiffRevertListener;
+
+    public void setOnDiffRevertListener(OnDiffRevertListener listener) {
+        this.mOnDiffRevertListener = listener;
+    }
+
 
     public static class DiffHunk {
         public int line2Start; // 0-based start in modified file
@@ -371,7 +384,7 @@ public class EditorFragment extends Fragment {
 
         new AlertDialog.Builder(getContext())
                 .setTitle("Revert File")
-                .setMessage("Do you want to revert this file to index?")
+                .setMessage("Do you want to revert this file?")
                 .setPositiveButton("Revert", (dialog, which) -> revertAllToFile1())
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -379,67 +392,51 @@ public class EditorFragment extends Fragment {
 
     private void revertAllToFile1() {
         if (!mIsDiffMode || mFile1Path == null || mFile2Path == null) return;
-        try {
-            File targetFile = new File(mFile2Path);
-            boolean file1HadTrailing = checkTrailingNewline(new File(mFile1Path));
-            List<String> baseLines = readLinesFromFile(mFile1Path);
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < baseLines.size(); i++) {
-                if (i > 0) sb.append("\n");
-                sb.append(baseLines.get(i));
-            }
-            if (file1HadTrailing && sb.length() > 0 && !sb.toString().endsWith("\n")) {
-                sb.append("\n");
-            }
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(targetFile))) {
-                writer.write(sb.toString());
-            }
-            if (getContext() != null) {
-                Toast.makeText(getContext(), "Reverted file to index", Toast.LENGTH_SHORT).show();
-            }
-            loadDiffContent(mFile1Path, mFile2Path);
 
-            File repoRoot = GitManager.getInstance().findGitRoot(targetFile);
-            if (repoRoot != null && getContext() != null) {
-                GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), repoRoot, null);
-            }
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to revert file to index", e);
-            if (getContext() != null) {
-                Toast.makeText(getContext(), "Failed to revert: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
+        if (mOnDiffRevertListener != null) {
+            boolean handled = mOnDiffRevertListener.onRevertAll(this, mFile1Path, mFile2Path);
+            if (handled) return;
         }
+
+        defaultApplyRevertAll();
     }
 
     private void revertSingleHunk(DiffHunk hunk) {
-        if (!mIsDiffMode || mFile2Path == null) return;
-        List<DiffHunk> singleList = new ArrayList<>();
-        singleList.add(hunk);
-        applyHunkRevert(singleList, "Reverted change");
+        if (!mIsDiffMode || mFile2Path == null || hunk == null) return;
+
+        if (mOnDiffRevertListener != null) {
+            boolean handled = mOnDiffRevertListener.onRevertHunk(this, hunk, mFile1Path, mFile2Path);
+            if (handled) return;
+        }
+
+        defaultApplyHunkRevert(hunk);
     }
 
-    private void applyHunkRevert(List<DiffHunk> hunksToRevert, String successMsg) {
+    public boolean defaultApplyHunkRevert(DiffHunk hunk) {
+        if (!mIsDiffMode || mFile2Path == null || hunk == null) return false;
+
         File file2 = new File(mFile2Path);
+        if (!file2.exists()) return false;
+
         try {
             List<String> lines2 = readLinesFromFile(mFile2Path);
 
-            Collections.sort(hunksToRevert, (h1, h2) -> Integer.compare(h2.line2Start, h1.line2Start));
+            int start = hunk.line2Start;
+            int countToRemove = hunk.line2Count;
 
-            for (DiffHunk hunk : hunksToRevert) {
-                int start = hunk.line2Start;
-                int countToRemove = hunk.line2Count;
+            if (start < 0) start = 0;
+            if (start > lines2.size()) start = lines2.size();
 
-                for (int i = 0; i < countToRemove && start < lines2.size(); i++) {
-                    lines2.remove(start);
-                }
+            for (int i = 0; i < countToRemove && start < lines2.size(); i++) {
+                lines2.remove(start);
+            }
 
-                for (int i = 0; i < hunk.deletedLines.size(); i++) {
-                    int insertIndex = start + i;
-                    if (insertIndex <= lines2.size()) {
-                        lines2.add(insertIndex, hunk.deletedLines.get(i));
-                    } else {
-                        lines2.add(hunk.deletedLines.get(i));
-                    }
+            for (int i = 0; i < hunk.deletedLines.size(); i++) {
+                int insertIndex = start + i;
+                if (insertIndex >= 0 && insertIndex <= lines2.size()) {
+                    lines2.add(insertIndex, hunk.deletedLines.get(i));
+                } else {
+                    lines2.add(hunk.deletedLines.get(i));
                 }
             }
 
@@ -457,21 +454,57 @@ public class EditorFragment extends Fragment {
                 writer.write(sb.toString());
             }
 
-            if (getContext() != null) {
-                Toast.makeText(getContext(), successMsg, Toast.LENGTH_SHORT).show();
+            Context ctx = getContext();
+            if (ctx != null) {
+                Toast.makeText(ctx, "Reverted change", Toast.LENGTH_SHORT).show();
             }
 
             loadDiffContent(mFile1Path, mFile2Path);
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to revert diff hunk", e);
+            Context ctx = getContext();
+            if (ctx != null) {
+                Toast.makeText(ctx, "Failed to revert: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+            return false;
+        }
+    }
 
-            File repoRoot = GitManager.getInstance().findGitRoot(file2);
-            if (repoRoot != null && getContext() != null) {
-                GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), repoRoot, null);
+    public boolean defaultApplyRevertAll() {
+        if (!mIsDiffMode || mFile1Path == null || mFile2Path == null) return false;
+
+        File file1 = new File(mFile1Path);
+        File file2 = new File(mFile2Path);
+        if (!file1.exists() || !file2.exists()) return false;
+
+        try {
+            boolean file1HadTrailing = checkTrailingNewline(file1);
+            List<String> baseLines = readLinesFromFile(mFile1Path);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < baseLines.size(); i++) {
+                if (i > 0) sb.append("\n");
+                sb.append(baseLines.get(i));
             }
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to revert diff changes", e);
-            if (getContext() != null) {
-                Toast.makeText(getContext(), "Failed to revert: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            if (file1HadTrailing && sb.length() > 0 && !sb.toString().endsWith("\n")) {
+                sb.append("\n");
             }
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(file2))) {
+                writer.write(sb.toString());
+            }
+            Context ctx = getContext();
+            if (ctx != null) {
+                Toast.makeText(ctx, "Reverted file", Toast.LENGTH_SHORT).show();
+            }
+            loadDiffContent(mFile1Path, mFile2Path);
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to revert file", e);
+            Context ctx = getContext();
+            if (ctx != null) {
+                Toast.makeText(ctx, "Failed to revert: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+            return false;
         }
     }
 
@@ -785,10 +818,7 @@ public class EditorFragment extends Fragment {
             mSavedContent = content;
             updateSaveButtonState(false);
 
-            File repoRootSave = GitManager.getInstance().findGitRoot(file);
-            if (repoRootSave != null && getContext() != null) {
-                GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), repoRootSave, null);
-            }
+            // File saved successfully
         } catch (IOException e) {
             Log.e(TAG, "Error writing file: " + filePath, e);
             LogViewerService.getInstance().e(TAG, "Failed to save file: " + filePath + " - " + e.getMessage());

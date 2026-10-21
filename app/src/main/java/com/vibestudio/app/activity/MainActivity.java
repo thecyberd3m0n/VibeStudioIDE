@@ -205,6 +205,33 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         }
 
         EditorFragment fragment = EditorFragment.newDiffInstance(file1Path, file2Path);
+        fragment.setOnDiffRevertListener(new EditorFragment.OnDiffRevertListener() {
+            @Override
+            public boolean onRevertHunk(EditorFragment frag, EditorFragment.DiffHunk hunk, String file1, String file2) {
+                boolean ok = frag.defaultApplyHunkRevert(hunk);
+                notifyGitRefresh(file2);
+                return true;
+            }
+
+            @Override
+            public boolean onRevertAll(EditorFragment frag, String file1, String file2) {
+                boolean ok = frag.defaultApplyRevertAll();
+                notifyGitRefresh(file2);
+                return true;
+            }
+
+            private void notifyGitRefresh(String filePath) {
+                if (filePath == null) return;
+                File target = new File(filePath);
+                File repoRoot = com.vibestudio.app.git.GitManager.getInstance().findGitRoot(target);
+                if (repoRoot != null) {
+                    android.content.Context ctx = getApplicationContext();
+                    if (ctx != null) {
+                        com.vibestudio.app.git.GitManager.getInstance().refreshRepositoryState(ctx, repoRoot, null);
+                    }
+                }
+            }
+        });
         mTabManager.openTab(
                 TabType.EDITOR,
                 tabTitle,
