@@ -673,7 +673,51 @@ public class EditorFragment extends Fragment {
             result.add(new DiffLine(DiffLine.Type.UNCHANGED, lines1.get(k)));
         }
 
+        cleanupDiffLines(result);
         return result;
+    }
+
+    public static void cleanupDiffLines(List<DiffLine> diffLines) {
+        if (diffLines == null || diffLines.size() < 3) return;
+
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (int i = 0; i < diffLines.size(); i++) {
+                DiffLine current = diffLines.get(i);
+                if (current.type == DiffLine.Type.UNCHANGED && current.text != null && current.text.trim().isEmpty()) {
+                    DiffLine prevAddedOrDeleted = null;
+                    for (int p = i - 1; p >= 0; p--) {
+                        DiffLine line = diffLines.get(p);
+                        if (line.type == DiffLine.Type.UNCHANGED && line.text != null && line.text.trim().isEmpty()) {
+                            continue;
+                        }
+                        if (line.type == DiffLine.Type.ADDED || line.type == DiffLine.Type.DELETED) {
+                            prevAddedOrDeleted = line;
+                        }
+                        break;
+                    }
+
+                    DiffLine nextAddedOrDeleted = null;
+                    for (int n = i + 1; n < diffLines.size(); n++) {
+                        DiffLine line = diffLines.get(n);
+                        if (line.type == DiffLine.Type.UNCHANGED && line.text != null && line.text.trim().isEmpty()) {
+                            continue;
+                        }
+                        if (line.type == DiffLine.Type.ADDED || line.type == DiffLine.Type.DELETED) {
+                            nextAddedOrDeleted = line;
+                        }
+                        break;
+                    }
+
+                    if (prevAddedOrDeleted != null && nextAddedOrDeleted != null 
+                            && prevAddedOrDeleted.type == nextAddedOrDeleted.type) {
+                        current.type = prevAddedOrDeleted.type;
+                        changed = true;
+                    }
+                }
+            }
+        }
     }
 
     public void extractDiffHunks(List<DiffLine> diffLines) {
