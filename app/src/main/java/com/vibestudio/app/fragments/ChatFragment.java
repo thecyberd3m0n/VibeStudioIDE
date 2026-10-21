@@ -287,8 +287,16 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         btnKeepAll.setText("Keep");
         btnKeepAll.setTextColor(Color.WHITE);
         btnKeepAll.setTextSize(11);
-        btnKeepAll.setBackgroundColor(Color.parseColor("#2E7D32"));
-        LinearLayout.LayoutParams keepParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 32));
+        btnKeepAll.setGravity(Gravity.CENTER);
+        btnKeepAll.setPadding(dpToPx(context, 8), 0, dpToPx(context, 8), 0);
+        
+        android.graphics.drawable.GradientDrawable keepBg = new android.graphics.drawable.GradientDrawable();
+        keepBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        keepBg.setCornerRadius(dpToPx(context, 4));
+        keepBg.setColor(Color.parseColor("#0E639C"));
+        btnKeepAll.setBackground(keepBg);
+
+        LinearLayout.LayoutParams keepParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 28));
         keepParams.setMargins(6, 0, 6, 0);
         btnKeepAll.setLayoutParams(keepParams);
         btnKeepAll.setOnClickListener(v -> {
@@ -300,10 +308,18 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         Button btnUndoAll = new Button(context);
         btnUndoAll.setText("Undo");
-        btnUndoAll.setTextColor(Color.WHITE);
+        btnUndoAll.setTextColor(Color.parseColor("#CCCCCC"));
         btnUndoAll.setTextSize(11);
-        btnUndoAll.setBackgroundColor(Color.parseColor("#C62828"));
-        LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 32));
+        btnUndoAll.setGravity(Gravity.CENTER);
+        btnUndoAll.setPadding(dpToPx(context, 8), 0, dpToPx(context, 8), 0);
+
+        android.graphics.drawable.GradientDrawable undoBg = new android.graphics.drawable.GradientDrawable();
+        undoBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        undoBg.setCornerRadius(dpToPx(context, 4));
+        undoBg.setColor(Color.parseColor("#33333D"));
+        btnUndoAll.setBackground(undoBg);
+
+        LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 28));
         btnUndoAll.setLayoutParams(undoParams);
         btnUndoAll.setOnClickListener(v -> {
             boolean ok = tracker.rollbackAll();
