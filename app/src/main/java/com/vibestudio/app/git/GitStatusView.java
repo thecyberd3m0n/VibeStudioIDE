@@ -270,11 +270,11 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         boolean needsSync = mLastState != null && mLastState.needsSync();
 
         if (needsSync) {
-            executeSync();
+            syncChanges();
         } else if (hasChanges || hasCommitMessage) {
             executeCommit();
         } else {
-            executeSync();
+            syncChanges();
         }
     }
 
@@ -550,11 +550,10 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         });
     }
 
-    private void executeSync() {
+    private void syncChanges() {
         if (mRepoDir == null || getContext() == null) return;
         Toast.makeText(getContext(), "Syncing changes...", Toast.LENGTH_SHORT).show();
-        String cmd = "pull && git --no-pager push";
-        GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> {
+        GitManager.getInstance().syncRepository(getContext(), mRepoDir, (success, output) -> {
             post(() -> {
                 if (success) {
                     Toast.makeText(getContext(), "Sync successful", Toast.LENGTH_SHORT).show();

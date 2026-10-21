@@ -193,6 +193,11 @@ public class GitManager {
         runGitCommandAsync(context, "init", repoDir, callback);
     }
 
+    public void syncRepository(Context context, File repoDir, GitCallback callback) {
+        String cmd = "pull && git --no-pager push";
+        runGitCommandAsync(context, cmd, repoDir, callback);
+    }
+
     public boolean isGitRoot(File dir) {
         if (dir == null || !dir.isDirectory()) return false;
         File gitFolder = new File(dir, ".git");
