@@ -336,7 +336,7 @@ public class EditorFragment extends Fragment {
                         } else {
                             bgView.setVisibility(View.VISIBLE);
                             bgView.setTranslationY(lineTop);
-                            bgView.setTranslationX(-mCodeEditor.getOffsetX());
+                            bgView.setTranslationX(0);
                         }
                     }
                     bgIdx++;

@@ -13,7 +13,7 @@ public class GitTerminalParser {
     private static final String TAG = "GitTerminalParser";
 
     public static String getRefreshRepositoryStateCommand() {
-        return "status --porcelain && echo \"===NUMSTAT_STAGED===\" && git --no-pager diff --cached --numstat && echo \"===NUMSTAT_UNSTAGED===\" && git --no-pager diff --numstat";
+        return "rev-parse --abbrev-ref HEAD && echo \"===STATUS===\" && git status --porcelain && echo \"===NUMSTAT_STAGED===\" && git --no-pager diff --cached --numstat && echo \"===NUMSTAT_UNSTAGED===\" && git --no-pager diff --numstat";
     }
 
     public static GitRepositoryState parseRepositoryState(File repoDir, String output) {
@@ -23,6 +23,16 @@ public class GitTerminalParser {
         }
 
         String cleaned = cleanTerminalOutput(output);
+
+        int idxBranch = cleaned.indexOf("===STATUS===");
+        if (idxBranch != -1) {
+            String b = cleaned.substring(0, idxBranch).trim();
+            if (!b.isEmpty()) {
+                state.branchName = b;
+            }
+            cleaned = cleaned.substring(idxBranch + "===STATUS===".length());
+        }
+
         String statusOutput = cleaned;
         String stagedNumstat = "";
         String unstagedNumstat = "";
@@ -45,7 +55,6 @@ public class GitTerminalParser {
             for (String line : lines) {
                 if (line == null || line.length() < 3) continue;
 
-                // Ignore echoed commands or prompts that might bleed into output
                 if (line.contains("echo ___CMD_") || line.contains("git status --porcelain")) {
                     continue;
                 }

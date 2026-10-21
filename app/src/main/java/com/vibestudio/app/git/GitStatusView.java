@@ -11,10 +11,12 @@ import android.app.AlertDialog;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -33,6 +35,7 @@ import com.vibestudio.app.activity.MainActivity;
 import com.vibestudio.app.fragments.EditorFragment;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
+import java.util.ArrayList;
 import java.util.List;
 
 public class GitStatusView extends LinearLayout implements GitManager.GitStateChangeListener {
@@ -43,6 +46,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
     private OnCloseListener mCloseListener;
     private GitRepositoryState mLastState;
 
+    private TextView mTvBranchName;
+    private View mLlBranchSelector;
     private EditText mEtCommitMessage;
     private Button mBtnAction;
     private ImageButton mBtnRefresh;
@@ -91,11 +96,17 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         setOrientation(VERTICAL);
         LayoutInflater.from(context).inflate(R.layout.fragment_git_status, this, true);
 
+        mLlBranchSelector = findViewById(R.id.ll_branch_selector);
+        mTvBranchName = findViewById(R.id.tv_current_branch);
         mEtCommitMessage = findViewById(R.id.et_commit_message);
         mBtnAction = findViewById(R.id.btn_git_action);
         mBtnRefresh = findViewById(R.id.btn_git_refresh);
         mBtnClose = findViewById(R.id.btn_git_close);
         mLlContainer = findViewById(R.id.ll_git_items_container);
+
+        if (mLlBranchSelector != null) {
+            mLlBranchSelector.setOnClickListener(v -> showBranchSelectionDialog());
+        }
 
         if (mBtnRefresh != null) {
             mBtnRefresh.setOnClickListener(v -> refreshStatus());
@@ -184,6 +195,26 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         updateButtonStates();
     }
 
+    @Override
+    public void onGitStateChanged(GitRepositoryState state) {
+        if (mRepoDir != null && state != null && state.repoRoot != null &&
+            mRepoDir.getAbsolutePath().equals(state.repoRoot.getAbsolutePath())) {
+            renderState(state);
+        }
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        GitManager.getInstance().addStateChangeListener(this);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        GitManager.getInstance().removeStateChangeListener(this);
+    }
+
     public void setRepoDir(File repoDir) {
         this.mRepoDir = repoDir;
         GitRepositoryState cached = GitManager.getInstance().getCachedState(repoDir);
@@ -208,6 +239,11 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             if (mLlContainer == null) return;
             mLlContainer.removeAllViews();
 
+            if (mTvBranchName != null) {
+                String bName = (state != null && state.branchName != null && !state.branchName.isEmpty()) ? state.branchName : "HEAD";
+                mTvBranchName.setText(bName);
+            }
+
             updateButtonStates();
 
             if (state == null) {
@@ -225,6 +261,236 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             if (mStatusUpdatedListener != null) {
                 mStatusUpdatedListener.onStatusUpdated();
             }
+        });
+    }
+
+    private void showBranchSelectionDialog() {
+        if (mRepoDir == null || getContext() == null) return;
+
+        Toast.makeText(getContext(), "Fetching branches...", Toast.LENGTH_SHORT).show();
+
+        GitManager.getInstance().runGitCommandAsync(getContext(), "branch -a --format=\"%(refname:short)\"", mRepoDir, (success, output) -> {
+            post(() -> {
+                if (!success || output == null) {
+                    Toast.makeText(getContext(), "Failed to list branches: " + output, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                String currentBranch = (mLastState != null && mLastState.branchName != null) ? mLastState.branchName : "";
+                List<String> rawBranches = new ArrayList<>();
+                String[] lines = output.split("\n");
+                for (String line : lines) {
+                    String b = line.trim();
+                    if (b.startsWith("origin/HEAD")) continue;
+                    if (!b.isEmpty() && !rawBranches.contains(b)) {
+                        rawBranches.add(b);
+                    }
+                }
+
+                LinearLayout dialogLayout = new LinearLayout(getContext());
+                dialogLayout.setOrientation(LinearLayout.VERTICAL);
+                dialogLayout.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
+
+                EditText searchBox = new EditText(getContext());
+                searchBox.setHint("Search branches...");
+                searchBox.setTextSize(13);
+                searchBox.setBackgroundColor(Color.parseColor("#22222E"));
+                searchBox.setTextColor(Color.WHITE);
+                searchBox.setHintTextColor(Color.parseColor("#606070"));
+                searchBox.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
+                dialogLayout.addView(searchBox);
+
+                ListView listView = new ListView(getContext());
+                listView.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(320)));
+
+                List<String> displayItems = new ArrayList<>();
+                List<String> branchValues = new ArrayList<>();
+
+                Runnable updateList = () -> {
+                    String filter = searchBox.getText().toString().trim().toLowerCase();
+                    displayItems.clear();
+                    branchValues.clear();
+
+                    if (filter.isEmpty()) {
+                        displayItems.add("+ Create New Branch...");
+                        branchValues.add("__CREATE_NEW__");
+                    }
+
+                    for (String b : rawBranches) {
+                        if (filter.isEmpty() || b.toLowerCase().contains(filter)) {
+                            if (b.equals(currentBranch)) {
+                                displayItems.add("✓ " + b + " (current)");
+                            } else {
+                                displayItems.add(b);
+                            }
+                            branchValues.add(b);
+                        }
+                    }
+                };
+
+                updateList.run();
+
+                ArrayAdapter<String> adapter = new ArrayAdapter<String>(
+                        getContext(), android.R.layout.simple_list_item_1, displayItems) {
+                    @NonNull
+                    @Override
+                    public View getView(int position, @Nullable View convertView, @NonNull android.view.ViewGroup parent) {
+                        TextView tv = (TextView) super.getView(position, convertView, parent);
+                        tv.setTextColor(Color.parseColor("#E0E0E0"));
+                        tv.setTextSize(13);
+                        tv.setPadding(dpToPx(12), dpToPx(10), dpToPx(12), dpToPx(10));
+                        return tv;
+                    }
+                };
+
+                listView.setAdapter(adapter);
+                dialogLayout.addView(listView);
+
+                searchBox.addTextChangedListener(new TextWatcher() {
+                    @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                    @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                        updateList.run();
+                        adapter.notifyDataSetChanged();
+                    }
+                    @Override public void afterTextChanged(Editable s) {}
+                });
+
+                AlertDialog dialog = new AlertDialog.Builder(getContext())
+                        .setTitle("Git Branches (" + rawBranches.size() + ")")
+                        .setView(dialogLayout)
+                        .setNegativeButton("Cancel", null)
+                        .create();
+
+                listView.setOnItemClickListener((parent, view, position, id) -> {
+                    dialog.dismiss();
+                    String selectedVal = branchValues.get(position);
+                    if ("__CREATE_NEW__".equals(selectedVal)) {
+                        showCreateBranchDialog();
+                    } else {
+                        showBranchActionMenu(selectedVal, currentBranch);
+                    }
+                });
+
+                dialog.show();
+            });
+        });
+    }
+
+    private void showCreateBranchDialog() {
+        if (mRepoDir == null || getContext() == null) return;
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Create New Branch");
+
+        final EditText input = new EditText(getContext());
+        input.setHint("Branch name");
+        input.setPadding(32, 24, 32, 24);
+        builder.setView(input);
+
+        builder.setPositiveButton("Create & Checkout", (dialog, which) -> {
+            String newBranch = input.getText().toString().trim();
+            if (!newBranch.isEmpty()) {
+                String safeBranch = newBranch.replace("'", "'\\''");
+                executeGitAction("checkout -b '" + safeBranch + "'", "Created and switched to " + newBranch);
+            }
+        });
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
+    }
+
+    private void showBranchActionMenu(String targetBranch, String currentBranch) {
+        if (mRepoDir == null || getContext() == null) return;
+
+        boolean isCurrent = targetBranch.equals(currentBranch);
+        String safeTarget = targetBranch.replace("'", "'\\''");
+        String safeCurrent = currentBranch.replace("'", "'\\''");
+
+        String[] actions = new String[] {
+            "Checkout",
+            "Merge to Current (" + currentBranch + ")",
+            "Merge Current (" + currentBranch + ") to " + targetBranch,
+            "Rebase Current onto " + targetBranch,
+            "Cherry-Pick Commit"
+        };
+
+        new AlertDialog.Builder(getContext())
+                .setTitle("Branch: " + targetBranch)
+                .setItems(actions, (dialog, which) -> {
+                    switch (which) {
+                        case 0: // Checkout
+                            if (isCurrent) {
+                                Toast.makeText(getContext(), "Already on " + targetBranch, Toast.LENGTH_SHORT).show();
+                            } else {
+                                executeGitAction("checkout '" + safeTarget + "'", "Switched to branch " + targetBranch);
+                            }
+                            break;
+
+                        case 1: // Merge to Current
+                            if (isCurrent) {
+                                Toast.makeText(getContext(), "Cannot merge branch into itself", Toast.LENGTH_SHORT).show();
+                            } else {
+                                executeGitAction("merge '" + safeTarget + "'", "Merged " + targetBranch + " into " + currentBranch);
+                            }
+                            break;
+
+                        case 2: // Merge Current to Branch
+                            if (isCurrent) {
+                                Toast.makeText(getContext(), "Cannot merge branch into itself", Toast.LENGTH_SHORT).show();
+                            } else {
+                                executeGitAction("checkout '" + safeTarget + "' && git merge '" + safeCurrent + "'", "Merged " + currentBranch + " into " + targetBranch);
+                            }
+                            break;
+
+                        case 3: // Rebase
+                            if (isCurrent) {
+                                Toast.makeText(getContext(), "Cannot rebase branch onto itself", Toast.LENGTH_SHORT).show();
+                            } else {
+                                executeGitAction("rebase '" + safeTarget + "'", "Rebased onto " + targetBranch);
+                            }
+                            break;
+
+                        case 4: // Cherry-Pick
+                            showCherryPickDialog();
+                            break;
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showCherryPickDialog() {
+        if (mRepoDir == null || getContext() == null) return;
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Cherry-Pick Commit");
+
+        final EditText input = new EditText(getContext());
+        input.setHint("Commit SHA / Hash");
+        input.setPadding(32, 24, 32, 24);
+        builder.setView(input);
+
+        builder.setPositiveButton("Cherry-Pick", (dialog, which) -> {
+            String hash = input.getText().toString().trim();
+            if (!hash.isEmpty()) {
+                String safeHash = hash.replace("'", "'\\''");
+                executeGitAction("cherry-pick '" + safeHash + "'", "Cherry-picked commit " + hash);
+            }
+        });
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
+    }
+
+    private void executeGitAction(String command, String successMsg) {
+        GitManager.getInstance().runGitCommandAsync(getContext(), command, mRepoDir, (success, output) -> {
+            post(() -> {
+                if (success) {
+                    Toast.makeText(getContext(), successMsg, Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(getContext(), "Action failed: " + output, Toast.LENGTH_LONG).show();
+                }
+                refreshStatus();
+            });
         });
     }
 
@@ -269,158 +535,72 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         boolean hasCommitMessage = mEtCommitMessage != null && mEtCommitMessage.getText().toString().trim().length() > 0;
         boolean needsSync = mLastState != null && mLastState.needsSync();
 
-        if (needsSync) {
-            syncChanges();
-        } else if (hasChanges || hasCommitMessage) {
+        if (hasChanges || hasCommitMessage) {
             executeCommit();
-        } else {
+        } else if (needsSync || !hasChanges) {
             syncChanges();
         }
-    }
-
-    @Override
-    public void onGitStateChanged(GitRepositoryState state) {
-        if (mRepoDir != null && state != null && state.repoRoot != null) {
-            if (state.repoRoot.getAbsolutePath().equals(mRepoDir.getAbsolutePath())) {
-                renderState(state);
-            }
-        }
-    }
-
-    @Override
-    public void onWindowFocusChanged(boolean hasWindowFocus) {
-        super.onWindowFocusChanged(hasWindowFocus);
-        if (hasWindowFocus && mRepoDir != null) {
-            refreshStatus();
-        }
-    }
-
-    @Override
-    protected void onVisibilityChanged(View changedView, int visibility) {
-        super.onVisibilityChanged(changedView, visibility);
-        if (visibility == View.VISIBLE && mRepoDir != null) {
-            refreshStatus();
-        }
-    }
-
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        GitManager.getInstance().addStateChangeListener(this);
-        if (mRepoDir != null) {
-            refreshStatus();
-        }
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-        GitManager.getInstance().removeStateChangeListener(this);
     }
 
     private void renderSection(String title, List<GitFileStatus> files, boolean isStaged) {
-        if (files.isEmpty()) return;
+        if (files == null || files.isEmpty()) return;
 
-        LinearLayout header = new LinearLayout(getContext());
-        header.setOrientation(HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(32, 24, 32, 8);
-
-        TextView tvTitle = new TextView(getContext());
-        tvTitle.setText(title + " (" + files.size() + ")");
-        tvTitle.setTextColor(Color.parseColor("#82AAFF"));
-        tvTitle.setTextSize(12);
-        tvTitle.setTypeface(null, Typeface.BOLD);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
-        tvTitle.setLayoutParams(titleParams);
-        header.addView(tvTitle);
-
-        TextView btnActionAll = new TextView(getContext());
-        btnActionAll.setText(isStaged ? "− Unstage All" : "+ Stage All");
-        btnActionAll.setTextColor(Color.parseColor("#A0A0C0"));
-        btnActionAll.setTextSize(12);
-        btnActionAll.setPadding(16, 8, 16, 8);
-        btnActionAll.setClickable(true);
-        btnActionAll.setFocusable(true);
-        btnActionAll.setOnClickListener(v -> {
-            String cmd = isStaged ? "reset HEAD" : "add -A";
-            GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
-        });
-        header.addView(btnActionAll);
-
-        mLlContainer.addView(header);
+        TextView sectionTitle = new TextView(getContext());
+        sectionTitle.setText(title + " (" + files.size() + ")");
+        sectionTitle.setTextColor(Color.parseColor("#A0A0B0"));
+        sectionTitle.setTextSize(11);
+        sectionTitle.setTypeface(null, Typeface.BOLD);
+        sectionTitle.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(4));
+        mLlContainer.addView(sectionTitle);
 
         for (GitFileStatus file : files) {
             LinearLayout row = new LinearLayout(getContext());
             row.setOrientation(HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(32, 16, 32, 16);
+            row.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
+
+            TypedValue outValueRow = new TypedValue();
+            if (getContext() != null && getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValueRow, true)) {
+                row.setBackgroundResource(outValueRow.resourceId);
+            }
 
             TextView tvStatus = new TextView(getContext());
             tvStatus.setText(file.status);
             tvStatus.setTextSize(12);
             tvStatus.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            tvStatus.setGravity(Gravity.CENTER);
 
-            if (file.status.contains("M")) {
-                tvStatus.setTextColor(Color.parseColor("#E2C08D"));
-            } else if (file.status.contains("A") || file.status.contains("?")) {
-                tvStatus.setTextColor(Color.parseColor("#73C991"));
-            } else if (file.status.contains("D")) {
-                tvStatus.setTextColor(Color.parseColor("#FF6B6B"));
-            } else {
-                tvStatus.setTextColor(Color.parseColor("#A0A0A0"));
-            }
+            int statusColor = Color.parseColor("#CCCCCC");
+            if (file.status.contains("M")) statusColor = Color.parseColor("#E2C08D");
+            else if (file.status.contains("A") || file.status.contains("?")) statusColor = Color.parseColor("#73C991");
+            else if (file.status.contains("D")) statusColor = Color.parseColor("#F14C4C");
+            tvStatus.setTextColor(statusColor);
 
-            LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
-            statusParams.setMarginEnd(24);
-            tvStatus.setLayoutParams(statusParams);
-            row.addView(tvStatus);
+            LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(dpToPx(24), WRAP_CONTENT);
+            row.addView(tvStatus, statusParams);
 
             TextView tvPath = new TextView(getContext());
             tvPath.setText(file.filePath);
             tvPath.setTextColor(Color.parseColor("#E0E0E0"));
             tvPath.setTextSize(13);
+            tvPath.setSingleLine(true);
+            tvPath.setEllipsize(android.text.TextUtils.TruncateAt.END);
             LinearLayout.LayoutParams pathParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
-            tvPath.setLayoutParams(pathParams);
-            row.addView(tvPath);
+            pathParams.setMarginStart(dpToPx(12));
+            row.addView(tvPath, pathParams);
 
-            LinearLayout llChanges = new LinearLayout(getContext());
-            llChanges.setOrientation(HORIZONTAL);
-            llChanges.setGravity(Gravity.CENTER_VERTICAL);
-
-            if (file.additions > 0) {
-                TextView tvAdd = new TextView(getContext());
-                tvAdd.setText("+" + file.additions);
-                tvAdd.setTextColor(Color.parseColor("#73C991"));
-                tvAdd.setTextSize(12);
-                tvAdd.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
-                lp.setMarginEnd(12);
-                tvAdd.setLayoutParams(lp);
-                llChanges.addView(tvAdd);
+            if (file.additions > 0 || file.deletions > 0) {
+                TextView tvDiff = new TextView(getContext());
+                String diffStr = "+" + file.additions + " -" + file.deletions;
+                tvDiff.setText(diffStr);
+                tvDiff.setTextSize(11);
+                tvDiff.setTextColor(Color.parseColor("#808090"));
+                tvDiff.setPadding(0, 0, dpToPx(8), 0);
+                row.addView(tvDiff);
             }
 
-            if (file.deletions > 0) {
-                TextView tvDel = new TextView(getContext());
-                tvDel.setText("-" + file.deletions);
-                tvDel.setTextColor(Color.parseColor("#FF6B6B"));
-                tvDel.setTextSize(12);
-                tvDel.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
-                lp.setMarginEnd(12);
-                tvDel.setLayoutParams(lp);
-                llChanges.addView(tvDel);
-            }
-
-            row.addView(llChanges);
-
-            row.setClickable(true);
-            row.setFocusable(true);
-            TypedValue outValueRow = new TypedValue();
-            if (getContext() != null && getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValueRow, true)) {
-                row.setBackgroundResource(outValueRow.resourceId);
-            }
             row.setOnClickListener(v -> {
+                if (mRepoDir == null || file.filePath == null) return;
                 File fullFile = new File(mRepoDir, file.filePath);
                 if ("A".equals(file.status) || "??".equals(file.status) || "?".equals(file.status)) {
                     try {
@@ -484,7 +664,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             btnStageUnstage.setFocusable(true);
             if (borderlessId != 0) btnStageUnstage.setBackgroundResource(borderlessId);
             btnStageUnstage.setOnClickListener(v -> {
-                String safePath = file.filePath.replace("'", "'\''");
+                String safePath = file.filePath.replace("'", "'\\''");
                 String cmd = isStaged ? "reset HEAD -- '" + safePath + "'" : "add -- '" + safePath + "'";
                 GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
             });
@@ -593,7 +773,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
 
     private void showRevertFileDialog(GitFileStatus file) {
         if (getContext() == null) return;
-        String safePath = file.filePath.replace("'", "'\''");
+        String safePath = file.filePath.replace("'", "'\\''");
         new AlertDialog.Builder(getContext())
                 .setTitle("Revert File")
                 .setMessage("Are you sure you want to revert changes in " + file.filePath + "?")
