@@ -21,7 +21,11 @@ public class ChatSessionManager {
     }
 
     public synchronized ChatSession createSession() {
-        ChatSession session = new ChatSession();
+        return createSession(null);
+    }
+
+    public synchronized ChatSession createSession(String workspacePath) {
+        ChatSession session = new ChatSession(workspacePath);
         mSessions.put(session.getId(), session);
         return session;
     }

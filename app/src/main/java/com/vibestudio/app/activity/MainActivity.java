@@ -491,6 +491,10 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                 ivFavicon.setImageBitmap(tab.getFavicon());
                 ivFavicon.setVisibility(View.VISIBLE);
                 tvIcon.setVisibility(View.GONE);
+            } else if (tab.getIconResId() != null) {
+                ivFavicon.setImageResource(tab.getIconResId());
+                ivFavicon.setVisibility(View.VISIBLE);
+                tvIcon.setVisibility(View.GONE);
             } else {
                 tvIcon.setText(tab.getIcon());
                 tvIcon.setVisibility(View.VISIBLE);

@@ -28,6 +28,8 @@ import com.vibestudio.app.R;
 import com.vibestudio.app.chat.connection.ModelConnectionManager;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.chat.session.ChatSession;
+import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
+import android.widget.Button;
 import com.vibestudio.app.chat.session.ChatSessionManager;
 import com.vibestudio.app.mcp.ToolMessageFactory;
 import com.vibestudio.app.view.BaseToolMessageView;
@@ -49,6 +51,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     private FrameLayout mBtnActionButton;
     private TextView mTvActionIcon;
     private ProgressBar mProgressBar;
+    private LinearLayout mChangesetBar;
 
     public static ChatFragment newInstance(ChatSession session) {
         ChatFragment fragment = new ChatFragment();
@@ -162,17 +165,120 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         inputRow.addView(mMsgInput);
         inputRow.addView(mBtnActionButton);
 
+                // Scope Topbar Header
+        if (mChatSession != null && mChatSession.getWorkspacePath() != null && !mChatSession.getWorkspacePath().isEmpty()) {
+            java.io.File wsDir = new java.io.File(mChatSession.getWorkspacePath());
+            boolean isRepo = com.vibestudio.app.git.GitManager.getInstance().isGitRoot(wsDir) || com.vibestudio.app.git.GitManager.getInstance().isGitRepository(wsDir);
+            int iconResId = isRepo ? R.drawable.ic_git_repo : R.drawable.ic_folder;
+            String scopeName = wsDir.getName();
+
+            LinearLayout topBar = new LinearLayout(context);
+            topBar.setOrientation(LinearLayout.HORIZONTAL);
+            topBar.setGravity(Gravity.CENTER_VERTICAL);
+            topBar.setBackgroundColor(Color.parseColor("#1A1D24"));
+            topBar.setPadding(24, 16, 24, 16);
+
+            TextView labelText = new TextView(context);
+            labelText.setText("Scope: ");
+            labelText.setTextColor(Color.parseColor("#9095A0"));
+            labelText.setTextSize(13);
+            labelText.setTypeface(null, Typeface.BOLD);
+            topBar.addView(labelText);
+
+            ImageView iconView = new ImageView(context);
+            iconView.setImageResource(iconResId);
+            int iconSize = dpToPx(context, 18);
+            LinearLayout.LayoutParams topbarIconParams = new LinearLayout.LayoutParams(iconSize, iconSize);
+            iconParams.setMargins(4, 0, 8, 0);
+            iconView.setLayoutParams(topbarIconParams);
+            topBar.addView(iconView);
+
+            TextView nameText = new TextView(context);
+            nameText.setText(scopeName);
+            nameText.setTextColor(Color.WHITE);
+            nameText.setTextSize(13);
+            nameText.setTypeface(null, Typeface.BOLD);
+            topBar.addView(nameText);
+
+            LinearLayout.LayoutParams topBarParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+            topBar.setLayoutParams(topBarParams);
+            layout.addView(topBar);
+        }
+
         layout.addView(mChatScroll);
+        // Changeset Bar
+        mChangesetBar = new LinearLayout(context);
+        mChangesetBar.setOrientation(LinearLayout.HORIZONTAL);
+        mChangesetBar.setGravity(Gravity.CENTER_VERTICAL);
+        mChangesetBar.setBackgroundColor(Color.parseColor("#1F2430"));
+        mChangesetBar.setPadding(20, 12, 20, 12);
+        mChangesetBar.setVisibility(View.GONE);
+
         layout.addView(mProgressBar);
+        layout.addView(mChangesetBar);
         layout.addView(inputRow);
 
         if (mChatSession != null) {
             mChatSession.addListener(this);
-            // Render current chat history from ChatSession
             renderChatHistory(context);
+            updateChangesetBar(context);
         }
 
         return layout;
+    }
+
+    
+    private void updateChangesetBar(Context context) {
+        if (mChangesetBar == null || mChatSession == null) return;
+        WorkspaceChangesetTracker tracker = mChatSession.getChangesetTracker(context);
+        if (tracker == null) return;
+
+        List<WorkspaceChangesetTracker.FileChangeRecord> changes = tracker.getChanges();
+        if (changes.isEmpty()) {
+            mChangesetBar.setVisibility(View.GONE);
+            return;
+        }
+
+        mChangesetBar.removeAllViews();
+        mChangesetBar.setVisibility(View.VISIBLE);
+
+        TextView infoText = new TextView(context);
+        infoText.setText("⚡ " + changes.size() + " file change(s) pending");
+        infoText.setTextColor(Color.parseColor("#FFD166"));
+        infoText.setTextSize(13);
+        infoText.setTypeface(null, Typeface.BOLD);
+        LinearLayout.LayoutParams infoParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
+        infoText.setLayoutParams(infoParams);
+        mChangesetBar.addView(infoText);
+
+        Button btnKeep = new Button(context);
+        btnKeep.setText("Keep");
+        btnKeep.setTextColor(Color.WHITE);
+        btnKeep.setTextSize(12);
+        btnKeep.setBackgroundColor(Color.parseColor("#2E7D32"));
+        LinearLayout.LayoutParams keepParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 36));
+        keepParams.setMargins(8, 0, 8, 0);
+        btnKeep.setLayoutParams(keepParams);
+        btnKeep.setOnClickListener(v -> {
+            tracker.clear();
+            updateChangesetBar(context);
+            Toast.makeText(context, "Changes kept.", Toast.LENGTH_SHORT).show();
+        });
+        mChangesetBar.addView(btnKeep);
+
+        Button btnUndo = new Button(context);
+        btnUndo.setText("Undo");
+        btnUndo.setTextColor(Color.WHITE);
+        btnUndo.setTextSize(12);
+        btnUndo.setBackgroundColor(Color.parseColor("#C62828"));
+        LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(WRAP_CONTENT, dpToPx(context, 36));
+        btnUndo.setLayoutParams(undoParams);
+        btnUndo.setOnClickListener(v -> {
+            boolean ok = tracker.rollbackAll();
+            updateChangesetBar(context);
+            Toast.makeText(context, ok ? "Changes reverted!" : "Failed to revert some changes.", Toast.LENGTH_SHORT).show();
+        });
+        mChangesetBar.addView(btnUndo);
     }
 
     private int dpToPx(Context context, int dp) {
@@ -400,5 +506,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     @Override
     public void onResponseLoading(boolean isLoading) {
         updateLoadingUI(isLoading);
+            Context context = getContext();
+            if (context != null) updateChangesetBar(context);
     }
 }

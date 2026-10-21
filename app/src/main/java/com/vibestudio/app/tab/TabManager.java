@@ -122,6 +122,10 @@ public class TabManager {
     }
 
     public TabItem openTab(final TabType type, final String customTitle, final String icon, final Fragment fragment, final boolean selectNewTab) {
+        return openTab(type, customTitle, icon, null, fragment, selectNewTab);
+    }
+
+    public TabItem openTab(final TabType type, final String customTitle, final String icon, final Integer iconResId, final Fragment fragment, final boolean selectNewTab) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             final AtomicTabItemHolder holder = new AtomicTabItemHolder();
             final CountDownLatch latch = new CountDownLatch(1);
@@ -163,7 +167,7 @@ public class TabManager {
             }
         }
 
-        TabItem newTab = new TabItem(type, title, icon, fragment);
+        TabItem newTab = new TabItem(type, title, icon, iconResId, fragment);
         tabs.add(newTab);
 
         if (selectNewTab || activeTab == null) {
