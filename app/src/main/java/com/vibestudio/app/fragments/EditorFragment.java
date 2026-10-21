@@ -310,10 +310,7 @@ public class EditorFragment extends Fragment {
             if (lineHeight <= 0) lineHeight = dpToPx(20);
         }
 
-        if (mCurrentDiffLines != null && !mCurrentDiffLines.isEmpty() && mBgOverlayViews.isEmpty() && mBtnOverlayViews.isEmpty()) {
-            rebuildOverlayViews();
-            return;
-        }
+
 
         int offsetY = mCodeEditor.getOffsetY();
         int containerHeight = mFlOverlayContainer.getHeight();
