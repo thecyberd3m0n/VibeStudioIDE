@@ -193,12 +193,15 @@ public class EditorFragmentDiffTest {
         int childCount = container.getChildCount();
         Assert.assertTrue("Overlay container should have views rendered", childCount > 0);
 
-        boolean foundRevertButton = false;
+        boolean foundHunkContainer = false;
         int bgViewCount = 0;
         for (int i = 0; i < childCount; i++) {
             View child = container.getChildAt(i);
-            if (child instanceof ImageButton) {
-                foundRevertButton = true;
+            if (child instanceof android.widget.LinearLayout) {
+                foundHunkContainer = true;
+                Assert.assertEquals("Hunk overlay container should be VISIBLE", View.VISIBLE, child.getVisibility());
+            } else if (child instanceof ImageButton) {
+                foundHunkContainer = true;
                 Assert.assertEquals("Revert button should be VISIBLE", View.VISIBLE, child.getVisibility());
             } else if (child != null) {
                 bgViewCount++;
@@ -206,6 +209,6 @@ public class EditorFragmentDiffTest {
         }
 
         Assert.assertTrue("Line background overlays should be added", bgViewCount > 0);
-        Assert.assertTrue("Revert button on overlay should be visible even if single line was changed", foundRevertButton);
+        Assert.assertTrue("Hunk overlay container should be visible even if single line was changed", foundHunkContainer);
     }
 }

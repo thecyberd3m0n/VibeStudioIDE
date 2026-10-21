@@ -79,7 +79,7 @@ public class EditorFragment extends Fragment {
     private final List<DiffHunk> mDiffHunks = new ArrayList<>();
     private List<DiffLine> mCurrentDiffLines = new ArrayList<>();
     private final List<View> mBgOverlayViews = new ArrayList<>();
-    private final List<ImageButton> mBtnOverlayViews = new ArrayList<>();
+    private final List<View> mBtnOverlayViews = new ArrayList<>();
 
     public interface OnDiffRevertListener {
         boolean onRevertHunk(EditorFragment fragment, DiffHunk hunk, String file1Path, String file2Path);
@@ -93,14 +93,69 @@ public class EditorFragment extends Fragment {
     }
 
 
+    public static class HunkOption {
+        public static final String OPTION_ACCEPT = "accept";
+        public static final String OPTION_REVERT = "revert";
+
+        private final String id;
+        private final String label;
+        private final int iconResId;
+        private final int iconTintColor;
+        private final OnHunkOptionClickListener listener;
+
+        public interface OnHunkOptionClickListener {
+            boolean onOptionClick(EditorFragment fragment, HunkOption option, DiffHunk hunk, String file1Path, String file2Path);
+        }
+
+        public HunkOption(String id, String label, int iconResId, int iconTintColor, OnHunkOptionClickListener listener) {
+            this.id = id;
+            this.label = label;
+            this.iconResId = iconResId;
+            this.iconTintColor = iconTintColor;
+            this.listener = listener;
+        }
+
+        public String getId() { return id; }
+        public String getLabel() { return label; }
+        public int getIconResId() { return iconResId; }
+        public int getIconTintColor() { return iconTintColor; }
+        public OnHunkOptionClickListener getListener() { return listener; }
+    }
+
+    private List<HunkOption> mCustomHunkOptions;
+
+    public void setHunkOptions(List<HunkOption> options) {
+        this.mCustomHunkOptions = options;
+        if (mIsDiffMode && mCodeEditor != null) {
+            rebuildOverlayViews();
+        }
+    }
+
+    public List<HunkOption> getHunkOptions() {
+        if (mCustomHunkOptions != null) {
+            return mCustomHunkOptions;
+        }
+        List<HunkOption> defaults = new ArrayList<>();
+        defaults.add(new HunkOption(HunkOption.OPTION_ACCEPT, "Accept Hunk", R.drawable.ic_check, Color.parseColor("#A6E3A1"), null));
+        defaults.add(new HunkOption(HunkOption.OPTION_REVERT, "Revert Hunk", R.drawable.ic_undo, Color.parseColor("#CF6679"), null));
+        return defaults;
+    }
     public static class DiffHunk {
+        public int line1Start; // 0-based start in base file
+        public int line1Count; // line count in base file
         public int line2Start; // 0-based start in modified file
-        public int line2Count; // deleted/replaced line count
+        public int line2Count; // line count in modified file
         public int editorStartLine; // 0-based line index in diff editor view
         public List<String> deletedLines = new ArrayList<>();
         public List<String> addedLines = new ArrayList<>();
 
         public DiffHunk(int line2Start, int line2Count, int editorStartLine) {
+            this(0, 0, line2Start, line2Count, editorStartLine);
+        }
+
+        public DiffHunk(int line1Start, int line1Count, int line2Start, int line2Count, int editorStartLine) {
+            this.line1Start = line1Start;
+            this.line1Count = line1Count;
             this.line2Start = line2Start;
             this.line2Count = line2Count;
             this.editorStartLine = editorStartLine;
@@ -251,33 +306,55 @@ public class EditorFragment extends Fragment {
             }
         }
 
-        // 2. Pre-create revert buttons for each diff hunk with rounded button styling
+        // 2. Pre-create declarable hunk option buttons for each diff hunk
+        List<HunkOption> options = getHunkOptions();
         int btnSize = dpToPx(28);
         if (mDiffHunks != null) {
             for (DiffHunk hunk : mDiffHunks) {
-                ImageButton btnRevertHunk = new ImageButton(getContext());
-                btnRevertHunk.setImageResource(R.drawable.ic_undo);
-                btnRevertHunk.setColorFilter(Color.parseColor("#CF6679"));
-                btnRevertHunk.setScaleType(ImageButton.ScaleType.CENTER_INSIDE);
+                LinearLayout hunkContainer = new LinearLayout(getContext());
+                hunkContainer.setOrientation(LinearLayout.HORIZONTAL);
+                hunkContainer.setGravity(Gravity.CENTER_VERTICAL);
 
-                GradientDrawable btnBg = new GradientDrawable();
-                btnBg.setShape(GradientDrawable.RECTANGLE);
-                btnBg.setCornerRadius(dpToPx(14));
-                btnBg.setColor(Color.parseColor("#2A2D3E"));
-                btnBg.setStroke(dpToPx(1), Color.parseColor("#4C4D68"));
-                btnRevertHunk.setBackground(btnBg);
-
-                btnRevertHunk.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
-
-                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(btnSize, btnSize);
+                FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, btnSize);
                 lp.gravity = Gravity.TOP | Gravity.END;
                 lp.rightMargin = dpToPx(16);
-                btnRevertHunk.setLayoutParams(lp);
-                btnRevertHunk.setVisibility(View.GONE);
+                hunkContainer.setLayoutParams(lp);
+                hunkContainer.setVisibility(View.GONE);
 
-                btnRevertHunk.setOnClickListener(v -> revertSingleHunk(hunk));
-                mFlOverlayContainer.addView(btnRevertHunk);
-                mBtnOverlayViews.add(btnRevertHunk);
+                for (HunkOption option : options) {
+                    ImageButton btn = new ImageButton(getContext());
+                    btn.setImageResource(option.getIconResId());
+                    btn.setColorFilter(option.getIconTintColor());
+                    btn.setScaleType(ImageButton.ScaleType.CENTER_INSIDE);
+
+                    if (option.getLabel() != null) {
+                        btn.setContentDescription(option.getLabel());
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            btn.setTooltipText(option.getLabel());
+                        }
+                    }
+
+                    GradientDrawable btnBg = new GradientDrawable();
+                    btnBg.setShape(GradientDrawable.RECTANGLE);
+                    btnBg.setCornerRadius(dpToPx(14));
+                    btnBg.setColor(Color.parseColor("#2A2D3E"));
+                    btnBg.setStroke(dpToPx(1), Color.parseColor("#4C4D68"));
+                    btn.setBackground(btnBg);
+
+                    btn.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
+
+                    LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(btnSize, btnSize);
+                    btnLp.setMargins(0, 0, dpToPx(6), 0);
+                    btn.setLayoutParams(btnLp);
+
+                    btn.setOnClickListener(v -> performHunkOption(option, hunk));
+
+                    hunkContainer.addView(btn);
+                }
+
+                mFlOverlayContainer.addView(hunkContainer);
+                mBtnOverlayViews.add(hunkContainer);
             }
         }
 
@@ -344,13 +421,13 @@ public class EditorFragment extends Fragment {
             }
         }
 
-        // 2. Update revert buttons via translationY with vertical centering across ALL lines in the hunk
+        // 2. Update hunk option containers via translationY with vertical centering across ALL lines in the hunk
         int btnSize = dpToPx(28);
         if (mDiffHunks != null) {
             int btnIdx = 0;
             for (DiffHunk hunk : mDiffHunks) {
                 if (btnIdx < mBtnOverlayViews.size()) {
-                    ImageButton btn = mBtnOverlayViews.get(btnIdx);
+                    View container = mBtnOverlayViews.get(btnIdx);
                     int totalHunkLines = hunk.deletedLines.size() + hunk.addedLines.size();
                     if (totalHunkLines <= 0) totalHunkLines = 1;
 
@@ -359,10 +436,10 @@ public class EditorFragment extends Fragment {
                     float btnTop = hunkTop + (totalHunkHeight - btnSize) / 2f;
 
                     if (containerHeight > 0 && (hunkTop + totalHunkHeight < -lineHeight || hunkTop > containerHeight + lineHeight)) {
-                        btn.setVisibility(View.GONE);
+                        container.setVisibility(View.GONE);
                     } else {
-                        btn.setVisibility(View.VISIBLE);
-                        btn.setTranslationY(btnTop);
+                        container.setVisibility(View.VISIBLE);
+                        container.setTranslationY(btnTop);
                     }
                 }
                 btnIdx++;
@@ -396,6 +473,80 @@ public class EditorFragment extends Fragment {
         }
 
         defaultApplyRevertAll();
+    }
+
+    public void performHunkOption(HunkOption option, DiffHunk hunk) {
+        if (option == null || hunk == null || !mIsDiffMode) return;
+
+        if (option.getListener() != null) {
+            boolean handled = option.getListener().onOptionClick(this, option, hunk, mFile1Path, mFile2Path);
+            if (handled) return;
+        }
+
+        if (HunkOption.OPTION_ACCEPT.equalsIgnoreCase(option.getId())) {
+            defaultApplyHunkAccept(hunk);
+        } else if (HunkOption.OPTION_REVERT.equalsIgnoreCase(option.getId())) {
+            revertSingleHunk(hunk);
+        }
+    }
+
+    public boolean defaultApplyHunkAccept(DiffHunk hunk) {
+        if (!mIsDiffMode || mFile1Path == null || hunk == null) return false;
+
+        File file1 = new File(mFile1Path);
+        if (!file1.exists()) return false;
+
+        try {
+            List<String> lines1 = readLinesFromFile(mFile1Path);
+
+            int start = hunk.line1Start;
+            int countToRemove = hunk.line1Count;
+
+            if (start < 0) start = 0;
+            if (start > lines1.size()) start = lines1.size();
+
+            for (int i = 0; i < countToRemove && start < lines1.size(); i++) {
+                lines1.remove(start);
+            }
+
+            for (int i = 0; i < hunk.addedLines.size(); i++) {
+                int insertIndex = start + i;
+                if (insertIndex >= 0 && insertIndex <= lines1.size()) {
+                    lines1.add(insertIndex, hunk.addedLines.get(i));
+                } else {
+                    lines1.add(hunk.addedLines.get(i));
+                }
+            }
+
+            boolean file1HadTrailing = checkTrailingNewline(file1);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < lines1.size(); i++) {
+                if (i > 0) sb.append("\n");
+                sb.append(lines1.get(i));
+            }
+            if (file1HadTrailing && sb.length() > 0 && !sb.toString().endsWith("\n")) {
+                sb.append("\n");
+            }
+
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(file1))) {
+                writer.write(sb.toString());
+            }
+
+            Context ctx = getContext();
+            if (ctx != null) {
+                Toast.makeText(ctx, "Accepted change", Toast.LENGTH_SHORT).show();
+            }
+
+            loadDiffContent(mFile1Path, mFile2Path);
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to accept diff hunk", e);
+            Context ctx = getContext();
+            if (ctx != null) {
+                Toast.makeText(ctx, "Failed to accept: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+            return false;
+        }
     }
 
     private void revertSingleHunk(DiffHunk hunk) {
@@ -679,6 +830,7 @@ public class EditorFragment extends Fragment {
     public void extractDiffHunks(List<DiffLine> diffLines) {
         mDiffHunks.clear();
 
+        int line1Index = 0;
         int line2Index = 0;
         int editorLineIndex = 0;
 
@@ -695,15 +847,18 @@ public class EditorFragment extends Fragment {
                     mDiffHunks.add(currentHunk);
                     currentHunk = null;
                 }
+                line1Index++;
                 line2Index++;
             } else if (line.type == DiffLine.Type.DELETED) {
                 if (currentHunk == null) {
-                    currentHunk = new DiffHunk(line2Index, 0, editorLineIndex);
+                    currentHunk = new DiffHunk(line1Index, 0, line2Index, 0, editorLineIndex);
                 }
+                currentHunk.line1Count++;
                 currentHunk.deletedLines.add(line.text != null ? line.text : "");
+                line1Index++;
             } else if (line.type == DiffLine.Type.ADDED) {
                 if (currentHunk == null) {
-                    currentHunk = new DiffHunk(line2Index, 0, editorLineIndex);
+                    currentHunk = new DiffHunk(line1Index, 0, line2Index, 0, editorLineIndex);
                 }
                 currentHunk.line2Count++;
                 currentHunk.addedLines.add(line.text != null ? line.text : "");
