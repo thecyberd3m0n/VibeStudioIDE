@@ -26,11 +26,15 @@ public class BrowserMcpServer implements McpServer {
 
     @Override
     public CharSequence formatToolCall(String toolName, JSONObject args) {
-        if (args == null) args = new JSONObject();
+        JSONObject toolArgs = args != null ? args : new JSONObject();
         if ("read_browser_logs".equalsIgnoreCase(toolName) || "browser_logs".equalsIgnoreCase(toolName)) {
-            return "Reading browser logs (" + args.optInt("max_lines", 30) + " lines)";
+            return "Reading browser logs (" + toolArgs.optInt("max_lines", 30) + " lines)";
         }
-        return "Browser Tool [" + toolName + "]: " + args.toString();
+        if ("form_file_attach".equalsIgnoreCase(toolName) || "browser_form_file_attach".equalsIgnoreCase(toolName) || "attach_file".equalsIgnoreCase(toolName)) {
+            String path = toolArgs.optString("file_path", toolArgs.optString("path", "file"));
+            return "Attaching file: " + path;
+        }
+        return "Browser Tool [" + toolName + "]: " + toolArgs.toString();
     }
 
 
@@ -116,6 +120,13 @@ public class BrowserMcpServer implements McpServer {
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
+        // Tool 11: form_file_attach
+        mTools.add(McpTool.builder("form_file_attach", "Auto-provide a file to the web file chooser and attach it to an input element.")
+                .addProperty("file_path", PropertyType.STRING, "Path to the local file to attach (e.g. '/path/to/file.png' or '~/file.txt').", true)
+                .addProperty("selector", PropertyType.STRING, "Optional CSS selector of the file input element to click (default: 'input[type=file]').", false)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
+                .build());
+
     }
 
     @Override
@@ -153,7 +164,7 @@ public class BrowserMcpServer implements McpServer {
     @Override
     public boolean handlesTool(String toolName) {
         if (toolName == null) return false;
-        if ("read_browser_logs".equals(toolName)) return true;
+        if ("read_browser_logs".equals(toolName) || "form_file_attach".equals(toolName) || "browser_form_file_attach".equals(toolName) || "form_file_upload".equals(toolName) || "attach_file".equals(toolName) || "browser_attach_file".equals(toolName)) return true;
         for (McpTool tool : mTools) {
             if (tool.getName().equals(toolName)) {
                 return true;
@@ -255,6 +266,12 @@ public class BrowserMcpServer implements McpServer {
                 String resStr = browserManager.executeCdpCommand(webView, method, paramsStr);
                 return McpToolResult.success(resStr);
 
+            } else if ("form_file_attach".equals(toolName) || "browser_form_file_attach".equals(toolName) || "form_file_upload".equals(toolName) || "attach_file".equals(toolName) || "browser_attach_file".equals(toolName)) {
+                String filePath = arguments != null ? getStringArg(arguments, "file_path", getStringArg(arguments, "path", "")) : "";
+                String selector = arguments != null ? getStringArg(arguments, "selector", "input[type='file']") : "input[type='file']";
+
+                String resStr = browserManager.attachFile(context, webView, selector, filePath);
+                return McpToolResult.success(resStr);
 
             } else if ("browser_screenshot".equals(toolName)) {
                 JSONObject jsonRes = browserManager.takeScreenshot(webView, context);

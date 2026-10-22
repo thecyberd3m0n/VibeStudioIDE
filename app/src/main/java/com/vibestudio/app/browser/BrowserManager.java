@@ -19,6 +19,9 @@ import android.webkit.WebView;
 import android.net.Uri;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebViewClient;
+
+import androidx.core.content.FileProvider;
+
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -52,7 +55,6 @@ public class BrowserManager {
     private final Deque<String> mBrowserLogBuffer = new ArrayDeque<>();
     private ValueCallback<Uri[]> mPendingFilePathCallback;
     private Uri mPendingAutoAttachUri;
-    private String mPendingAfterClickSelector;
 
     public interface BrowserStateListener {
         void onUrlChanged(WebView view, String newUrl);
@@ -248,12 +250,10 @@ public class BrowserManager {
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(final WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
-                addBrowserLog("INFO", "WebViewFileChooser", "onShowFileChooser triggered by Chromium. PendingUri: " + mPendingAutoAttachUri + ", PendingAfterClick: " + mPendingAfterClickSelector);
+                addBrowserLog("INFO", "WebViewFileChooser", "onShowFileChooser triggered by Chromium. PendingUri: " + mPendingAutoAttachUri);
                 if (mPendingAutoAttachUri != null) {
                     final Uri autoUri = mPendingAutoAttachUri;
-                    final String afterClickSel = mPendingAfterClickSelector;
                     mPendingAutoAttachUri = null;
-                    mPendingAfterClickSelector = null;
 
                     if (filePathCallback != null) {
                         filePathCallback.onReceiveValue(new Uri[]{ autoUri });
@@ -284,17 +284,6 @@ public class BrowserManager {
                                     });
                             } catch (Exception e) {
                                 addBrowserLog("ERROR", "WebViewFileChooser", "Error dispatching events: " + e.getMessage());
-                            }
-
-                            if (afterClickSel != null && !afterClickSel.isEmpty()) {
-                                addBrowserLog("INFO", "WebViewFileChooser", "Preparing native CDP after-click on selector: " + afterClickSel);
-                                mMainHandler.postDelayed(() -> {
-                                    new Thread(() -> {
-                                        addBrowserLog("INFO", "WebViewFileChooser", "Executing native CDP after-click by selector: " + afterClickSel);
-                                        String cdpRes = CdpLocalClient.dispatchCdpClickBySelector(afterClickSel);
-                                        addBrowserLog("INFO", "WebViewFileChooser", "Native CDP after-click result: " + cdpRes);
-                                    }).start();
-                                }, 250);
                             }
                         }, 150);
                     }
@@ -642,24 +631,29 @@ public class BrowserManager {
         });
     }
                 public String attachFile(final Context context, final WebView webView, final String selector, final String filePath) {
-        return attachFile(context, webView, selector, filePath, null);
-    }
-
-    public String attachFile(final Context context, final WebView webView, final String selector, final String filePath, final String afterClickSelector) {
         if (webView == null) return "Error: WebView not initialized.";
         if (filePath == null || filePath.trim().isEmpty()) {
             return "Error: File path is empty.";
         }
 
-        File file = new File(filePath);
+        String resolvedPath = filePath.trim();
+        if (resolvedPath.startsWith("~")) {
+            File termuxRoot = new File("/data/data/com.termux/files");
+            File homeDir = termuxRoot.exists() ? new File(termuxRoot, "home") : (context != null ? new File(context.getFilesDir(), "home") : null);
+            if (homeDir != null) {
+                resolvedPath = new File(homeDir, resolvedPath.substring(1)).getAbsolutePath();
+            }
+        }
+
+        File file = new File(resolvedPath);
         if (!file.exists()) {
-            return "Error: File not found: " + filePath;
+            return "Error: File not found: " + filePath + (resolvedPath.equals(filePath) ? "" : " (resolved: " + resolvedPath + ")");
         }
 
         Uri contentUri = null;
         if (context != null) {
             try {
-                contentUri = androidx.core.content.FileProvider.getUriForFile(
+                contentUri = FileProvider.getUriForFile(
                         context,
                         context.getPackageName() + ".fileprovider",
                         file);
@@ -672,20 +666,30 @@ public class BrowserManager {
         }
 
         mPendingAutoAttachUri = contentUri;
-        mPendingAfterClickSelector = (afterClickSelector != null && !afterClickSelector.trim().isEmpty()) ? afterClickSelector.trim() : null;
 
-        addBrowserLog("INFO", TAG, "attachFile initiated. File: " + filePath + ", Uri: " + contentUri + ", Selector: " + selector + ", PendingAfterClick: " + mPendingAfterClickSelector);
+        addBrowserLog("INFO", TAG, "attachFile initiated. File: " + resolvedPath + ", Uri: " + contentUri + ", Selector: " + selector);
 
         String targetSelector = (selector != null && !selector.trim().isEmpty()) ? selector : "input[type='file']";
         addBrowserLog("INFO", TAG, "Executing native CDP click by selector on target selector: " + targetSelector);
         String cdpResult = CdpLocalClient.dispatchCdpClickBySelector(targetSelector);
         addBrowserLog("INFO", TAG, "Initial CDP click result on '" + targetSelector + "': " + cdpResult);
-        String resultMsg = "File attachment queued for '" + filePath + "'. Native CDP click result: " + cdpResult;
-        if (mPendingAfterClickSelector != null) {
-            resultMsg += " Pending after-click scheduled for '" + mPendingAfterClickSelector + "'.";
+
+        if (cdpResult != null && cdpResult.startsWith("Error")) {
+            addBrowserLog("INFO", TAG, "CDP click returned error, attempting fallback JS click on: " + targetSelector);
+            final String selEscaped = targetSelector.replace("'", "\\'");
+            mMainHandler.post(() -> {
+                try {
+                    webView.evaluateJavascript(
+                        "(function() { " +
+                        "  var el = document.querySelector('" + selEscaped + "'); " +
+                        "  if (el) { el.click(); return 'clicked'; } " +
+                        "  return 'not_found'; " +
+                        "})();", null);
+                } catch (Exception ignored) {}
+            });
         }
 
-        return resultMsg;
+        return "File attachment queued for '" + resolvedPath + "'. Native CDP click result: " + cdpResult;
     }
 
     public String uploadFile(final WebView webView, final String selector, final String filePath) {
