@@ -3,6 +3,7 @@ package com.vibestudio.app.browser;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Base64;
@@ -55,6 +56,8 @@ public class BrowserManager {
     private final Deque<String> mBrowserLogBuffer = new ArrayDeque<>();
     private ValueCallback<Uri[]> mPendingFilePathCallback;
     private Uri mPendingAutoAttachUri;
+    private long mAutoAttachTimestamp = 0;
+    private Uri mLastAttachedUri = null;
 
     public interface BrowserStateListener {
         void onUrlChanged(WebView view, String newUrl);
@@ -128,7 +131,7 @@ public class BrowserManager {
     }
 
     private void setupWebViewSettings(final WebView webView) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             WebView.setWebContentsDebuggingEnabled(true);
         }
         WebSettings settings = webView.getSettings();
@@ -250,42 +253,25 @@ public class BrowserManager {
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(final WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
-                addBrowserLog("INFO", "WebViewFileChooser", "onShowFileChooser triggered by Chromium. PendingUri: " + mPendingAutoAttachUri);
-                if (mPendingAutoAttachUri != null) {
-                    final Uri autoUri = mPendingAutoAttachUri;
-                    mPendingAutoAttachUri = null;
+                boolean isRecentAutoAttach = (System.currentTimeMillis() - mAutoAttachTimestamp < 2000);
+                addBrowserLog("INFO", "WebViewFileChooser", "onShowFileChooser triggered by Chromium. PendingUri: " + mPendingAutoAttachUri + ", RecentAutoAttach: " + isRecentAutoAttach);
 
-                    if (filePathCallback != null) {
-                        filePathCallback.onReceiveValue(new Uri[]{ autoUri });
-                        addBrowserLog("INFO", "WebViewFileChooser", "Successfully passed Uri[] to Chromium filePathCallback: " + autoUri);
-                    } else {
-                        addBrowserLog("WARNING", "WebViewFileChooser", "filePathCallback is null!");
+                if (mPendingAutoAttachUri != null || isRecentAutoAttach) {
+                    final Uri autoUri = mPendingAutoAttachUri != null ? mPendingAutoAttachUri : mLastAttachedUri;
+                    if (mPendingAutoAttachUri != null) {
+                        mLastAttachedUri = mPendingAutoAttachUri;
+                        mPendingAutoAttachUri = null;
                     }
 
-                    if (webView != null) {
-                        mMainHandler.postDelayed(() -> {
-                            addBrowserLog("INFO", "WebViewFileChooser", "Dispatching change & input DOM events to page...");
-                            try {
-                                webView.evaluateJavascript(
-                                    "(function() { " +
-                                    "  var inputs = document.querySelectorAll('input[type=file]'); " +
-                                    "  var count = 0; " +
-                                    "  inputs.forEach(function(inp) { " +
-                                    "    inp.dispatchEvent(new Event('change', { bubbles: true })); " +
-                                    "    inp.dispatchEvent(new Event('input', { bubbles: true })); " +
-                                    "    count++; " +
-                                    "  }); " +
-                                    "  return count; " +
-                                    "})();", new ValueCallback<String>() {
-                                        @Override
-                                        public void onReceiveValue(String val) {
-                                            addBrowserLog("INFO", "WebViewFileChooser", "Dispatched events to " + val + " file input(s).");
-                                        }
-                                    });
-                            } catch (Exception e) {
-                                addBrowserLog("ERROR", "WebViewFileChooser", "Error dispatching events: " + e.getMessage());
-                            }
-                        }, 150);
+                    if (filePathCallback != null) {
+                        if (autoUri != null) {
+                            filePathCallback.onReceiveValue(new Uri[]{ autoUri });
+                            addBrowserLog("INFO", "WebViewFileChooser", "Successfully passed Uri[] to Chromium filePathCallback: " + autoUri);
+                        } else {
+                            filePathCallback.onReceiveValue(null);
+                        }
+                    } else {
+                        addBrowserLog("WARNING", "WebViewFileChooser", "filePathCallback is null!");
                     }
                     return true;
                 }
@@ -666,6 +652,8 @@ public class BrowserManager {
         }
 
         mPendingAutoAttachUri = contentUri;
+        mLastAttachedUri = contentUri;
+        mAutoAttachTimestamp = System.currentTimeMillis();
 
         addBrowserLog("INFO", TAG, "attachFile initiated. File: " + resolvedPath + ", Uri: " + contentUri + ", Selector: " + selector);
 
