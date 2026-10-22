@@ -2,6 +2,7 @@ package com.vibestudio.app.fragments;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.KeyEvent;
@@ -9,6 +10,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.widget.Button;
 import android.widget.EditText;
@@ -18,6 +21,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.vibestudio.app.R;
+import com.vibestudio.app.activity.MainActivity;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.tab.TabItem;
@@ -138,6 +142,13 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
                     }
                 });
             }
+        }
+    }
+
+    @Override
+    public void onShowFileChooser(WebView view, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).openFilePickerForBrowser(this, filePathCallback, fileChooserParams);
         }
     }
 

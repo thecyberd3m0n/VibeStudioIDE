@@ -10,6 +10,8 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -233,11 +235,11 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             private void notifyGitRefresh(String filePath) {
                 if (filePath == null) return;
                 File target = new File(filePath);
-                File repoRoot = com.vibestudio.app.git.GitManager.getInstance().findGitRoot(target);
+                File repoRoot = GitManager.getInstance().findGitRoot(target);
                 if (repoRoot != null) {
-                    android.content.Context ctx = getApplicationContext();
+                    Context ctx = getApplicationContext();
                     if (ctx != null) {
-                        com.vibestudio.app.git.GitManager.getInstance().refreshRepositoryState(ctx, repoRoot, null);
+                        GitManager.getInstance().refreshRepositoryState(ctx, repoRoot, null);
                     }
                 }
             }
@@ -612,6 +614,44 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         if (fragment != null) {
             fragment.startPendingSharedFiles(uris);
         }
+    }
+
+    public void openFilePickerForBrowser(BrowserFragment browserFragment, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {
+        TabItem currentBrowserTab = mTabManager.getActiveTab();
+        FilesFragment fragment = null;
+
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == TabType.FILES) {
+                if (tab.getFragment() instanceof FilesFragment) {
+                    fragment = (FilesFragment) tab.getFragment();
+                }
+                break;
+            }
+        }
+
+        if (fragment == null) {
+            fragment = new FilesFragment();
+            mTabManager.openTab(TabType.FILES, "Files", "📁", fragment, true);
+        } else {
+            TabItem filesTab = mTabManager.findTabByFragment(fragment);
+            if (filesTab != null) {
+                mTabManager.selectTab(filesTab);
+            }
+        }
+
+        final FilesFragment targetFragment = fragment;
+        targetFragment.startFilePickerMode("Select file to upload", file -> {
+            if (file != null) {
+                Uri uri = Uri.fromFile(file);
+                filePathCallback.onReceiveValue(new Uri[]{ uri });
+            } else {
+                filePathCallback.onReceiveValue(null);
+            }
+
+            if (currentBrowserTab != null && mTabManager.getTabs().contains(currentBrowserTab)) {
+                mTabManager.selectTab(currentBrowserTab);
+            }
+        });
     }
 
     public void openBrowserTabWithUrl(String url) {

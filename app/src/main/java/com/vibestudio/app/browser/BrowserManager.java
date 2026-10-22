@@ -58,6 +58,7 @@ public class BrowserManager {
         void onUrlChanged(WebView view, String newUrl);
         void onTitleChanged(WebView view, String title);
         void onFaviconChanged(WebView view, Bitmap favicon);
+        default void onShowFileChooser(WebView view, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {}
     }
 
     private final Map<WebView, BrowserStateListener> mStateListeners = new WeakHashMap<>();
@@ -299,8 +300,18 @@ public class BrowserManager {
                     }
                     return true;
                 }
+                if (mPendingFilePathCallback != null) {
+                    try {
+                        mPendingFilePathCallback.onReceiveValue(null);
+                    } catch (Exception ignored) {}
+                }
                 mPendingFilePathCallback = filePathCallback;
                 addBrowserLog("INFO", "WebViewFileChooser", "File chooser requested by page (manual user interaction).");
+
+                BrowserStateListener listener = mStateListeners.get(webView);
+                if (listener != null) {
+                    mMainHandler.post(() -> listener.onShowFileChooser(webView, filePathCallback, fileChooserParams));
+                }
                 return true;
             }
             @Override

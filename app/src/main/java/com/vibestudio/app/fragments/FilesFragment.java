@@ -4,6 +4,7 @@ import com.vibestudio.app.git.GitStatusView;
 import com.vibestudio.app.git.GitManager;
 import com.vibestudio.app.git.GitRepositoryState;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
@@ -12,6 +13,7 @@ import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.view.ContextThemeWrapper;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.Animation;
@@ -82,6 +84,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     }
 
     private FileSelectionListener mSelectionListener;
+    private FileSelectionListener mPickerSelectionListener;
 
     public static FilesFragment newInstance(String path) {
         FilesFragment fragment = new FilesFragment();
@@ -207,7 +210,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 if (mFlGitViewContainer == null) return false;
 
                 switch (event.getAction()) {
-                    case android.view.MotionEvent.ACTION_DOWN:
+                    case MotionEvent.ACTION_DOWN:
                         startY[0] = event.getRawY();
                         preloadGitView();
                         int height = getGitContainerHeight();
@@ -222,7 +225,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                         isDragging[0] = false;
                         return true;
 
-                    case android.view.MotionEvent.ACTION_MOVE:
+                    case MotionEvent.ACTION_MOVE:
                         float dy = event.getRawY() - startY[0];
                         if (Math.abs(dy) > 10) {
                             isDragging[0] = true;
@@ -234,8 +237,8 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                         mFlGitViewContainer.setTranslationY(targetTrans);
                         return true;
 
-                    case android.view.MotionEvent.ACTION_UP:
-                    case android.view.MotionEvent.ACTION_CANCEL:
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
                         float totalDy = event.getRawY() - startY[0];
                         if (!isDragging[0] && Math.abs(totalDy) < 15) {
                             v.performClick();
@@ -291,6 +294,33 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     public void setOnBottomBarOkClickListener(View.OnClickListener listener) {
         if (mBtnBottomBarOk != null) {
             mBtnBottomBarOk.setOnClickListener(listener);
+        }
+    }
+
+    public void startFilePickerMode(String text, FileSelectionListener listener) {
+        if (mPickerSelectionListener != null) {
+            FileSelectionListener prevListener = mPickerSelectionListener;
+            mPickerSelectionListener = null;
+            prevListener.onFileSelected(null);
+        }
+        mPickerSelectionListener = listener;
+        setBottomBarText(text != null ? text : "Select file");
+        setBottomBarVisible(true);
+        setOnBottomBarCancelClickListener(v -> cancelFilePickerMode());
+        if (mBtnBottomBarOk != null) {
+            mBtnBottomBarOk.setVisibility(View.GONE);
+        }
+    }
+
+    public void cancelFilePickerMode() {
+        if (mPickerSelectionListener != null) {
+            FileSelectionListener listener = mPickerSelectionListener;
+            mPickerSelectionListener = null;
+            listener.onFileSelected(null);
+        }
+        setBottomBarVisible(false);
+        if (mBtnBottomBarOk != null) {
+            mBtnBottomBarOk.setVisibility(View.VISIBLE);
         }
     }
 
@@ -506,7 +536,15 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 });
             } else {
                 itemView.setOnClickListener(v -> {
-                    if (mSelectionListener != null) {
+                    if (mPickerSelectionListener != null) {
+                        FileSelectionListener pickerListener = mPickerSelectionListener;
+                        mPickerSelectionListener = null;
+                        setBottomBarVisible(false);
+                        if (mBtnBottomBarOk != null) {
+                            mBtnBottomBarOk.setVisibility(View.VISIBLE);
+                        }
+                        pickerListener.onFileSelected(entry.getFile());
+                    } else if (mSelectionListener != null) {
                         mSelectionListener.onFileSelected(entry.getFile());
                     } else {
                         Toast.makeText(getContext(), "Selected: " + entry.getName(), Toast.LENGTH_SHORT).show();
@@ -636,12 +674,12 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             if (relPath.isEmpty()) return null;
 
             if (itemFile.isFile()) {
-                for (com.vibestudio.app.git.GitStatusView.GitFileStatus f : state.stagedFiles) {
+                for (GitStatusView.GitFileStatus f : state.stagedFiles) {
                     if (relPath.equals(f.filePath)) {
                         return "Staged (+" + f.additions + ", -" + f.deletions + ")";
                     }
                 }
-                for (com.vibestudio.app.git.GitStatusView.GitFileStatus f : state.unstagedFiles) {
+                for (GitStatusView.GitFileStatus f : state.unstagedFiles) {
                     if (relPath.equals(f.filePath)) {
                         if ("??".equals(f.status)) {
                             return "Untracked (+" + f.additions + ")";
@@ -655,14 +693,14 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 int totalDel = 0;
                 boolean hasChanges = false;
 
-                for (com.vibestudio.app.git.GitStatusView.GitFileStatus f : state.stagedFiles) {
+                for (GitStatusView.GitFileStatus f : state.stagedFiles) {
                     if (f.filePath != null && f.filePath.startsWith(dirPrefix)) {
                         totalAdd += f.additions;
                         totalDel += f.deletions;
                         hasChanges = true;
                     }
                 }
-                for (com.vibestudio.app.git.GitStatusView.GitFileStatus f : state.unstagedFiles) {
+                for (GitStatusView.GitFileStatus f : state.unstagedFiles) {
                     if (f.filePath != null && f.filePath.startsWith(dirPrefix)) {
                         totalAdd += f.additions;
                         totalDel += f.deletions;
@@ -679,6 +717,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
     @Override
     public void onDestroyView() {
+        cancelFilePickerMode();
         super.onDestroyView();
         GitManager.getInstance().removeStateChangeListener(this);
     }
@@ -879,7 +918,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     private void showCreateFileDialog() {
         if (getContext() == null) return;
         Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(themedContext);
+        AlertDialog.Builder builder = new AlertDialog.Builder(themedContext);
         builder.setTitle("Create New File");
 
         final EditText input = new EditText(themedContext);
@@ -900,7 +939,15 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                         if (newFile.createNewFile()) {
                             Toast.makeText(getContext(), "File created", Toast.LENGTH_SHORT).show();
                             loadDirectory(mCurrentDir);
-                            if (mSelectionListener != null) {
+                            if (mPickerSelectionListener != null) {
+                                FileSelectionListener pickerListener = mPickerSelectionListener;
+                                mPickerSelectionListener = null;
+                                setBottomBarVisible(false);
+                                if (mBtnBottomBarOk != null) {
+                                    mBtnBottomBarOk.setVisibility(View.VISIBLE);
+                                }
+                                pickerListener.onFileSelected(newFile);
+                            } else if (mSelectionListener != null) {
                                 mSelectionListener.onFileSelected(newFile);
                             }
                         } else {
@@ -919,7 +966,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     private void showCreateRepositoryDialog() {
         if (getContext() == null) return;
         Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(themedContext);
+        AlertDialog.Builder builder = new AlertDialog.Builder(themedContext);
         builder.setTitle("Create New Repository");
 
         final EditText input = new EditText(themedContext);
@@ -967,7 +1014,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     private void showCreateFolderDialog() {
         if (getContext() == null) return;
         Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(themedContext);
+        AlertDialog.Builder builder = new AlertDialog.Builder(themedContext);
         builder.setTitle("Create New Directory");
 
         final EditText input = new EditText(themedContext);
