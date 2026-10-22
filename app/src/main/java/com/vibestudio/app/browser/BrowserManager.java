@@ -16,7 +16,13 @@ import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.net.Uri;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebViewClient;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.HashMap;
 
 import com.vibestudio.app.service.LogViewerService;
 
@@ -44,6 +50,9 @@ public class BrowserManager {
 
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
     private final Deque<String> mBrowserLogBuffer = new ArrayDeque<>();
+    private ValueCallback<Uri[]> mPendingFilePathCallback;
+    private Uri mPendingAutoAttachUri;
+    private String mPendingAfterClickSelector;
 
     public interface BrowserStateListener {
         void onUrlChanged(WebView view, String newUrl);
@@ -116,6 +125,9 @@ public class BrowserManager {
     }
 
     private void setupWebViewSettings(final WebView webView) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -130,6 +142,58 @@ public class BrowserManager {
         settings.setDisplayZoomControls(false);
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (request != null && request.getUrl() != null) {
+                    String method = request.getMethod();
+                    if ("GET".equalsIgnoreCase(method) && request.isForMainFrame()) {
+                        try {
+                            URL url = new URL(request.getUrl().toString());
+                            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                            conn.setRequestMethod("GET");
+                            conn.setConnectTimeout(8000);
+                            conn.setReadTimeout(8000);
+                            conn.setInstanceFollowRedirects(true);
+                            if (request.getRequestHeaders() != null) {
+                                for (Map.Entry<String, String> header : request.getRequestHeaders().entrySet()) {
+                                    conn.setRequestProperty(header.getKey(), header.getValue());
+                                }
+                            }
+                            conn.connect();
+
+                            int statusCode = conn.getResponseCode();
+                            if (statusCode >= 200 && statusCode < 400) {
+                                String encoding = conn.getContentEncoding() != null ? conn.getContentEncoding() : "UTF-8";
+                                String mimeType = conn.getContentType();
+                                if (mimeType != null && mimeType.contains(";")) {
+                                    mimeType = mimeType.split(";")[0].trim();
+                                }
+                                if (mimeType == null || mimeType.isEmpty()) {
+                                    mimeType = "text/html";
+                                }
+
+                                Map<String, String> responseHeaders = new HashMap<>();
+                                for (Map.Entry<String, List<String>> entry : conn.getHeaderFields().entrySet()) {
+                                    if (entry.getKey() == null) continue;
+                                    String keyLower = entry.getKey().toLowerCase();
+                                    if (keyLower.contains("content-security-policy")) {
+                                        continue;
+                                    }
+                                    if (!entry.getValue().isEmpty()) {
+                                        responseHeaders.put(entry.getKey(), entry.getValue().get(0));
+                                    }
+                                }
+
+                                InputStream stream = statusCode >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                                return new WebResourceResponse(mimeType, encoding, statusCode, conn.getResponseMessage(), responseHeaders, stream);
+                            }
+                        } catch (Exception e) {
+                            addBrowserLog("DEBUG", "WebViewCSP", "CSP interception fallback: " + e.getMessage());
+                        }
+                    }
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return false;
@@ -181,6 +245,64 @@ public class BrowserManager {
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(final WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+                addBrowserLog("INFO", "WebViewFileChooser", "onShowFileChooser triggered by Chromium. PendingUri: " + mPendingAutoAttachUri + ", PendingAfterClick: " + mPendingAfterClickSelector);
+                if (mPendingAutoAttachUri != null) {
+                    final Uri autoUri = mPendingAutoAttachUri;
+                    final String afterClickSel = mPendingAfterClickSelector;
+                    mPendingAutoAttachUri = null;
+                    mPendingAfterClickSelector = null;
+
+                    if (filePathCallback != null) {
+                        filePathCallback.onReceiveValue(new Uri[]{ autoUri });
+                        addBrowserLog("INFO", "WebViewFileChooser", "Successfully passed Uri[] to Chromium filePathCallback: " + autoUri);
+                    } else {
+                        addBrowserLog("WARNING", "WebViewFileChooser", "filePathCallback is null!");
+                    }
+
+                    if (webView != null) {
+                        mMainHandler.postDelayed(() -> {
+                            addBrowserLog("INFO", "WebViewFileChooser", "Dispatching change & input DOM events to page...");
+                            try {
+                                webView.evaluateJavascript(
+                                    "(function() { " +
+                                    "  var inputs = document.querySelectorAll('input[type=file]'); " +
+                                    "  var count = 0; " +
+                                    "  inputs.forEach(function(inp) { " +
+                                    "    inp.dispatchEvent(new Event('change', { bubbles: true })); " +
+                                    "    inp.dispatchEvent(new Event('input', { bubbles: true })); " +
+                                    "    count++; " +
+                                    "  }); " +
+                                    "  return count; " +
+                                    "})();", new ValueCallback<String>() {
+                                        @Override
+                                        public void onReceiveValue(String val) {
+                                            addBrowserLog("INFO", "WebViewFileChooser", "Dispatched events to " + val + " file input(s).");
+                                        }
+                                    });
+                            } catch (Exception e) {
+                                addBrowserLog("ERROR", "WebViewFileChooser", "Error dispatching events: " + e.getMessage());
+                            }
+
+                            if (afterClickSel != null && !afterClickSel.isEmpty()) {
+                                addBrowserLog("INFO", "WebViewFileChooser", "Preparing native CDP after-click on selector: " + afterClickSel);
+                                mMainHandler.postDelayed(() -> {
+                                    new Thread(() -> {
+                                        addBrowserLog("INFO", "WebViewFileChooser", "Executing native CDP after-click by selector: " + afterClickSel);
+                                        String cdpRes = CdpLocalClient.dispatchCdpClickBySelector(afterClickSel);
+                                        addBrowserLog("INFO", "WebViewFileChooser", "Native CDP after-click result: " + cdpRes);
+                                    }).start();
+                                }, 250);
+                            }
+                        }, 150);
+                    }
+                    return true;
+                }
+                mPendingFilePathCallback = filePathCallback;
+                addBrowserLog("INFO", "WebViewFileChooser", "File chooser requested by page (manual user interaction).");
+                return true;
+            }
             @Override
             public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
                 if (consoleMessage != null) {
@@ -508,4 +630,75 @@ public class BrowserManager {
             } catch (Exception ignored) {}
         });
     }
+                public String attachFile(final Context context, final WebView webView, final String selector, final String filePath) {
+        return attachFile(context, webView, selector, filePath, null);
+    }
+
+    public String attachFile(final Context context, final WebView webView, final String selector, final String filePath, final String afterClickSelector) {
+        if (webView == null) return "Error: WebView not initialized.";
+        if (filePath == null || filePath.trim().isEmpty()) {
+            return "Error: File path is empty.";
+        }
+
+        File file = new File(filePath);
+        if (!file.exists()) {
+            return "Error: File not found: " + filePath;
+        }
+
+        Uri contentUri = null;
+        if (context != null) {
+            try {
+                contentUri = androidx.core.content.FileProvider.getUriForFile(
+                        context,
+                        context.getPackageName() + ".fileprovider",
+                        file);
+            } catch (Exception e) {
+                addBrowserLog("WARNING", TAG, "FileProvider error: " + e.getMessage() + ". Falling back to Uri.fromFile");
+                contentUri = Uri.fromFile(file);
+            }
+        } else {
+            contentUri = Uri.fromFile(file);
+        }
+
+        mPendingAutoAttachUri = contentUri;
+        mPendingAfterClickSelector = (afterClickSelector != null && !afterClickSelector.trim().isEmpty()) ? afterClickSelector.trim() : null;
+
+        addBrowserLog("INFO", TAG, "attachFile initiated. File: " + filePath + ", Uri: " + contentUri + ", Selector: " + selector + ", PendingAfterClick: " + mPendingAfterClickSelector);
+
+        String targetSelector = (selector != null && !selector.trim().isEmpty()) ? selector : "input[type='file']";
+        addBrowserLog("INFO", TAG, "Executing native CDP click by selector on target selector: " + targetSelector);
+        String cdpResult = CdpLocalClient.dispatchCdpClickBySelector(targetSelector);
+        addBrowserLog("INFO", TAG, "Initial CDP click result on '" + targetSelector + "': " + cdpResult);
+        String resultMsg = "File attachment queued for '" + filePath + "'. Native CDP click result: " + cdpResult;
+        if (mPendingAfterClickSelector != null) {
+            resultMsg += " Pending after-click scheduled for '" + mPendingAfterClickSelector + "'.";
+        }
+
+        return resultMsg;
+    }
+
+    public String uploadFile(final WebView webView, final String selector, final String filePath) {
+        return attachFile(webView != null ? webView.getContext() : null, webView, selector, filePath);
+    }
+
+    public String executeCdpCommand(final WebView webView, final String method, final String paramsStr) {
+        if (webView == null) return "Error: WebView not initialized.";
+        addBrowserLog("INFO", TAG, "Executing CDP method: " + method + " with params: " + paramsStr);
+
+        try {
+            JSONObject params = new JSONObject(paramsStr != null && !paramsStr.trim().isEmpty() ? paramsStr : "{}");
+            if ("Page.navigate".equalsIgnoreCase(method)) {
+                String url = params.optString("url", "");
+                return navigate(webView, url);
+            } else if ("Page.reload".equalsIgnoreCase(method)) {
+                mMainHandler.post(webView::reload);
+                return "Page reload initiated via CDP.";
+            } else {
+                return CdpLocalClient.executeCdp(method, params);
+            }
+        } catch (Exception e) {
+            return "Error executing CDP command '" + method + "': " + e.getMessage();
+        }
+    }
+
 }

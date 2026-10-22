@@ -108,6 +108,14 @@ public class BrowserMcpServer implements McpServer {
                 .addProperty("grep_pattern", PropertyType.STRING, "Optional pattern/text to filter browser logs.", false)
                 .addProperty("level", PropertyType.STRING, "Optional log level filter (e.g. 'ERROR', 'WARNING', 'LOG', 'INFO', 'DEBUG').", false)
                 .build());
+
+        // Tool 10: browser_cdp_command
+        mTools.add(McpTool.builder("browser_cdp_command", "Execute raw Chrome DevTools Protocol (CDP) commands (e.g. DOM.setFileInputFiles, Page.navigate, Page.reload, Input, Network, DOM, Emulation, etc.) directly against the active WebView.")
+                .addProperty("method", PropertyType.STRING, "The CDP domain method name (e.g. 'DOM.setFileInputFiles', 'Page.reload', 'DOM.getDocument').", true)
+                .addProperty("params", PropertyType.STRING, "JSON string containing parameter key-values for the CDP command.", false)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
+                .build());
+
     }
 
     @Override
@@ -240,6 +248,13 @@ public class BrowserMcpServer implements McpServer {
                 String text = arguments != null ? getStringArg(arguments, "text", "") : "";
                 String resStr = browserManager.type(webView, selector, text);
                 return McpToolResult.success(resStr);
+
+            } else if ("browser_cdp_command".equals(toolName) || "browser_cdp".equals(toolName) || "browser_attach_file_cdp".equals(toolName)) {
+                String method = arguments != null ? getStringArg(arguments, "method", "DOM.setFileInputFiles") : "DOM.setFileInputFiles";
+                String paramsStr = arguments != null ? getStringArg(arguments, "params", "{}") : "{}";
+                String resStr = browserManager.executeCdpCommand(webView, method, paramsStr);
+                return McpToolResult.success(resStr);
+
 
             } else if ("browser_screenshot".equals(toolName)) {
                 JSONObject jsonRes = browserManager.takeScreenshot(webView, context);

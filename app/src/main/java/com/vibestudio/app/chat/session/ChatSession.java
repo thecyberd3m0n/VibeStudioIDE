@@ -56,6 +56,7 @@ public class ChatSession {
         this.mId = UUID.randomUUID().toString();
         this.mWorkspacePath = workspacePath;
         this.mMcpClientManager = new McpClientManager();
+        this.mMcpClientManager.setWorkspacePath(workspacePath);
         this.mToolExecutionManager = new ToolExecutionManager(this.mMcpClientManager);
         this.mAiRouter = AiRouter.getInstance();
         
@@ -73,6 +74,9 @@ public class ChatSession {
 
     public void setWorkspacePath(String workspacePath) {
         this.mWorkspacePath = workspacePath;
+        if (this.mMcpClientManager != null) {
+            this.mMcpClientManager.setWorkspacePath(workspacePath);
+        }
     }
 
     public synchronized WorkspaceChangesetTracker getChangesetTracker(Context context) {
@@ -184,23 +188,13 @@ public class ChatSession {
         if (trimmed.startsWith("/")) {
             int spaceIdx = trimmed.indexOf(" ");
             String cmdName = spaceIdx > 0 ? trimmed.substring(1, spaceIdx) : trimmed.substring(1);
-            String remaining = spaceIdx > 0 ? trimmed.substring(spaceIdx + 1).trim() : "";
+            cmdName = cmdName.toLowerCase().trim();
 
             Skill matchedSkill = resolveSkill(cmdName);
             if (matchedSkill != null) {
-                StringBuilder sb = new StringBuilder();
-                sb.append("[Skill: ").append(matchedSkill.getName());
-                if (matchedSkill.getDescription() != null && !matchedSkill.getDescription().isEmpty()) {
-                    sb.append(" - ").append(matchedSkill.getDescription());
-                }
-                sb.append("]\n");
-                if (matchedSkill.getContent() != null && !matchedSkill.getContent().isEmpty()) {
-                    sb.append(matchedSkill.getContent()).append("\n");
-                }
-                if (!remaining.isEmpty()) {
-                    sb.append("\nUser Request: ").append(remaining);
-                }
-                messageToStore = sb.toString();
+                mMcpClientManager.markSkillLoaded(matchedSkill.getName());
+            } else if (mMcpClientManager.isRegisteredServer(cmdName)) {
+                mMcpClientManager.markSkillLoaded(cmdName);
             }
         }
 
