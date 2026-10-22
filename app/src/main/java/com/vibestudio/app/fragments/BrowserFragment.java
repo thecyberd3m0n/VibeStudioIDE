@@ -10,6 +10,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
@@ -87,7 +88,16 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
         mEditUrl.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_GO ||
                 actionId == EditorInfo.IME_ACTION_DONE ||
+                actionId == EditorInfo.IME_NULL ||
                 (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN)) {
+                navigateToEnteredUrl();
+                return true;
+            }
+            return false;
+        });
+
+        mEditUrl.setOnKeyListener((v, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN) {
                 navigateToEnteredUrl();
                 return true;
             }
@@ -98,7 +108,18 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
     private void navigateToEnteredUrl() {
         String urlText = mEditUrl.getText() != null ? mEditUrl.getText().toString().trim() : "";
         if (!TextUtils.isEmpty(urlText) && mWebView != null) {
+            mEditUrl.clearFocus();
+            hideKeyboard();
             BrowserManager.getInstance().navigate(mWebView, urlText);
+        }
+    }
+
+    private void hideKeyboard() {
+        if (getActivity() != null && mEditUrl != null) {
+            InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(mEditUrl.getWindowToken(), 0);
+            }
         }
     }
 
