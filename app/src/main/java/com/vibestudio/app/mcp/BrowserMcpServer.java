@@ -120,12 +120,12 @@ public class BrowserMcpServer implements McpServer {
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
-        // Tool 11: form_file_attach
-        mTools.add(McpTool.builder("form_file_attach", "Auto-provide a file to the web file chooser and attach it to an input element.")
-                .addProperty("file_path", PropertyType.STRING, "Path to the local file to attach (e.g. '/path/to/file.png' or '~/file.txt').", true)
-                .addProperty("selector", PropertyType.STRING, "Optional CSS selector of the file input element to click (default: 'input[type=file]').", false)
-                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
-                .build());
+        // Tool 11: form_file_attach (not works for now)
+//        mTools.add(McpTool.builder("form_file_attach", "Auto-provide a file to the web file chooser and attach it to an input element.")
+//                .addProperty("file_path", PropertyType.STRING, "Path to the local file to attach (e.g. '/path/to/file.png' or '~/file.txt').", true)
+//                .addProperty("selector", PropertyType.STRING, "Optional CSS selector of the file input element to click (default: 'input[type=file]').", false)
+//                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
+//                .build());
 
     }
 
