@@ -110,6 +110,10 @@ public class BrowserManager {
     }
 
     private WebView createWebViewInternal(Context context) {
+        return createWebViewInternal(context, true);
+    }
+
+    private WebView createWebViewInternal(Context context, boolean loadDefaultUrl) {
         try {
             LogViewerService.getInstance().i("BrowserManager", "createWebViewInternal with context: " + context);
             WebView webView = new WebView(context);
@@ -121,7 +125,9 @@ public class BrowserManager {
 
             setupWebViewSettings(webView);
             addBrowserLog("INFO", TAG, "WebView initialized.");
-            webView.loadUrl(DEFAULT_URL);
+            if (loadDefaultUrl) {
+                webView.loadUrl(DEFAULT_URL);
+            }
 
             return webView;
         } catch (Exception e) {
@@ -135,17 +141,34 @@ public class BrowserManager {
             WebView.setWebContentsDebuggingEnabled(true);
         }
         WebSettings settings = webView.getSettings();
+        // Core execution & storage (Mandatory for Google reCAPTCHA)
         settings.setJavaScriptEnabled(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+
+        // Multi-window / Popup support for reCAPTCHA visual challenges
+        settings.setSupportMultipleWindows(true);
+
+        // Viewport and media settings
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
+
+        // Hardware Acceleration for timing and canvas evaluation
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+        // Permit Third-Party Cookies (Required for recaptcha.net / google.com inside third-party domains)
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            cookieManager.setAcceptThirdPartyCookies(webView, true);
+        }
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -164,6 +187,10 @@ public class BrowserManager {
                                 for (Map.Entry<String, String> header : request.getRequestHeaders().entrySet()) {
                                     conn.setRequestProperty(header.getKey(), header.getValue());
                                 }
+                            }
+                            if (view != null && view.getSettings() != null && view.getSettings().getUserAgentString() != null &&
+                                    (request.getRequestHeaders() == null || !request.getRequestHeaders().containsKey("User-Agent"))) {
+                                conn.setRequestProperty("User-Agent", view.getSettings().getUserAgentString());
                             }
                             conn.connect();
 
@@ -251,6 +278,28 @@ public class BrowserManager {
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, android.os.Message resultMsg) {
+                addBrowserLog("INFO", "WebViewChrome", "onCreateWindow triggered (isDialog=" + isDialog + ", isUserGesture=" + isUserGesture + ")");
+                if (resultMsg != null) {
+                    WebView popUpWebView = createWebViewInternal(view.getContext(), false);
+                    if (popUpWebView != null) {
+                        WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                        transport.setWebView(popUpWebView);
+                        resultMsg.sendToTarget();
+                        return true;
+                    }
+                }
+                return super.onCreateWindow(view, isDialog, isUserGesture, resultMsg);
+            }
+
+            @Override
+            public void onCloseWindow(WebView window) {
+                super.onCloseWindow(window);
+                addBrowserLog("INFO", "WebViewChrome", "onCloseWindow triggered");
+                closeWebView(window);
+            }
+
             @Override
             public boolean onShowFileChooser(final WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
                 boolean isRecentAutoAttach = (System.currentTimeMillis() - mAutoAttachTimestamp < 2000);
