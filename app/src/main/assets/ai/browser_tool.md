@@ -23,3 +23,37 @@ The `browser` skill provides full control over VibeStudio's integrated WebView f
 9. **Important Notes on CDP State & File Uploads**:
    - Each `browser_cdp_command` execution opens a direct connection to Chromium DevTools. DevTools `nodeId` and `objectId` handles are session-scoped to an active DevTools WebSocket session. Do not attempt multi-step `DOM.getDocument` -> `DOM.querySelector` across separate tool calls; issue target CDP commands directly (like `DOM.setFileInputFiles`) or perform calculations in a single step.
    - When `DOM.setFileInputFiles` returns `Successfully attached files via Native CDP`, the native browser engine has already set the file list on the target element and dispatched DOM `input` and `change` events. You do not need to second-guess the engine with JS queries.
+
+10. **Bypassing Content Security Policy (CSP) via CDP**:
+    - `browser_execute_js` automatically executes via CDP `Runtime.evaluate` in DevTools privileged scope, allowing you to run scripts and top-level `await` expressions without being blocked by site `script-src` or `unsafe-inline` CSP headers.
+    - If a target site enforces strict CSP that blocks page-level network requests or script evaluation, you can explicitly bypass CSP for the tab using `browser_cdp_command`:
+      ```json
+      {
+        "method": "Page.setBypassCSP",
+        "params": "{\"enabled\": true}"
+      }
+      ```
+
+11. **Network Logging & Backend API Inspection via CDP**:
+    - You can use `browser_cdp_command` to inspect HTTP/HTTPS network traffic, status codes, request headers, and backend API response payloads (equivalent to Chrome DevTools Network tab):
+      - **Enable Network Tracking**:
+        ```json
+        {
+          "method": "Network.enable",
+          "params": "{}"
+        }
+        ```
+      - **Get Response Payload for an API Call**:
+        ```json
+        {
+          "method": "Network.getResponseBody",
+          "params": "{\"requestId\": \"<requestId>\"}"
+        }
+        ```
+      - **Inject Custom HTTP Request Headers**:
+        ```json
+        {
+          "method": "Network.setExtraHTTPHeaders",
+          "params": "{\"headers\": {\"X-Debug-Mode\": \"true\"}}"
+        }
+        ```

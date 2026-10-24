@@ -15,7 +15,6 @@ import com.vibestudio.app.chat.safety.WorkspaceBoundaryGuard;
 import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
 import com.vibestudio.app.chat.skills.Skill;
 import com.vibestudio.app.chat.skills.SkillScanner;
-import com.vibestudio.app.chat.tool.ToolCallParser;
 import com.vibestudio.app.chat.tool.ToolExecutionManager;
 import com.vibestudio.app.mcp.McpClientManager;
 import com.vibestudio.app.service.LogViewerService;
@@ -81,7 +80,7 @@ public class ChatSession {
 
     public synchronized WorkspaceChangesetTracker getChangesetTracker(Context context) {
         if (mChangesetTracker == null && context != null) {
-            mChangesetTracker = new WorkspaceChangesetTracker(context.getCacheDir());
+            mChangesetTracker = new WorkspaceChangesetTracker(context);
         }
         return mChangesetTracker;
     }
@@ -280,69 +279,60 @@ public class ChatSession {
             return;
         }
 
-        // Check if response contains a tool call request
-        JSONObject toolCallObj = ToolCallParser.parse(rawReply);
-
-        if (toolCallObj != null) {
-            String toolName = toolCallObj.optString("tool", "unknown");
-            JSONObject args = toolCallObj.optJSONObject("args");
-            if (args == null) args = new JSONObject();
-
-            // 1. Path Canonicalization relative to Workspace Path
-            if (mWorkspacePath != null && !mWorkspacePath.isEmpty()) {
-                WorkspaceBoundaryGuard.canonicalizeToolArgs(toolName, args, mWorkspacePath);
+        // 1. Tool Call Parsing, Path Canonicalization & Pre-execution State Preparation (Funneled)
+        WorkspaceChangesetTracker tracker = context != null ? getChangesetTracker(context) : null;
+        ToolExecutionManager.PreparedToolCall prep = null;
+        try {
+            prep = mToolExecutionManager.prepareToolCall(context, rawReply, mWorkspacePath, tracker);
+        } catch (Exception e) {
+            String errorMsg = "Error: " + e.getMessage();
+            LogViewerService.getInstance().e(TAG, errorMsg);
+            postToolStatusMessage(rawReply, ChatMessage.MessageType.ERROR, "tool", null);
+            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, "tool", null);
+            ChatMessage toolResultMsg = new ChatMessage("System Tool", errorMsg, true, ChatMessage.MessageType.ERROR, "tool", null);
+            synchronized (ChatSession.this) {
+                mMessages.add(modelCallMsg);
+                mMessages.add(toolResultMsg);
             }
+            notifyMessageAdded(modelCallMsg);
+            notifyMessageAdded(toolResultMsg);
+            notifyLoading(false);
+            return;
+        }
+
+        if (prep != null) {
+            JSONObject toolCallObj = prep.getToolCallObj();
+            String toolName = prep.getToolName();
+            JSONObject args = prep.getArgs();
 
             // 2. Boundary Guard Check & Permission Escalation
-            String targetPath = WorkspaceBoundaryGuard.getToolTargetPath(toolName, args);
-            if (targetPath != null && mWorkspacePath != null && !mWorkspacePath.isEmpty()) {
-                boolean insideWorkspace = WorkspaceBoundaryGuard.isWithinWorkspace(targetPath, mWorkspacePath);
-                if (!insideWorkspace) {
-                    boolean granted = PermissionPromptManager.getInstance().requestPermissionSync(context, toolName, targetPath);
-                    if (!granted) {
-                        String blockedMsg = "Error: Access denied to path outside workspace boundary (" + targetPath + ").";
-                        postToolStatusMessage(blockedMsg, ChatMessage.MessageType.ERROR, toolName, args);
+            if (mWorkspacePath != null && !mWorkspacePath.isEmpty()) {
+                List<String> targetPaths = WorkspaceBoundaryGuard.getToolTargetPaths(toolName, args);
+                for (String targetPath : targetPaths) {
+                    boolean insideWorkspace = WorkspaceBoundaryGuard.isWithinWorkspace(targetPath, mWorkspacePath);
+                    if (!insideWorkspace) {
+                        boolean granted = PermissionPromptManager.getInstance().requestPermissionSync(context, toolName, targetPath);
+                        if (!granted) {
+                            String blockedMsg = "Error: Access denied to path outside workspace boundary (" + targetPath + ").";
+                            postToolStatusMessage(blockedMsg, ChatMessage.MessageType.ERROR, toolName, args);
 
-                        ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
-                        ChatMessage toolResultMsg = new ChatMessage("System Tool", blockedMsg, true, ChatMessage.MessageType.ERROR, toolName, null);
-                        synchronized (ChatSession.this) {
-                            mMessages.add(modelCallMsg);
-                            mMessages.add(toolResultMsg);
-                        }
+                            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
+                            ChatMessage toolResultMsg = new ChatMessage("System Tool", blockedMsg, true, ChatMessage.MessageType.ERROR, toolName, null);
+                            synchronized (ChatSession.this) {
+                                mMessages.add(modelCallMsg);
+                                mMessages.add(toolResultMsg);
+                            }
 
-                        if (!mStopRequested) {
-                            new Thread(() -> processUserRequest(context)).start();
+                            if (!mStopRequested) {
+                                new Thread(() -> processUserRequest(context)).start();
+                            }
+                            return;
                         }
-                        return;
                     }
                 }
             }
 
-            // 3. Changeset Pre-edit Tracking
-            if (context != null) {
-                WorkspaceChangesetTracker tracker = getChangesetTracker(context);
-                if ("file_create_file".equalsIgnoreCase(toolName)
-                        || "file_create_directory".equalsIgnoreCase(toolName)
-                        || "editor_replace_lines".equalsIgnoreCase(toolName)
-                        || "editor_search_replace".equalsIgnoreCase(toolName)
-                        || "editor_insert_lines".equalsIgnoreCase(toolName)
-                        || "editor_save".equalsIgnoreCase(toolName)
-                        || "editor_write_file".equalsIgnoreCase(toolName)) {
-                    if (targetPath != null) tracker.recordPreEditState(targetPath);
-                } else if ("file_move".equalsIgnoreCase(toolName)) {
-                    String srcPath = args.optString("src", null);
-                    String dstPath = args.optString("dst", null);
-                    if (srcPath != null) tracker.recordPreDeleteState(srcPath);
-                    if (dstPath != null) tracker.recordPreEditState(dstPath);
-                } else if ("file_copy".equalsIgnoreCase(toolName)) {
-                    String dstPath = args.optString("dst", null);
-                    if (dstPath != null) tracker.recordPreEditState(dstPath);
-                } else if ("file_delete".equalsIgnoreCase(toolName)) {
-                    if (targetPath != null) tracker.recordPreDeleteState(targetPath);
-                }
-            }
-
-            String requestMsg = rawReply;
+            String requestMsg = prep.getFormattedText() != null ? prep.getFormattedText().toString() : rawReply;
             LogViewerService.getInstance().i(TAG, "Executing tool call requested by AI: " + toolName + " | Args: " + args.toString());
 
             postToolStatusMessage(requestMsg, ChatMessage.MessageType.TOOL_CALL, toolName, args);

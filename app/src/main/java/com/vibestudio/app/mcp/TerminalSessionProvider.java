@@ -31,7 +31,6 @@ public class TerminalSessionProvider implements ToolSessionProvider {
             TabManager.getInstance().openTab(
                     TabType.TERMINAL,
                     "Terminal #" + sessionId,
-                    "💻",
                     TerminalFragment.newInstance((TerminalSession) handle),
                     false
             );

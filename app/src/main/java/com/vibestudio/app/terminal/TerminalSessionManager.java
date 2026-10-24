@@ -3,6 +3,7 @@ package com.vibestudio.app.terminal;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.os.Build;
 import android.system.Os;
 
 import com.termux.terminal.TerminalBuffer;
@@ -14,15 +15,18 @@ import com.vibestudio.app.logging.CrashHandler;
 import com.vibestudio.app.service.LogViewerService;
 
 import java.io.File;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.TimeUnit;
 
 public class TerminalSessionManager {
 
@@ -33,6 +37,7 @@ public class TerminalSessionManager {
     private static final String TAG = "TerminalSessionManager";
     private static TerminalSessionManager sInstance;
 
+    private final Object mCommandLock = new Object();
     private final Map<TerminalSession, TerminalView> mViews = new WeakHashMap<>();
     private SessionEventListener mSessionEventListener;
 
@@ -557,7 +562,7 @@ public class TerminalSessionManager {
             return null;
         }
 
-        synchronized (session) {
+        synchronized (mCommandLock) {
             try {
                 long startTime = System.currentTimeMillis();
                 String startMarker = "___CMD_START_" + System.currentTimeMillis() + "_" + ((int) (Math.random() * 10000)) + "___";
@@ -597,9 +602,7 @@ public class TerminalSessionManager {
                     }
                 }
 
-                if (capturedOutput != null) {
-                    return com.vibestudio.app.git.GitTerminalParser.cleanTerminalOutput(capturedOutput);
-                }
+                return capturedOutput;
             } catch (Exception e) {
                 LogViewerService.getInstance().e(TAG, "Error executing command on TerminalSession", e);
             }
@@ -607,7 +610,7 @@ public class TerminalSessionManager {
         return null;
     }
 
-    public synchronized String getSessionOutput(TerminalSession session) {
+    public String getSessionOutput(TerminalSession session) {
         if (session == null || !session.isRunning()) {
             return "(Managed session is inactive)";
         }
@@ -632,7 +635,7 @@ public class TerminalSessionManager {
         } catch (Exception ignored) {}
     }
 
-    public synchronized String runCommandSync(Context context, String command, File workingDir, int timeoutMs) {
+    public String runCommandSync(Context context, String command, File workingDir, int timeoutMs) {
         if (context == null || command == null || command.isEmpty()) {
             return null;
         }
@@ -674,26 +677,60 @@ public class TerminalSessionManager {
             Process process = pb.start();
 
             StringBuilder output = new StringBuilder();
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                char[] buffer = new char[1024];
-                int read;
-                while ((read = reader.read(buffer)) != -1) {
-                    output.append(buffer, 0, read);
-                }
-            }
+            Thread readerThread = new Thread(() -> {
+                try (InputStreamReader isr = new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)) {
+                    char[] buffer = new char[1024];
+                    int read;
+                    while ((read = isr.read(buffer)) != -1) {
+                        synchronized (output) {
+                            output.append(buffer, 0, read);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            });
+            readerThread.start();
 
-            if (timeoutMs > 0) {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    process.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
-                } else {
-                    process.waitFor();
-                }
+            boolean exited = false;
+            long effectiveTimeout = timeoutMs > 0 ? timeoutMs : 10000;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                exited = process.waitFor(effectiveTimeout, TimeUnit.MILLISECONDS);
             } else {
-                process.waitFor();
+                long deadline = System.currentTimeMillis() + effectiveTimeout;
+                while (System.currentTimeMillis() < deadline) {
+                    try {
+                        int exitCode = process.exitValue();
+                        exited = true;
+                        break;
+                    } catch (IllegalThreadStateException e) {
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
             }
 
-            return output.toString();
+            if (!exited) {
+                LogViewerService.getInstance().w(TAG, "Process timed out after " + effectiveTimeout + " ms, killing process for command: " + command);
+                process.destroy();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    process.destroyForcibly();
+                }
+                readerThread.interrupt();
+                return null;
+            }
+
+            try {
+                readerThread.join(500);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+
+            synchronized (output) {
+                return output.toString();
+            }
         } catch (Exception e) {
             LogViewerService.getInstance().e(TAG, "Failed to run command synchronously: " + command, e);
             return null;

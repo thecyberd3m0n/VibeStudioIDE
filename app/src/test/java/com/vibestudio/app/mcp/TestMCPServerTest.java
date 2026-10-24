@@ -230,23 +230,23 @@ public class TestMCPServerTest {
         Assert.assertFalse(mTestMCPServer.isLightOn());
 
         // Directly via server
-        McpToolResult turnOnDirect = mTestMCPServer.callTool("light_turn_on", new HashMap<String, Object>(), null);
+        McpToolResult turnOnDirect = mTestMCPServer.callTool("light_turn_on", new HashMap<String, Object>(), mContext);
         Assert.assertTrue(turnOnDirect.isSuccess());
         Assert.assertEquals("Light is now ON.", turnOnDirect.getOutput());
         Assert.assertTrue(mTestMCPServer.isLightOn());
 
-        McpToolResult turnOffDirect = mTestMCPServer.callTool("light_turn_off", new HashMap<String, Object>(), null);
+        McpToolResult turnOffDirect = mTestMCPServer.callTool("light_turn_off", new HashMap<String, Object>(), mContext);
         Assert.assertTrue(turnOffDirect.isSuccess());
         Assert.assertEquals("Light is now OFF.", turnOffDirect.getOutput());
         Assert.assertFalse(mTestMCPServer.isLightOn());
 
         // Via McpClientManager
-        JSONObject onResponse = mMcpClientManager.executeToolCall("light_turn_on", new JSONObject());
+        JSONObject onResponse = mMcpClientManager.executeToolCall("light_turn_on", new JSONObject(), mContext);
         Assert.assertEquals("success", onResponse.optString("status"));
         Assert.assertEquals("Light is now ON.", onResponse.optString("output"));
         Assert.assertTrue(mTestMCPServer.isLightOn());
 
-        JSONObject offResponse = mMcpClientManager.executeToolCall("light_turn_off", new JSONObject());
+        JSONObject offResponse = mMcpClientManager.executeToolCall("light_turn_off", new JSONObject(), mContext);
         Assert.assertEquals("success", offResponse.optString("status"));
         Assert.assertEquals("Light is now OFF.", offResponse.optString("output"));
         Assert.assertFalse(mTestMCPServer.isLightOn());
@@ -266,7 +266,7 @@ public class TestMCPServerTest {
         mTestMCPServer.stopServer();
         Assert.assertFalse(mTestMCPServer.isActive());
 
-        JSONObject response = mMcpClientManager.executeToolCall("light_turn_on", new JSONObject());
+        JSONObject response = mMcpClientManager.executeToolCall("light_turn_on", new JSONObject(), mContext);
         Assert.assertEquals("error", response.optString("status"));
         Assert.assertEquals("Light switcher MCP server is not active.", response.optString("message"));
     }

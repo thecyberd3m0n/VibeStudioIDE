@@ -5,16 +5,24 @@ import android.net.LocalSocketAddress;
 import android.os.Process;
 import android.util.Base64;
 import android.util.Log;
+import android.webkit.WebView;
 
 import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class CdpLocalClient {
@@ -22,10 +30,51 @@ public class CdpLocalClient {
     private static final String TAG = "CdpLocalClient";
     private static final AtomicInteger MESSAGE_ID = new AtomicInteger(1);
 
-    private static LocalSocket sSocket;
-    private static InputStream sInputStream;
-    private static OutputStream sOutputStream;
-    private static String sCurrentWsPath;
+    private static class CdpSession {
+        final LocalSocket socket;
+        final InputStream in;
+        final OutputStream out;
+        final String wsPath;
+        final String targetId;
+
+        CdpSession(LocalSocket socket, InputStream in, OutputStream out, String wsPath, String targetId) {
+            this.socket = socket;
+            this.in = in;
+            this.out = out;
+            this.wsPath = wsPath;
+            this.targetId = targetId;
+        }
+
+        boolean isValid() {
+            return socket != null && socket.isConnected() && in != null && out != null;
+        }
+
+        void close() {
+            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static final Map<WebView, CdpSession> sSessions = new WeakHashMap<>();
+    private static final Map<WebView, String> sWebViewTags = new WeakHashMap<>();
+
+    public static String getTargetTag(final WebView webView) {
+        if (webView == null) return null;
+        String tag;
+        synchronized (sWebViewTags) {
+            tag = sWebViewTags.get(webView);
+            if (tag == null) {
+                tag = "vibe_target_" + System.identityHashCode(webView) + "_" + System.currentTimeMillis();
+                sWebViewTags.put(webView, tag);
+            }
+        }
+        final String finalTag = tag;
+        webView.post(() -> {
+            try {
+                webView.evaluateJavascript("window.__vibestudio_target_id = '" + finalTag + "';", null);
+            } catch (Exception ignored) {}
+        });
+        return tag;
+    }
 
     private static void log(String level, String msg) {
         Log.i(TAG, "[" + level + "] " + msg);
@@ -40,26 +89,27 @@ public class CdpLocalClient {
         } catch (Exception ignored) {}
     }
 
-    private static synchronized void closeActiveSession() {
-        if (sSocket != null) {
-            try { sSocket.close(); } catch (Exception ignored) {}
-            sSocket = null;
+    public static synchronized void closeSession(WebView webView) {
+        if (webView == null) return;
+        CdpSession session = sSessions.remove(webView);
+        if (session != null) {
+            session.close();
+            log("INFO", "Closed CDP session for target: " + session.targetId);
         }
-        sInputStream = null;
-        sOutputStream = null;
-        sCurrentWsPath = null;
     }
 
-    private static synchronized void ensureConnectedSession() throws Exception {
-        if (sSocket != null && sSocket.isConnected() && sInputStream != null && sOutputStream != null) {
-            return;
+    private static synchronized CdpSession ensureConnectedSession(WebView webView) throws Exception {
+        if (webView != null) {
+            CdpSession existing = sSessions.get(webView);
+            if (existing != null && existing.isValid()) {
+                return existing;
+            }
+            closeSession(webView);
         }
-
-        closeActiveSession();
 
         int pid = Process.myPid();
         String socketName = "webview_devtools_remote_" + pid;
-        log("INFO", "Opening persistent DevTools socket connection: " + socketName);
+        log("INFO", "Opening DevTools socket connection: " + socketName);
 
         LocalSocket initSocket = new LocalSocket();
         initSocket.connect(new LocalSocketAddress(socketName, LocalSocketAddress.Namespace.ABSTRACT));
@@ -91,11 +141,20 @@ public class CdpLocalClient {
             throw new RuntimeException("No active WebView page targets found in DevTools.");
         }
 
-        String wsPath = extractWsPath(targets);
-        if (wsPath == null || wsPath.isEmpty()) {
+        JSONObject matchedTarget = resolveDevToolsTarget(webView, targets, socketName);
+        if (matchedTarget == null) {
             initSocket.close();
-            throw new RuntimeException("Could not extract webSocketDebuggerUrl from WebView target.");
+            throw new RuntimeException("Could not resolve matching DevTools target for WebView.");
         }
+
+        String wsUrl = matchedTarget.optString("webSocketDebuggerUrl");
+        String targetId = matchedTarget.optString("id");
+        if (wsUrl == null || wsUrl.isEmpty()) {
+            initSocket.close();
+            throw new RuntimeException("Could not extract webSocketDebuggerUrl from WebView target " + targetId);
+        }
+
+        String wsPath = wsUrl.contains("/devtools/") ? wsUrl.substring(wsUrl.indexOf("/devtools/")) : wsUrl;
 
         initSocket.close();
 
@@ -108,24 +167,139 @@ public class CdpLocalClient {
 
         performWsHandshake(wsIn, wsOut, wsPath);
 
-        sSocket = wsSocket;
-        sInputStream = wsIn;
-        sOutputStream = wsOut;
-        sCurrentWsPath = wsPath;
-        log("INFO", "Persistent DevTools session established on path: " + wsPath);
+        CdpSession session = new CdpSession(wsSocket, wsIn, wsOut, wsPath, targetId);
+        if (webView != null) {
+            sSessions.put(webView, session);
+        }
+        log("INFO", "Persistent DevTools session established for target '" + targetId + "' on path: " + wsPath);
+        return session;
     }
 
-    public static synchronized String dispatchCdpClick(double x, double y) {
+    private static String queryTargetTag(String socketName, String wsPath) {
+        try {
+            LocalSocket wsSocket = new LocalSocket();
+            wsSocket.connect(new LocalSocketAddress(socketName, LocalSocketAddress.Namespace.ABSTRACT));
+            wsSocket.setSoTimeout(2000);
+
+            InputStream wsIn = wsSocket.getInputStream();
+            OutputStream wsOut = wsSocket.getOutputStream();
+
+            performWsHandshake(wsIn, wsOut, wsPath);
+
+            int evalMsgId = MESSAGE_ID.getAndIncrement();
+            JSONObject evalReq = new JSONObject();
+            evalReq.put("id", evalMsgId);
+            evalReq.put("method", "Runtime.evaluate");
+            JSONObject evalParams = new JSONObject();
+            evalParams.put("expression", "window.__vibestudio_target_id || ''");
+            evalParams.put("returnByValue", true);
+            evalReq.put("params", evalParams);
+            sendWsFrame(wsOut, evalReq.toString());
+
+            JSONObject resp = readWsResponse(wsIn, evalMsgId);
+            wsSocket.close();
+
+            if (resp != null && resp.has("result")) {
+                JSONObject resultObj = resp.getJSONObject("result");
+                if (resultObj.has("result")) {
+                    JSONObject valObj = resultObj.getJSONObject("result");
+                    String val = valObj.optString("value", "");
+                    return !val.isEmpty() ? val : null;
+                }
+            }
+        } catch (Exception e) {
+            log("DEBUG", "Failed to query target tag on " + wsPath + ": " + e.getMessage());
+        }
+        return null;
+    }
+
+    private static JSONObject resolveDevToolsTarget(WebView webView, JSONArray targets, String socketName) {
+        List<JSONObject> pageTargets = new ArrayList<>();
+        for (int i = 0; i < targets.length(); i++) {
+            try {
+                JSONObject t = targets.getJSONObject(i);
+                if ("page".equalsIgnoreCase(t.optString("type"))) {
+                    pageTargets.add(t);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (pageTargets.isEmpty()) {
+            return targets.length() > 0 ? targets.optJSONObject(0) : null;
+        }
+
+        if (pageTargets.size() == 1 || webView == null) {
+            return pageTargets.get(0);
+        }
+
+        String expectedTag = getTargetTag(webView);
+
+        if (expectedTag != null) {
+            for (JSONObject t : pageTargets) {
+                String wsUrl = t.optString("webSocketDebuggerUrl");
+                if (wsUrl != null && !wsUrl.isEmpty()) {
+                    String wsPath = wsUrl.contains("/devtools/") ? wsUrl.substring(wsUrl.indexOf("/devtools/")) : wsUrl;
+                    String tagFound = queryTargetTag(socketName, wsPath);
+                    if (expectedTag.equals(tagFound)) {
+                        log("INFO", "Matched DevTools target '" + t.optString("id") + "' by unique window tag: " + expectedTag);
+                        return t;
+                    }
+                }
+            }
+        }
+
+        Set<String> boundTargetIds = new HashSet<>();
+        for (Map.Entry<WebView, CdpSession> entry : sSessions.entrySet()) {
+            if (entry.getKey() != webView && entry.getValue() != null && entry.getValue().isValid()) {
+                boundTargetIds.add(entry.getValue().targetId);
+            }
+        }
+
+        String currentUrl = null;
+        String currentTitle = null;
+        try {
+            currentUrl = webView.getUrl();
+            currentTitle = webView.getTitle();
+        } catch (Exception ignored) {}
+
+        JSONObject bestCandidate = null;
+        for (JSONObject t : pageTargets) {
+            String tId = t.optString("id");
+            if (boundTargetIds.contains(tId)) continue;
+
+            String tUrl = t.optString("url");
+            String tTitle = t.optString("title");
+
+            if (currentUrl != null && currentUrl.equalsIgnoreCase(tUrl)) {
+                if (currentTitle != null && currentTitle.equalsIgnoreCase(tTitle)) {
+                    return t;
+                }
+                if (bestCandidate == null) {
+                    bestCandidate = t;
+                }
+            } else if (bestCandidate == null) {
+                bestCandidate = t;
+            }
+        }
+
+        if (bestCandidate != null) {
+            return bestCandidate;
+        }
+
+        return pageTargets.get(0);
+    }
+
+    public static synchronized String dispatchCdpClick(WebView webView, double x, double y) {
         log("INFO", "dispatchCdpClick initiated for target coordinates (" + x + ", " + y + ")");
         try {
-            ensureConnectedSession();
-            return sendClickEvents(sInputStream, sOutputStream, x, y);
+            CdpSession session = ensureConnectedSession(webView);
+            return sendClickEvents(session.in, session.out, x, y);
         } catch (Exception e) {
             log("WARN", "Error on persistent CDP socket, reconnecting... " + e.getMessage());
-            closeActiveSession();
+            closeSession(webView);
             try {
-                ensureConnectedSession();
-                return sendClickEvents(sInputStream, sOutputStream, x, y);
+                CdpSession session = ensureConnectedSession(webView);
+                return sendClickEvents(session.in, session.out, x, y);
             } catch (Exception ex) {
                 log("ERROR", "Error dispatching CDP click after reconnect: " + ex.getMessage());
                 return "Error dispatching CDP click: " + ex.getMessage();
@@ -133,17 +307,21 @@ public class CdpLocalClient {
         }
     }
 
-    public static synchronized String dispatchCdpClickBySelector(String selector) {
+    public static synchronized String dispatchCdpClick(double x, double y) {
+        return dispatchCdpClick(null, x, y);
+    }
+
+    public static synchronized String dispatchCdpClickBySelector(WebView webView, String selector) {
         log("INFO", "dispatchCdpClickBySelector initiated for selector: " + selector);
         try {
-            ensureConnectedSession();
-            return executeClickBySelectorInternal(selector);
+            CdpSession session = ensureConnectedSession(webView);
+            return executeClickBySelectorInternal(session, selector);
         } catch (Exception e) {
             log("WARN", "Error on persistent CDP socket, reconnecting... " + e.getMessage());
-            closeActiveSession();
+            closeSession(webView);
             try {
-                ensureConnectedSession();
-                return executeClickBySelectorInternal(selector);
+                CdpSession session = ensureConnectedSession(webView);
+                return executeClickBySelectorInternal(session, selector);
             } catch (Exception ex) {
                 log("ERROR", "Error dispatching CDP click by selector: " + ex.getMessage());
                 return "Error dispatching CDP click by selector: " + ex.getMessage();
@@ -151,9 +329,35 @@ public class CdpLocalClient {
         }
     }
 
-    private static String executeClickBySelectorInternal(String selector) throws Exception {
-        InputStream in = sInputStream;
-        OutputStream out = sOutputStream;
+    public static synchronized String dispatchCdpClickBySelector(String selector) {
+        return dispatchCdpClickBySelector(null, selector);
+    }
+
+    public static synchronized String executeCdp(WebView webView, String method, JSONObject params) {
+        log("INFO", "executeCdp method: " + method + ", params: " + (params != null ? params.toString() : "{}"));
+        try {
+            CdpSession session = ensureConnectedSession(webView);
+            return executeCdpInternal(session, method, params);
+        } catch (Exception e) {
+            log("WARN", "Error on persistent CDP socket, reconnecting... " + e.getMessage());
+            closeSession(webView);
+            try {
+                CdpSession session = ensureConnectedSession(webView);
+                return executeCdpInternal(session, method, params);
+            } catch (Exception ex) {
+                log("ERROR", "Error executing native CDP command: " + ex.getMessage());
+                return "Native CDP Error: " + ex.getMessage();
+            }
+        }
+    }
+
+    public static synchronized String executeCdp(String method, JSONObject params) {
+        return executeCdp(null, method, params);
+    }
+
+    private static String executeClickBySelectorInternal(CdpSession session, String selector) throws Exception {
+        InputStream in = session.in;
+        OutputStream out = session.out;
 
         // 1. DOM.getDocument
         int docMsgId = MESSAGE_ID.getAndIncrement();
@@ -252,27 +456,9 @@ public class CdpLocalClient {
         return sendClickEvents(in, out, x, y);
     }
 
-    public static synchronized String executeCdp(String method, JSONObject params) {
-        log("INFO", "executeCdp method: " + method + ", params: " + (params != null ? params.toString() : "{}"));
-        try {
-            ensureConnectedSession();
-            return executeCdpInternal(method, params);
-        } catch (Exception e) {
-            log("WARN", "Error on persistent CDP socket, reconnecting... " + e.getMessage());
-            closeActiveSession();
-            try {
-                ensureConnectedSession();
-                return executeCdpInternal(method, params);
-            } catch (Exception ex) {
-                log("ERROR", "Error executing native CDP command: " + ex.getMessage());
-                return "Native CDP Error: " + ex.getMessage();
-            }
-        }
-    }
-
-    private static String executeCdpInternal(String method, JSONObject params) throws Exception {
-        InputStream in = sInputStream;
-        OutputStream out = sOutputStream;
+    private static String executeCdpInternal(CdpSession session, String method, JSONObject params) throws Exception {
+        InputStream in = session.in;
+        OutputStream out = session.out;
 
         if ("DOM.setFileInputFiles".equalsIgnoreCase(method)) {
             String selector = params.optString("selector", "input[type='file']");
@@ -331,7 +517,6 @@ public class CdpLocalClient {
             if (setResp != null && !setResp.has("error")) {
                 log("INFO", "Successfully attached files via Native CDP: " + filesArray.toString());
 
-                // Dispatch 'input' and 'change' events via Runtime.evaluate
                 try {
                     int evalMsgId = MESSAGE_ID.getAndIncrement();
                     JSONObject evalReq = new JSONObject();
@@ -377,27 +562,6 @@ public class CdpLocalClient {
                 return "Error: Timed out waiting for CDP response to method '" + method + "'";
             }
         }
-    }
-
-    private static String extractWsPath(JSONArray targets) throws Exception {
-        String wsPath = null;
-        for (int i = 0; i < targets.length(); i++) {
-            JSONObject target = targets.getJSONObject(i);
-            if ("page".equalsIgnoreCase(target.optString("type"))) {
-                String wsUrl = target.optString("webSocketDebuggerUrl");
-                if (wsUrl != null && !wsUrl.isEmpty()) {
-                    wsPath = wsUrl.substring(wsUrl.indexOf("/devtools/"));
-                    break;
-                }
-            }
-        }
-        if (wsPath == null) {
-            wsPath = targets.getJSONObject(0).optString("webSocketDebuggerUrl");
-            if (wsPath != null && wsPath.contains("/devtools/")) {
-                wsPath = wsPath.substring(wsPath.indexOf("/devtools/"));
-            }
-        }
-        return wsPath;
     }
 
     private static void performWsHandshake(InputStream in, OutputStream out, String wsPath) throws Exception {
@@ -488,10 +652,71 @@ public class CdpLocalClient {
     }
 
     private static String readHttpResponse(InputStream in) throws Exception {
-        byte[] buffer = new byte[8192];
-        int read = in.read(buffer);
-        if (read <= 0) return null;
-        return new String(buffer, 0, read, StandardCharsets.UTF_8);
+        ByteArrayOutputStream rawBuf = new ByteArrayOutputStream();
+        byte[] chunk = new byte[2048];
+        int headerEndIndex = -1;
+        int contentLength = -1;
+
+        while (true) {
+            int read = in.read(chunk);
+            if (read <= 0) {
+                break;
+            }
+            rawBuf.write(chunk, 0, read);
+
+            byte[] data = rawBuf.toByteArray();
+
+            if (headerEndIndex < 0) {
+                headerEndIndex = findHeaderEnd(data);
+                if (headerEndIndex >= 0) {
+                    String headersStr = new String(data, 0, headerEndIndex, StandardCharsets.US_ASCII);
+                    contentLength = parseContentLength(headersStr);
+
+                    if (headersStr.contains("101")) {
+                        return new String(data, 0, data.length, StandardCharsets.UTF_8);
+                    }
+                }
+            }
+
+            if (headerEndIndex >= 0) {
+                int bodyBytesRead = data.length - headerEndIndex;
+                if (contentLength >= 0 && bodyBytesRead >= contentLength) {
+                    break;
+                }
+            }
+        }
+
+        byte[] finalData = rawBuf.toByteArray();
+        if (finalData.length == 0) return null;
+        return new String(finalData, StandardCharsets.UTF_8);
+    }
+
+    private static int findHeaderEnd(byte[] data) {
+        for (int i = 0; i < data.length - 3; i++) {
+            if (data[i] == '\r' && data[i + 1] == '\n' && data[i + 2] == '\r' && data[i + 3] == '\n') {
+                return i + 4;
+            }
+        }
+        for (int i = 0; i < data.length - 1; i++) {
+            if (data[i] == '\n' && data[i + 1] == '\n') {
+                return i + 2;
+            }
+        }
+        return -1;
+    }
+
+    private static int parseContentLength(String headers) {
+        if (headers == null) return -1;
+        String[] lines = headers.split("\r?\n");
+        for (String line : lines) {
+            String lower = line.toLowerCase().trim();
+            if (lower.startsWith("content-length:")) {
+                try {
+                    return Integer.parseInt(lower.substring("content-length:".length()).trim());
+                } catch (Exception ignored) {}
+            }
+        }
+        return -1;
     }
 
     private static void sendWsFrame(OutputStream out, String text) throws Exception {
@@ -520,7 +745,18 @@ public class CdpLocalClient {
                 frame[8 + i] = (byte) (payload[i] ^ mask[i % 4]);
             }
         } else {
-            throw new IllegalArgumentException("Payload too large for simple WS frame encoder");
+            frame = new byte[10 + 4 + len];
+            frame[0] = (byte) 0x81;
+            frame[1] = (byte) (0x80 | 127);
+            long l = len;
+            for (int i = 7; i >= 0; i--) {
+                frame[2 + i] = (byte) (l & 0xFF);
+                l >>= 8;
+            }
+            System.arraycopy(mask, 0, frame, 10, 4);
+            for (int i = 0; i < len; i++) {
+                frame[14 + i] = (byte) (payload[i] ^ mask[i % 4]);
+            }
         }
         out.write(frame);
         out.flush();
@@ -539,13 +775,28 @@ public class CdpLocalClient {
             if (payloadLen == 126) {
                 payloadLen = ((in.read() & 0xFF) << 8) | (in.read() & 0xFF);
             } else if (payloadLen == 127) {
-                for (int i = 0; i < 8; i++) in.read();
+                long extLen = 0;
+                for (int i = 0; i < 8; i++) {
+                    int b = in.read();
+                    if (b == -1) break;
+                    extLen = (extLen << 8) | (b & 0xFF);
+                }
+                payloadLen = extLen;
             }
 
             byte[] maskKey = null;
             if (masked) {
                 maskKey = new byte[4];
-                in.read(maskKey);
+                int maskRead = 0;
+                while (maskRead < 4) {
+                    int r = in.read(maskKey, maskRead, 4 - maskRead);
+                    if (r <= 0) break;
+                    maskRead += r;
+                }
+            }
+
+            if (payloadLen > 50_000_000) {
+                throw new IllegalStateException("WebSocket frame payload too large: " + payloadLen + " bytes");
             }
 
             byte[] payload = new byte[(int) payloadLen];
@@ -562,7 +813,7 @@ public class CdpLocalClient {
                 }
             }
 
-            String respText = new String(payload, StandardCharsets.UTF_8);
+            String respText = new String(payload, 0, totalRead, StandardCharsets.UTF_8);
             try {
                 JSONObject json = new JSONObject(respText);
                 if (json.optInt("id", -1) == expectedMsgId) {

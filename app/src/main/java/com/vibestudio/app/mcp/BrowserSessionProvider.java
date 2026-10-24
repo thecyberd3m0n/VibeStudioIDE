@@ -31,7 +31,6 @@ public class BrowserSessionProvider implements ToolSessionProvider {
             TabManager.getInstance().openTab(
                     TabType.BROWSER,
                     "Browser #" + sessionId,
-                    "🌐",
                     BrowserFragment.newInstance((WebView) handle),
                     false
             );

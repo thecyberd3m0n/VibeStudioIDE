@@ -261,7 +261,14 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         loadDirectory(mCurrentDir);
 
-        if (!mPendingSharedUris.isEmpty()) {
+        if (mPickerSelectionListener != null) {
+            setBottomBarText("Select file to upload");
+            setBottomBarVisible(true);
+            setOnBottomBarCancelClickListener(v -> cancelFilePickerMode());
+            if (mBtnBottomBarOk != null) {
+                mBtnBottomBarOk.setVisibility(View.GONE);
+            }
+        } else if (!mPendingSharedUris.isEmpty()) {
             setBottomBarText("Select destination");
             setBottomBarVisible(true);
         }

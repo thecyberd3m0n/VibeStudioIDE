@@ -4,13 +4,16 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.app.AlertDialog;
 import android.view.Gravity;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -137,14 +140,14 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 if (height <= 0) height = 1000;
 
                 switch (event.getAction()) {
-                    case android.view.MotionEvent.ACTION_DOWN:
+                    case MotionEvent.ACTION_DOWN:
                         startY[0] = event.getRawY();
                         setTranslationY(0);
                         initialTransY[0] = target.getTranslationY();
                         isDragging[0] = false;
                         return true;
 
-                    case android.view.MotionEvent.ACTION_MOVE:
+                    case MotionEvent.ACTION_MOVE:
                         float dy = event.getRawY() - startY[0];
                         if (Math.abs(dy) > 10) {
                             isDragging[0] = true;
@@ -155,8 +158,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                         target.setTranslationY(targetTrans);
                         return true;
 
-                    case android.view.MotionEvent.ACTION_UP:
-                    case android.view.MotionEvent.ACTION_CANCEL:
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
                         float totalDy = event.getRawY() - startY[0];
                         if (!isDragging[0] && Math.abs(totalDy) < 15) {
                             v.performClick();
@@ -269,23 +272,14 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
 
         Toast.makeText(getContext(), "Fetching branches...", Toast.LENGTH_SHORT).show();
 
-        GitManager.getInstance().runGitCommandAsync(getContext(), "branch -a --format=\"%(refname:short)\"", mRepoDir, (success, output) -> {
+        GitManager.getInstance().fetchBranches(getContext(), mRepoDir, (success, rawBranches) -> {
             post(() -> {
-                if (!success || output == null) {
-                    Toast.makeText(getContext(), "Failed to list branches: " + output, Toast.LENGTH_SHORT).show();
+                if (!success || rawBranches == null) {
+                    Toast.makeText(getContext(), "Failed to list branches.", Toast.LENGTH_SHORT).show();
                     return;
                 }
 
                 String currentBranch = (mLastState != null && mLastState.branchName != null) ? mLastState.branchName : "";
-                List<String> rawBranches = new ArrayList<>();
-                String[] lines = output.split("\n");
-                for (String line : lines) {
-                    String b = line.trim();
-                    if (b.startsWith("origin/HEAD")) continue;
-                    if (!b.isEmpty() && !rawBranches.contains(b)) {
-                        rawBranches.add(b);
-                    }
-                }
 
                 LinearLayout dialogLayout = new LinearLayout(getContext());
                 dialogLayout.setOrientation(LinearLayout.VERTICAL);
@@ -301,8 +295,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 dialogLayout.addView(searchBox);
 
                 ListView listView = new ListView(getContext());
-                listView.setLayoutParams(new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(320)));
+                listView.setLayoutParams(new LayoutParams(
+                        LayoutParams.MATCH_PARENT, dpToPx(320)));
 
                 List<String> displayItems = new ArrayList<>();
                 List<String> branchValues = new ArrayList<>();
@@ -335,7 +329,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                         getContext(), android.R.layout.simple_list_item_1, displayItems) {
                     @NonNull
                     @Override
-                    public View getView(int position, @Nullable View convertView, @NonNull android.view.ViewGroup parent) {
+                    public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
                         TextView tv = (TextView) super.getView(position, convertView, parent);
                         tv.setTextColor(Color.parseColor("#E0E0E0"));
                         tv.setTextSize(13);
@@ -391,8 +385,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         builder.setPositiveButton("Create & Checkout", (dialog, which) -> {
             String newBranch = input.getText().toString().trim();
             if (!newBranch.isEmpty()) {
-                String safeBranch = newBranch.replace("'", "'\\''");
-                executeGitAction("checkout -b '" + safeBranch + "'", "Created and switched to " + newBranch);
+                GitManager.getInstance().checkoutBranch(getContext(), mRepoDir, newBranch,
+                        handleGitResult("Created and switched to " + newBranch, this::showCreateBranchDialog));
             }
         });
         builder.setNegativeButton("Cancel", null);
@@ -403,13 +397,10 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         if (mRepoDir == null || getContext() == null) return;
 
         boolean isCurrent = targetBranch.equals(currentBranch);
-        String safeTarget = targetBranch.replace("'", "'\\''");
-        String safeCurrent = currentBranch.replace("'", "'\\''");
 
         String[] actions = new String[] {
             "Checkout",
             "Merge to Current (" + currentBranch + ")",
-            "Merge Current (" + currentBranch + ") to " + targetBranch,
             "Rebase Current onto " + targetBranch,
             "Cherry-Pick Commit"
         };
@@ -422,35 +413,30 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                             if (isCurrent) {
                                 Toast.makeText(getContext(), "Already on " + targetBranch, Toast.LENGTH_SHORT).show();
                             } else {
-                                executeGitAction("checkout '" + safeTarget + "'", "Switched to branch " + targetBranch);
+                                GitManager.getInstance().checkoutBranch(getContext(), mRepoDir, targetBranch,
+                                        handleGitResult("Switched to branch " + targetBranch, () -> showBranchActionMenu(targetBranch, currentBranch)));
                             }
                             break;
 
-                        case 1: // Merge to Current
+                        case 1: // Merge
                             if (isCurrent) {
                                 Toast.makeText(getContext(), "Cannot merge branch into itself", Toast.LENGTH_SHORT).show();
                             } else {
-                                executeGitAction("merge '" + safeTarget + "'", "Merged " + targetBranch + " into " + currentBranch);
+                                GitManager.getInstance().mergeBranch(getContext(), mRepoDir, targetBranch,
+                                        handleGitResult("Merged " + targetBranch + " into " + currentBranch, () -> showBranchActionMenu(targetBranch, currentBranch)));
                             }
                             break;
 
-                        case 2: // Merge Current to Branch
-                            if (isCurrent) {
-                                Toast.makeText(getContext(), "Cannot merge branch into itself", Toast.LENGTH_SHORT).show();
-                            } else {
-                                executeGitAction("checkout '" + safeTarget + "' && git merge '" + safeCurrent + "'", "Merged " + currentBranch + " into " + targetBranch);
-                            }
-                            break;
-
-                        case 3: // Rebase
+                        case 2: // Rebase
                             if (isCurrent) {
                                 Toast.makeText(getContext(), "Cannot rebase branch onto itself", Toast.LENGTH_SHORT).show();
                             } else {
-                                executeGitAction("rebase '" + safeTarget + "'", "Rebased onto " + targetBranch);
+                                GitManager.getInstance().rebaseBranch(getContext(), mRepoDir, targetBranch,
+                                        handleGitResult("Rebased onto " + targetBranch, () -> showBranchActionMenu(targetBranch, currentBranch)));
                             }
                             break;
 
-                        case 4: // Cherry-Pick
+                        case 3: // Cherry-Pick
                             showCherryPickDialog();
                             break;
                     }
@@ -473,26 +459,24 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         builder.setPositiveButton("Cherry-Pick", (dialog, which) -> {
             String hash = input.getText().toString().trim();
             if (!hash.isEmpty()) {
-                String safeHash = hash.replace("'", "'\\''");
-                executeGitAction("cherry-pick '" + safeHash + "'", "Cherry-picked commit " + hash);
+                GitManager.getInstance().cherryPickCommit(getContext(), mRepoDir, hash,
+                        handleGitResult("Cherry-picked commit " + hash, this::showCherryPickDialog));
             }
         });
         builder.setNegativeButton("Cancel", null);
         builder.show();
     }
 
-    private void executeGitAction(String command, String successMsg) {
-        GitManager.getInstance().runGitCommandAsync(getContext(), command, mRepoDir, (success, output) -> {
-            post(() -> {
-                if (success) {
-                    Toast.makeText(getContext(), successMsg, Toast.LENGTH_SHORT).show();
-                } else if (GitManager.isAuthorIdentityError(output)) {
-                    showGitCredentialsDialog(() -> executeGitAction(command, successMsg));
-                } else {
-                    Toast.makeText(getContext(), "Action failed: " + output, Toast.LENGTH_LONG).show();
-                }
-                refreshStatus();
-            });
+    private GitManager.GitCallback handleGitResult(String successMsg, Runnable retryAction) {
+        return (success, output) -> post(() -> {
+            if (success) {
+                Toast.makeText(getContext(), successMsg, Toast.LENGTH_SHORT).show();
+            } else if (GitManager.isAuthorIdentityError(output)) {
+                showGitCredentialsDialog(retryAction);
+            } else {
+                Toast.makeText(getContext(), "Action failed: " + output, Toast.LENGTH_LONG).show();
+            }
+            refreshStatus();
         });
     }
 
@@ -578,7 +562,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             else if (file.status.contains("D")) statusColor = Color.parseColor("#F14C4C");
             tvStatus.setTextColor(statusColor);
 
-            LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(dpToPx(24), WRAP_CONTENT);
+            LayoutParams statusParams = new LayoutParams(dpToPx(24), WRAP_CONTENT);
             row.addView(tvStatus, statusParams);
 
             TextView tvPath = new TextView(getContext());
@@ -586,8 +570,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             tvPath.setTextColor(Color.parseColor("#E0E0E0"));
             tvPath.setTextSize(13);
             tvPath.setSingleLine(true);
-            tvPath.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            LinearLayout.LayoutParams pathParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
+            tvPath.setEllipsize(TextUtils.TruncateAt.END);
+            LayoutParams pathParams = new LayoutParams(0, WRAP_CONTENT, 1.0f);
             pathParams.setMarginStart(dpToPx(12));
             row.addView(tvPath, pathParams);
 
@@ -618,11 +602,10 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                         tempHeadFile.deleteOnExit();
                         File emptyTemp = File.createTempFile("git_empty_", "_" + fullFile.getName(), getContext().getCacheDir());
                         emptyTemp.deleteOnExit();
-                        String showCmd = "show HEAD:" + file.filePath;
-                        GitManager.getInstance().runGitCommandAsync(getContext(), showCmd, mRepoDir, (success, output) -> {
+                        GitManager.getInstance().getFileAtHead(getContext(), mRepoDir, file.filePath, (success, output) -> {
                             post(() -> {
                                 try (BufferedWriter writer = new BufferedWriter(new FileWriter(tempHeadFile))) {
-                                    writer.write(success ? output : "");
+                                    writer.write(success && output != null ? output : "");
                                 } catch (IOException ignored) {}
                                 openDiffView(tempHeadFile.getAbsolutePath(), emptyTemp.getAbsolutePath());
                             });
@@ -634,8 +617,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                     try {
                         File tempHeadFile = File.createTempFile("git_head_", "_" + fullFile.getName(), getContext().getCacheDir());
                         tempHeadFile.deleteOnExit();
-                        String showCmd = "show HEAD:" + file.filePath;
-                        GitManager.getInstance().runGitCommandAsync(getContext(), showCmd, mRepoDir, (success, output) -> {
+                        GitManager.getInstance().getFileAtHead(getContext(), mRepoDir, file.filePath, (success, output) -> {
                             post(() -> {
                                 final String baseContent = (success && output != null) ? output : "";
                                 try (BufferedWriter writer = new BufferedWriter(new FileWriter(tempHeadFile))) {
@@ -666,9 +648,11 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             btnStageUnstage.setFocusable(true);
             if (borderlessId != 0) btnStageUnstage.setBackgroundResource(borderlessId);
             btnStageUnstage.setOnClickListener(v -> {
-                String safePath = file.filePath.replace("'", "'\\''");
-                String cmd = isStaged ? "reset HEAD -- '" + safePath + "'" : "add -- '" + safePath + "'";
-                GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
+                if (isStaged) {
+                    GitManager.getInstance().unstageFile(getContext(), mRepoDir, file.filePath, (success, output) -> refreshStatus());
+                } else {
+                    GitManager.getInstance().stageFile(getContext(), mRepoDir, file.filePath, (success, output) -> refreshStatus());
+                }
             });
             row.addView(btnStageUnstage);
 
@@ -681,7 +665,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             btnRevertFile.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
 
             int iconSize = dpToPx(28);
-            LinearLayout.LayoutParams revertParams = new LinearLayout.LayoutParams(iconSize, iconSize);
+            LayoutParams revertParams = new LayoutParams(iconSize, iconSize);
             revertParams.setMarginStart(dpToPx(16));
             btnRevertFile.setLayoutParams(revertParams);
             btnRevertFile.setContentDescription("Revert file changes");
@@ -726,7 +710,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 }
             });
             String title = "Diff: " + new File(file1).getName() + " ↔ " + new File(file2).getName();
-            TabManager.getInstance().openTab(TabType.EDITOR, title, "🔀", frag, true);
+            TabManager.getInstance().openTab(TabType.EDITOR, title, frag);
         }
     }
 
@@ -735,7 +719,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             ((MainActivity) getContext()).openFileInEditor(path);
         } else {
             EditorFragment frag = EditorFragment.newInstance(path);
-            TabManager.getInstance().openTab(TabType.EDITOR, new File(path).getName(), "📝", frag, true);
+            TabManager.getInstance().openTab(TabType.EDITOR, new File(path).getName(), frag);
         }
     }
 
@@ -747,20 +731,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             return;
         }
 
-        String safeMsg = msg.replace("'", "'\\''");
-        GitManager.getInstance().runGitCommandAsync(getContext(), "commit -m '" + safeMsg + "'", mRepoDir, (success, output) -> {
-            post(() -> {
-                if (success) {
-                    Toast.makeText(getContext(), "Commit successful", Toast.LENGTH_SHORT).show();
-                    mEtCommitMessage.setText("");
-                    refreshStatus();
-                } else if (GitManager.isAuthorIdentityError(output)) {
-                    showGitCredentialsDialog(() -> executeCommit());
-                } else {
-                    Toast.makeText(getContext(), "Commit failed: " + output, Toast.LENGTH_LONG).show();
-                }
-            });
-        });
+        GitManager.getInstance().commit(getContext(), mRepoDir, msg, handleGitResult("Commit successful", this::executeCommit));
     }
 
     private void syncChanges() {
@@ -777,7 +748,6 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             });
         });
     }
-
 
     private void showGitCredentialsDialog(Runnable onCredentialsConfigured) {
         if (getContext() == null) return;
@@ -845,21 +815,12 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
     }
 
     private void showRevertFileDialog(GitFileStatus file) {
-        if (getContext() == null) return;
-        String safePath = file.filePath.replace("'", "'\\''");
+        if (getContext() == null || file == null || file.filePath == null) return;
         new AlertDialog.Builder(getContext())
                 .setTitle("Revert File")
                 .setMessage("Are you sure you want to revert changes in " + file.filePath + "?")
                 .setPositiveButton("Revert", (dialog, which) -> {
-                    String cmd;
-                    if ("??".equals(file.status)) {
-                        cmd = "clean -f -- '" + safePath + "'";
-                    } else if (file.isStaged) {
-                        cmd = "checkout HEAD -- '" + safePath + "'";
-                    } else {
-                        cmd = "checkout -- '" + safePath + "'";
-                    }
-                    GitManager.getInstance().runGitCommandAsync(getContext(), cmd, mRepoDir, (success, output) -> refreshStatus());
+                    GitManager.getInstance().revertFile(getContext(), mRepoDir, file.filePath, file.status, file.isStaged, (success, output) -> refreshStatus());
                 })
                 .setNegativeButton("Cancel", null)
                 .show();

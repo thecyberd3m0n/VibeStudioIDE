@@ -113,10 +113,12 @@ public class McpClientManager {
         }
         McpServer server = findServerForTool(toolName);
         if (server != null) {
-            CharSequence custom = server.formatToolCall(toolName, args);
-            if (custom != null) {
-                return custom;
-            }
+            try {
+                CharSequence custom = server.prepareToolCall(toolName, args, null, null);
+                if (custom != null) {
+                    return custom;
+                }
+            } catch (Exception ignored) {}
         }
         return null;
     }
@@ -327,9 +329,6 @@ public class McpClientManager {
         return response;
     }
 
-    public JSONObject getSkillSchema(String skillName) {
-        return getSkillSchema(null, skillName);
-    }
 
     private String loadSkillGuidelinesAsset(Context context, String skillName) {
         if (context == null || skillName == null) return null;
@@ -432,9 +431,6 @@ public class McpClientManager {
         return batchResponse;
     }
 
-    public JSONObject executeToolCall(String toolName, JSONObject args) {
-        return executeToolCall(toolName, args, null);
-    }
 
     public JSONObject onToolCallCompleted(String toolName, JSONObject args, Context context, JSONObject result) {
         McpServer server = findServerForTool(toolName);

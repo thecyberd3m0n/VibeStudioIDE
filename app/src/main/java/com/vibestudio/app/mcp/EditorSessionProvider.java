@@ -29,7 +29,6 @@ public class EditorSessionProvider implements ToolSessionProvider {
             TabManager.getInstance().openTab(
                     TabType.EDITOR,
                     "Editor #" + sessionId,
-                    "📝",
                     (EditorFragment) handle,
                     false
             );

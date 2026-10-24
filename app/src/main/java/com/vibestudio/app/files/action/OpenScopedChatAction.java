@@ -32,21 +32,10 @@ public class OpenScopedChatAction implements FileAction {
         File dir = entry.getFile();
         String path = dir.getAbsolutePath();
 
-        boolean isRepo = GitManager.getInstance().isGitRoot(dir) || GitManager.getInstance().isGitRepository(dir);
-        Integer iconResId = isRepo ? R.drawable.ic_git_repo : null;
-        String emojiIcon = isRepo ? null : "📁";
-
         ChatSession session = ChatSessionManager.getInstance().createSession(path);
         if (session != null) {
             String tabTitle = "Chat: " + dir.getName();
-            TabManager.getInstance().openTab(
-                    TabType.CHAT,
-                    tabTitle,
-                    emojiIcon,
-                    iconResId,
-                    ChatFragment.newInstance(session),
-                    true
-            );
+            TabManager.getInstance().openTab(TabType.CHAT, tabTitle, ChatFragment.newInstance(session));
         } else {
             Toast.makeText(context, "Failed to start scoped chat session", Toast.LENGTH_SHORT).show();
         }

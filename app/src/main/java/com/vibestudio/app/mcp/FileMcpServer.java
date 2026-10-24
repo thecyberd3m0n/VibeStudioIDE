@@ -2,10 +2,13 @@ package com.vibestudio.app.mcp;
 
 import android.content.Context;
 
+import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
 import com.vibestudio.app.service.LogViewerService;
+import com.vibestudio.app.view.BaseToolMessageView;
+import com.vibestudio.app.view.FileToolMessage;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -27,9 +30,31 @@ public class FileMcpServer implements McpServer {
     }
 
     @Override
-    public CharSequence formatToolCall(String toolName, JSONObject args) {
+    public CharSequence prepareToolCall(String toolName, JSONObject args, Context context, WorkspaceChangesetTracker tracker) throws Exception {
         if (args == null) args = new JSONObject();
         String path = args.optString("path", args.optString("src", ""));
+
+        boolean ok = true;
+        if (tracker != null) {
+            if ("file_create_file".equalsIgnoreCase(toolName) || "file_create_directory".equalsIgnoreCase(toolName)) {
+                if (!path.isEmpty()) ok = tracker.recordPreEditState(path);
+            } else if ("file_move".equalsIgnoreCase(toolName)) {
+                String src = args.optString("src", null);
+                String dst = args.optString("dst", null);
+                if (src != null) ok = tracker.recordPreDeleteState(src) && ok;
+                if (dst != null) ok = tracker.recordPreEditState(dst) && ok;
+            } else if ("file_copy".equalsIgnoreCase(toolName)) {
+                String dst = args.optString("dst", null);
+                if (dst != null) ok = tracker.recordPreEditState(dst);
+            } else if ("file_delete".equalsIgnoreCase(toolName)) {
+                if (!path.isEmpty()) ok = tracker.recordPreDeleteState(path);
+            }
+        }
+
+        if (!ok) {
+            throw new IllegalStateException("Failed to create restorable backup before executing " + toolName + ".");
+        }
+
         if ("file_list_directory".equalsIgnoreCase(toolName)) {
             return "Listing directory: " + path;
         } else if ("file_create_file".equalsIgnoreCase(toolName)) {
@@ -41,12 +66,13 @@ public class FileMcpServer implements McpServer {
         } else if ("file_move".equalsIgnoreCase(toolName) || "file_copy".equalsIgnoreCase(toolName)) {
             return toolName + ": " + args.optString("src", "") + " -> " + args.optString("dst", "");
         }
+
         return toolName + "(" + args.toString() + ")";
     }
 
     @Override
-    public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
-        return new com.vibestudio.app.view.FileToolMessage(context);
+    public BaseToolMessageView createToolMessageView(Context context, String toolName) {
+        return new FileToolMessage(context);
     }
 
     private static final String TAG = "FileMcpServer";

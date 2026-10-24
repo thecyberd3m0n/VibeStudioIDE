@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
+import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
 import com.vibestudio.app.fragments.EditorFragment;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
@@ -11,6 +12,8 @@ import com.vibestudio.app.mcp.model.PropertyType;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
+import com.vibestudio.app.view.BaseToolMessageView;
+import com.vibestudio.app.view.EditorToolMessage;
 
 import org.json.JSONObject;
 
@@ -33,9 +36,25 @@ public class EditorMcpServer implements McpServer {
     }
 
     @Override
-    public CharSequence formatToolCall(String toolName, JSONObject args) {
+    public CharSequence prepareToolCall(String toolName, JSONObject args, Context context, WorkspaceChangesetTracker tracker) throws Exception {
         if (args == null) args = new JSONObject();
         String path = args.optString("path", "");
+
+        boolean ok = true;
+        if (tracker != null) {
+            if ("editor_replace_lines".equalsIgnoreCase(toolName)
+                    || "editor_search_replace".equalsIgnoreCase(toolName)
+                    || "editor_insert_lines".equalsIgnoreCase(toolName)
+                    || "editor_save".equalsIgnoreCase(toolName)
+                    || "editor_write_file".equalsIgnoreCase(toolName)) {
+                if (!path.isEmpty()) ok = tracker.recordPreEditState(path);
+            }
+        }
+
+        if (!ok) {
+            throw new IllegalStateException("Failed to create restorable backup before executing " + toolName + ".");
+        }
+
         if ("editor_open".equalsIgnoreCase(toolName)) {
             String file2 = args.optString("file2", "");
             if (!file2.isEmpty()) {
@@ -53,12 +72,13 @@ public class EditorMcpServer implements McpServer {
         } else if ("editor_save".equalsIgnoreCase(toolName)) {
             return "Saved changes to " + path;
         }
+
         return toolName + "(" + args.toString() + ")";
     }
 
     @Override
-    public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
-        return new com.vibestudio.app.view.EditorToolMessage(context);
+    public BaseToolMessageView createToolMessageView(Context context, String toolName) {
+        return new EditorToolMessage(context);
     }
 
     private static final String TAG = "EditorMcpServer";
@@ -178,7 +198,7 @@ public class EditorMcpServer implements McpServer {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         EditorFragment frag = EditorFragment.newDiffInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
                         String tabTitle = "Diff: " + file1.getName() + " ↔ " + file2.getName();
-                        TabManager.getInstance().openTab(TabType.EDITOR, tabTitle, "🔀", frag, true);
+                        TabManager.getInstance().openTab(TabType.EDITOR, tabTitle, frag);
                     });
                     return McpToolResult.success("Opened diff view in editor tab comparing: " + file1.getAbsolutePath() + " and " + file2.getAbsolutePath());
                 }
@@ -187,7 +207,7 @@ public class EditorMcpServer implements McpServer {
 
                 new Handler(Looper.getMainLooper()).post(() -> {
                     EditorFragment frag = EditorFragment.newInstance(file1.getAbsolutePath());
-                    TabManager.getInstance().openTab(TabType.EDITOR, file1.getName(), "📝", frag, true);
+                    TabManager.getInstance().openTab(TabType.EDITOR, file1.getName(), frag);
                 });
 
                 return McpToolResult.success("Opened editor tab for: " + file1.getAbsolutePath());
@@ -206,7 +226,7 @@ public class EditorMcpServer implements McpServer {
                 new Handler(Looper.getMainLooper()).post(() -> {
                     EditorFragment frag = EditorFragment.newDiffInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
                     String tabTitle = "Diff: " + file1.getName() + " ↔ " + file2.getName();
-                    TabManager.getInstance().openTab(TabType.EDITOR, tabTitle, "🔀", frag, true);
+                    TabManager.getInstance().openTab(TabType.EDITOR, tabTitle, frag);
                 });
 
                 return McpToolResult.success("Opened diff view in editor tab comparing: " + file1.getAbsolutePath() + " and " + file2.getAbsolutePath());

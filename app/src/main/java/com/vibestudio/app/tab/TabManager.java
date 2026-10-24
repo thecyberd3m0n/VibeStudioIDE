@@ -113,34 +113,38 @@ public class TabManager {
         }
     }
 
+    public TabItem openTab(TabType type) {
+        return openTab(type, true);
+    }
+
+    public TabItem openTab(TabType type, boolean selectNewTab) {
+        return openTab(type, null, type.createDefaultFragment(), selectNewTab);
+    }
+
     public TabItem openTab(TabType type, Fragment fragment) {
-        return openTab(type, null, null, fragment);
+        return openTab(type, null, fragment, true);
     }
 
-    public TabItem openTab(final TabType type, final String customTitle, final String icon, final Fragment fragment) {
-        return openTab(type, customTitle, icon, fragment, true);
+    public TabItem openTab(TabType type, String customTitle, Fragment fragment) {
+        return openTab(type, customTitle, fragment, true);
     }
 
-    public TabItem openTab(final TabType type, final String customTitle, final String icon, final Fragment fragment, final boolean selectNewTab) {
-        return openTab(type, customTitle, icon, null, fragment, selectNewTab);
-    }
-
-    public TabItem openTab(final TabType type, final String customTitle, final String icon, final Integer iconResId, final Fragment fragment, final boolean selectNewTab) {
+    public TabItem openTab(final TabType type, final String customTitle, final Fragment fragment, final boolean selectNewTab) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             final AtomicTabItemHolder holder = new AtomicTabItemHolder();
             final CountDownLatch latch = new CountDownLatch(1);
-            mainHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    holder.tab = openTab(type, customTitle, icon, fragment, selectNewTab);
-                    latch.countDown();
-                }
+            mainHandler.post(() -> {
+                holder.tab = openTab(type, customTitle, fragment, selectNewTab);
+                latch.countDown();
             });
             try {
                 latch.await();
             } catch (InterruptedException ignored) {}
             return holder.tab;
         }
+
+        String icon = type.getDefaultIcon();
+        Fragment tabFragment = fragment != null ? fragment : type.createDefaultFragment();
 
         String title = customTitle;
         if (title == null) {
@@ -149,25 +153,16 @@ public class TabManager {
                     sessionCounterChat++;
                     title = "Chat #" + sessionCounterChat;
                     break;
-                case TERMINAL:
-                    title = "Terminal";
-                    break;
-                case BROWSER:
-                    title = "Browser";
-                    break;
                 case EDITOR:
                     sessionCounterEditor++;
                     title = "Editor #" + sessionCounterEditor;
-                    break;
-                case SETTINGS:
-                    title = "Settings";
                     break;
                 default:
                     title = type.getDefaultTitle();
             }
         }
 
-        TabItem newTab = new TabItem(type, title, icon, iconResId, fragment);
+        TabItem newTab = new TabItem(type, title, icon, tabFragment);
         tabs.add(newTab);
 
         if (selectNewTab || activeTab == null) {

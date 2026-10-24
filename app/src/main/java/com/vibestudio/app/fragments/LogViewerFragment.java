@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -126,7 +127,10 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     public void onStart() {
         super.onStart();
         if (mCurrentMode == Mode.GLOBAL_LOGCAT || mCurrentMode == Mode.GIT_PTY) {
-            mLogService.addListener(this);
+            reloadCurrentLogDetail();
+            if (mLogService != null) {
+                mLogService.addListener(this);
+            }
         }
     }
 
@@ -240,7 +244,7 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         tvPath.setTextColor(Color.parseColor("#8E8EA0"));
         tvPath.setTextSize(11);
         tvPath.setSingleLine(true);
-        tvPath.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+        tvPath.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         LinearLayout.LayoutParams pathParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f);
         tvPath.setLayoutParams(pathParams);
 
@@ -257,16 +261,22 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         if (mContainerProcessList != null) mContainerProcessList.setVisibility(View.GONE);
         if (mContainerLogDetail != null) mContainerLogDetail.setVisibility(View.VISIBLE);
 
-        if (mode == Mode.GLOBAL_LOGCAT) {
+        reloadCurrentLogDetail();
+        if (mLogService != null) {
+            mLogService.addListener(this);
+        }
+    }
+
+    private void reloadCurrentLogDetail() {
+        if (mCurrentMode == Mode.GLOBAL_LOGCAT) {
             if (mTvLogDetailTitle != null) {
                 mTvLogDetailTitle.setText("Global Logcat (~5KB Max)");
             }
-            if (mLogAdapter != null) {
+            if (mLogAdapter != null && mLogService != null) {
                 mLogAdapter.setLines(mLogService.getLogList());
             }
-            mLogService.addListener(this);
             scrollToBottom();
-        } else if (mode == Mode.GIT_PTY) {
+        } else if (mCurrentMode == Mode.GIT_PTY) {
             if (mTvLogDetailTitle != null) {
                 mTvLogDetailTitle.setText("Git Service PTY Output");
             }
@@ -275,7 +285,6 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
             if (mLogAdapter != null) {
                 mLogAdapter.setLines(output != null ? Arrays.asList(output.split("\n")) : new ArrayList<>());
             }
-            mLogService.addListener(this);
             scrollToBottom();
         }
     }

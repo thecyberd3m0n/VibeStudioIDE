@@ -22,11 +22,11 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.vibestudio.app.R;
-import com.vibestudio.app.activity.MainActivity;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
+import com.vibestudio.app.tab.TabType;
 
 public class BrowserFragment extends Fragment implements BrowserManager.BrowserStateListener {
 
@@ -168,9 +168,48 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
 
     @Override
     public void onShowFileChooser(WebView view, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {
-        if (getActivity() instanceof MainActivity) {
-            ((MainActivity) getActivity()).openFilePickerForBrowser(this, filePathCallback, fileChooserParams);
+        if (getContext() == null) {
+            if (filePathCallback != null) filePathCallback.onReceiveValue(null);
+            return;
         }
+
+        TabManager tabManager = TabManager.getInstance();
+        TabItem currentBrowserTab = tabManager.getActiveTab();
+
+        FilesFragment filesFragment = null;
+        for (TabItem tab : tabManager.getTabs()) {
+            if (tab.getType() == TabType.FILES) {
+                tabManager.selectTab(tab);
+                if (tab.getFragment() instanceof FilesFragment) {
+                    filesFragment = (FilesFragment) tab.getFragment();
+                }
+                break;
+            }
+        }
+
+        if (filesFragment == null) {
+            TabItem newTab = tabManager.openTab(TabType.FILES);
+            if (newTab != null && newTab.getFragment() instanceof FilesFragment) {
+                filesFragment = (FilesFragment) newTab.getFragment();
+            }
+        }
+
+        if (getActivity() != null) {
+            getActivity().getSupportFragmentManager().executePendingTransactions();
+        }
+
+        filesFragment.startFilePickerMode("Select file to upload", file -> {
+            if (file != null) {
+                Uri uri = Uri.fromFile(file);
+                filePathCallback.onReceiveValue(new Uri[]{ uri });
+            } else {
+                filePathCallback.onReceiveValue(null);
+            }
+
+            if (currentBrowserTab != null && tabManager.getTabs().contains(currentBrowserTab)) {
+                tabManager.selectTab(currentBrowserTab);
+            }
+        });
     }
 
     @Override

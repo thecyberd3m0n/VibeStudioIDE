@@ -1,18 +1,20 @@
 package com.vibestudio.app.chat.safety;
 
-import android.content.Context;
-import android.text.TextUtils;
-
 import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONObject;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 public class WorkspaceBoundaryGuard {
 
     private static final String TAG = "WorkspaceBoundaryGuard";
+    private static final String[] PATH_KEYS = {
+        "path", "src", "dst", "dest", "file", "file1", "file2", "file_path", "target_path", "path1", "path2"
+    };
 
     /**
      * Canonicalizes target path relative to workspace directory if specified.
@@ -64,25 +66,21 @@ public class WorkspaceBoundaryGuard {
         if (args == null || workspacePath == null || workspacePath.isEmpty()) return;
 
         try {
-            if (args.has("path")) {
-                String originalPath = args.optString("path", "");
-                String canonical = canonicalizePath(originalPath, workspacePath);
-                args.put("path", canonical);
+            if ("file_list_directory".equalsIgnoreCase(toolName)) {
+                String currentPath = args.optString("path", "").trim();
+                if (currentPath.isEmpty() || ".".equals(currentPath)) {
+                    args.put("path", workspacePath);
+                }
             }
-            if (args.has("src")) {
-                String originalSrc = args.optString("src", "");
-                String canonicalSrc = canonicalizePath(originalSrc, workspacePath);
-                args.put("src", canonicalSrc);
-            }
-            if (args.has("dst")) {
-                String originalDst = args.optString("dst", "");
-                String canonicalDst = canonicalizePath(originalDst, workspacePath);
-                args.put("dst", canonicalDst);
-            }
-            if (args.has("file")) {
-                String originalFile = args.optString("file", "");
-                String canonicalFile = canonicalizePath(originalFile, workspacePath);
-                args.put("file", canonicalFile);
+
+            for (String key : PATH_KEYS) {
+                if (args.has(key)) {
+                    String originalPath = args.optString(key, "");
+                    if (!originalPath.isEmpty()) {
+                        String canonical = canonicalizePath(originalPath, workspacePath);
+                        args.put(key, canonical);
+                    }
+                }
             }
         } catch (Exception e) {
             LogViewerService.getInstance().e(TAG, "Failed to canonicalize tool args for " + toolName, e);
@@ -90,13 +88,32 @@ public class WorkspaceBoundaryGuard {
     }
 
     /**
-     * Returns the target path being accessed by a tool call, if applicable.
+     * Returns all target paths being accessed by a tool call.
+     */
+    public static List<String> getToolTargetPaths(String toolName, JSONObject args) {
+        List<String> paths = new ArrayList<>();
+        if (args == null) return paths;
+
+        if ("file_list_directory".equalsIgnoreCase(toolName) && (!args.has("path") || args.optString("path", "").trim().isEmpty())) {
+            paths.add(".");
+        }
+
+        for (String key : PATH_KEYS) {
+            if (args.has(key)) {
+                String val = args.optString(key, null);
+                if (val != null && !val.trim().isEmpty()) {
+                    paths.add(val.trim());
+                }
+            }
+        }
+        return paths;
+    }
+
+    /**
+     * Returns the first target path being accessed by a tool call (for single-path callers).
      */
     public static String getToolTargetPath(String toolName, JSONObject args) {
-        if (args == null) return null;
-        if (args.has("path")) return args.optString("path", null);
-        if (args.has("src")) return args.optString("src", null);
-        if (args.has("file")) return args.optString("file", null);
-        return null;
+        List<String> paths = getToolTargetPaths(toolName, args);
+        return !paths.isEmpty() ? paths.get(0) : null;
     }
 }

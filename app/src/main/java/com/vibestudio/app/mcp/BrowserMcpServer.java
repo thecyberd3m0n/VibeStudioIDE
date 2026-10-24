@@ -4,6 +4,7 @@ import android.content.Context;
 import android.webkit.WebView;
 
 import com.vibestudio.app.browser.BrowserManager;
+import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
@@ -25,12 +26,11 @@ public class BrowserMcpServer implements McpServer {
     }
 
     @Override
-    public CharSequence formatToolCall(String toolName, JSONObject args) {
+    public CharSequence prepareToolCall(String toolName, JSONObject args, Context context, WorkspaceChangesetTracker tracker) throws Exception {
         JSONObject toolArgs = args != null ? args : new JSONObject();
         if ("read_browser_logs".equalsIgnoreCase(toolName) || "browser_logs".equalsIgnoreCase(toolName)) {
             return "Reading browser logs (" + toolArgs.optInt("max_lines", 30) + " lines)";
-        }
-        if ("form_file_attach".equalsIgnoreCase(toolName) || "browser_form_file_attach".equalsIgnoreCase(toolName) || "attach_file".equalsIgnoreCase(toolName)) {
+        } else if ("form_file_attach".equalsIgnoreCase(toolName) || "browser_form_file_attach".equalsIgnoreCase(toolName) || "attach_file".equalsIgnoreCase(toolName)) {
             String path = toolArgs.optString("file_path", toolArgs.optString("path", "file"));
             return "Attaching file: " + path;
         }
