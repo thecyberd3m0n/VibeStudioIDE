@@ -13,6 +13,7 @@ This document outlines the strict architectural principles, code rules, and desi
 3. **Respect the Timeline & Locality of Behavior (Temporal Locality)**: Code that executes together in time ($T_0 \rightarrow T_1 \rightarrow T_2$) must live together in space. Stepping through code (`F10`) in a debugger should move smoothly down the screen like reading a book, without snapping your viewport across files or up and down like a pinball machine.
 4. **Stop Turning Verbs Into Classes**: If a class holds no state and only exists to wrap a single function (e.g. `GitTerminalParser` or `ToolCallParser`), it is not an object—it is a function wearing a class trench coat. Delete micro-parser classes and funnel execution into the domain manager.
 5. **Optimize for Deleteability, Not Reusability**: Write code that is easy to remove. When a feature is deprecated, you should be able to delete one method or file without causing a domino collapse across 12 packages and 40 mock tests. Prefer pragmatic local duplication over tight coupling to shared, overly abstract helpers.
+6. **Funnel Single-Use Helper Methods**: Functions or private helper methods that are invoked in only one place MUST be funneled directly into their caller implementation. Creating a single-use wrapper method adds useless indirection, clutters the class outline, and forces developers to jump around the file to read a single workflow. Keep the code inline where it runs unless it is reused in multiple call sites.
 
 ---
 

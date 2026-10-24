@@ -47,6 +47,13 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
         return fragment;
     }
 
+    public WebView getOrCreateWebView(Context context) {
+        if (mWebView == null && context != null) {
+            mWebView = BrowserManager.getInstance().createWebView(context);
+        }
+        return mWebView;
+    }
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -77,12 +84,6 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
             BrowserManager.getInstance().setStateListener(mWebView, this);
         }
 
-        setupListeners();
-
-        return root;
-    }
-
-    private void setupListeners() {
         mBtnGo.setOnClickListener(v -> navigateToEnteredUrl());
 
         mEditUrl.setOnEditorActionListener((v, actionId, event) -> {
@@ -103,23 +104,21 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
             }
             return false;
         });
+
+        return root;
     }
 
     private void navigateToEnteredUrl() {
         String urlText = mEditUrl.getText() != null ? mEditUrl.getText().toString().trim() : "";
         if (!TextUtils.isEmpty(urlText) && mWebView != null) {
             mEditUrl.clearFocus();
-            hideKeyboard();
-            BrowserManager.getInstance().navigate(mWebView, urlText);
-        }
-    }
-
-    private void hideKeyboard() {
-        if (getActivity() != null && mEditUrl != null) {
-            InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm != null) {
-                imm.hideSoftInputFromWindow(mEditUrl.getWindowToken(), 0);
+            if (getActivity() != null && mEditUrl != null) {
+                InputMethodManager imm = (InputMethodManager) getActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.hideSoftInputFromWindow(mEditUrl.getWindowToken(), 0);
+                }
             }
+            BrowserManager.getInstance().navigate(mWebView, urlText);
         }
     }
 

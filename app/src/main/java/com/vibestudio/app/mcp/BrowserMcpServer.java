@@ -5,10 +5,17 @@ import android.webkit.WebView;
 
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
+import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
 import com.vibestudio.app.service.LogViewerService;
+import com.vibestudio.app.tab.TabItem;
+import com.vibestudio.app.tab.TabManager;
+import com.vibestudio.app.tab.TabType;
+import com.vibestudio.app.view.BaseToolMessageView;
+import com.vibestudio.app.view.BrowserLogsToolMessage;
+import com.vibestudio.app.view.BrowserToolMessage;
 
 import org.json.JSONObject;
 
@@ -39,11 +46,11 @@ public class BrowserMcpServer implements McpServer {
 
 
     @Override
-    public com.vibestudio.app.view.BaseToolMessageView createToolMessageView(Context context, String toolName) {
+    public BaseToolMessageView createToolMessageView(Context context, String toolName) {
         if ("read_browser_logs".equalsIgnoreCase(toolName) || "browser_logs".equalsIgnoreCase(toolName)) {
-            return new com.vibestudio.app.view.BrowserLogsToolMessage(context);
+            return new BrowserLogsToolMessage(context);
         }
-        return new com.vibestudio.app.view.BrowserToolMessage(context);
+        return new BrowserToolMessage(context);
     }
 
 
@@ -177,12 +184,13 @@ public class BrowserMcpServer implements McpServer {
     public McpToolResult callTool(String toolName, Map<String, Object> arguments, Context context) {
         try {
             BrowserManager browserManager = BrowserManager.getInstance();
-            ToolSessionManager sessionManager = ToolSessionManager.getInstance();
 
             if ("browser_open_tab".equals(toolName) || "open_tab".equals(toolName)) {
-                int newSessionId = sessionManager.getOrCreateSession(ToolType.BROWSER, context, true);
+                TabItem newTab = TabManager.getInstance().openTab(TabType.BROWSER, false);
+                int sessionIndex = TabManager.getInstance().getTabs().indexOf(newTab) + 1;
                 Map<String, Object> extras = new HashMap<>();
-                extras.put("session_id", newSessionId);
+                extras.put("session_id", sessionIndex);
+                extras.put("message", "Opened new browser tab #" + sessionIndex + " in taskbar.");
                 return McpToolResult.success(extras);
             }
 
@@ -203,27 +211,14 @@ public class BrowserMcpServer implements McpServer {
             }
 
             int sessionIdArg = arguments != null ? getIntArg(arguments, "session_id", -1) : -1;
-            ToolSessionManager.ToolSession session;
-
-            if (sessionIdArg > 0) {
-                // Strict validation when explicit session_id is requested by the Agent
-                ToolSessionManager.SessionValidationResult validation = sessionManager.validateSession(sessionIdArg, ToolType.BROWSER);
-                if (!validation.isValid()) {
-                    return McpToolResult.error(validation.errorMessage);
-                }
-                session = validation.session;
-            } else {
-                // Get or create active default browser session
-                int activeSessionId = sessionManager.getOrCreateSession(ToolType.BROWSER, context, false);
-                session = sessionManager.getSession(activeSessionId);
-                if (session == null) {
-                    return McpToolResult.error("Failed to initialize active browser session.");
-                }
+            BrowserFragment browserFragment = getOrCreateBrowserFragment(context, sessionIdArg);
+            if (browserFragment == null) {
+                return McpToolResult.error("Failed to retrieve or open Browser tab in TaskBar.");
             }
 
-            WebView webView = session.getWebView();
+            WebView webView = browserFragment.getOrCreateWebView(context);
             if (webView == null) {
-                return McpToolResult.error("WebView handle is null or destroyed for session #" + session.id);
+                return McpToolResult.error("WebView handle is null for Browser tab.");
             }
 
             if ("browser_navigate".equals(toolName)) {
@@ -285,6 +280,36 @@ public class BrowserMcpServer implements McpServer {
             LogViewerService.getInstance().e(TAG, "Error executing Browser MCP tool: " + toolName, e);
             return McpToolResult.error(e.getMessage());
         }
+    }
+
+    private BrowserFragment getOrCreateBrowserFragment(Context context, int sessionIdArg) {
+        TabManager tabManager = TabManager.getInstance();
+        List<TabItem> browserTabs = new ArrayList<>();
+
+        for (TabItem tab : tabManager.getTabs()) {
+            if (tab.getType() == TabType.BROWSER && tab.getFragment() instanceof BrowserFragment) {
+                browserTabs.add(tab);
+            }
+        }
+
+        if (sessionIdArg > 0 && sessionIdArg <= browserTabs.size()) {
+            return (BrowserFragment) browserTabs.get(sessionIdArg - 1).getFragment();
+        }
+
+        if (!browserTabs.isEmpty()) {
+            TabItem activeTab = tabManager.getActiveTab();
+            if (activeTab != null && activeTab.getType() == TabType.BROWSER && activeTab.getFragment() instanceof BrowserFragment) {
+                return (BrowserFragment) activeTab.getFragment();
+            }
+            return (BrowserFragment) browserTabs.get(0).getFragment();
+        }
+
+        TabItem newTab = tabManager.openTab(TabType.BROWSER, false);
+        if (newTab != null && newTab.getFragment() instanceof BrowserFragment) {
+            return (BrowserFragment) newTab.getFragment();
+        }
+
+        return null;
     }
 
     private McpToolResult jsonToToolResult(JSONObject jsonObj) {

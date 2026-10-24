@@ -1,6 +1,8 @@
 package com.vibestudio.app.browser;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Build;
@@ -129,10 +131,27 @@ public class BrowserManager {
         return ref.get();
     }
 
+    private Context getEffectiveActivityContext(Context context) {
+        if (context == null) return null;
+        if (context instanceof Activity) {
+            return context;
+        }
+        Context current = context;
+        while (current instanceof ContextWrapper) {
+            if (current instanceof Activity) {
+                return current;
+            }
+            current = ((ContextWrapper) current).getBaseContext();
+        }
+        return context;
+    }
+
     private WebView createWebViewInternal(Context context) {
+        if (context == null) return null;
+        Context actContext = getEffectiveActivityContext(context);
         try {
-            LogViewerService.getInstance().i("BrowserManager", "createWebViewInternal with context: " + context);
-            WebView webView = new WebView(context);
+            LogViewerService.getInstance().i("BrowserManager", "createWebViewInternal with context: " + actContext);
+            WebView webView = new WebView(actContext);
             
             ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -145,6 +164,7 @@ public class BrowserManager {
 
             return webView;
         } catch (Exception e) {
+            LogViewerService.getInstance().e(TAG, "Failed to initialize WebView: " + e.getMessage(), e);
             addBrowserLog("ERROR", TAG, "Failed to initialize WebView: " + e.getMessage());
             return null;
         }
