@@ -36,22 +36,21 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
     private Button mBtnGo;
     private ViewGroup mContainerView;
     private WebView mWebView;
+    private int mSessionId = -1;
 
     public static BrowserFragment newInstance() {
         return new BrowserFragment();
     }
 
     public static BrowserFragment newInstance(WebView webView) {
-        BrowserFragment fragment = new BrowserFragment();
-        fragment.mWebView = webView;
-        return fragment;
+        return newInstance(webView, -1);
     }
 
-    public WebView getOrCreateWebView(Context context) {
-        if (mWebView == null && context != null) {
-            mWebView = BrowserManager.getInstance().createWebView(context);
-        }
-        return mWebView;
+    public static BrowserFragment newInstance(WebView webView, int sessionId) {
+        BrowserFragment fragment = new BrowserFragment();
+        fragment.mWebView = webView;
+        fragment.mSessionId = sessionId;
+        return fragment;
     }
 
     @Nullable
