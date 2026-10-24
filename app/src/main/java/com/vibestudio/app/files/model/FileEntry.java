@@ -22,6 +22,10 @@ public abstract class FileEntry {
 
     public abstract String getIconSymbol();
 
+    public Integer getIconResId() {
+        return null;
+    }
+
     public abstract String getDetailsText(Context context);
 
     public abstract boolean isUpDirectory();

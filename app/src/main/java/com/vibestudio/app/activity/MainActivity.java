@@ -10,6 +10,8 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -40,6 +42,7 @@ import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import com.vibestudio.app.terminal.TerminalSessionManager;
+import com.vibestudio.app.git.GitManager;
 import com.vibestudio.app.util.IntentUtils;
 
 import java.io.File;
@@ -71,6 +74,9 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         TerminalSessionManager.getInstance().setSessionEventListener(filePath -> {
             runOnUiThread(() -> openFileInEditor(filePath));
         });
+
+        // Initialize dedicated background Git PTY session
+        GitManager.getInstance().ensureGitSession(this);
 
         // Gather models for all configured providers on MainActivity start
         AiRouter.getInstance().gatherModelsForConfiguredProviders(this, null);
@@ -144,13 +150,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         }
 
         ImageViewerFragment fragment = ImageViewerFragment.newInstance(filePath);
-        mTabManager.openTab(
-                TabType.IMAGE,
-                fileName,
-                "🖼️",
-                fragment,
-                true
-        );
+        mTabManager.openTab(TabType.IMAGE, fileName, fragment);
     }
 
     public void openFileInEditor(String filePath) {
@@ -177,13 +177,71 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         // Open a new tab for this file
         LogViewerService.getInstance().i("MainActivity", "Opening new Editor tab for: " + fileName + " (" + filePath + ")");
         EditorFragment fragment = EditorFragment.newInstance(filePath);
-        mTabManager.openTab(
-                TabType.EDITOR,
-                fileName,
-                "📝",
-                fragment,
-                true
-        );
+        mTabManager.openTab(TabType.EDITOR, fileName, fragment);
+    }
+
+    public void openDiffInEditor(String file1Path, String file2Path) {
+        String f1 = new File(file1Path).getName();
+        String f2 = new File(file2Path).getName();
+        String tabTitle = "Diff: " + f1 + " ↔ " + f2;
+
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == TabType.EDITOR && tab.getTitle() != null && tab.getTitle().startsWith("Diff: ")) {
+                if (tabTitle.equals(tab.getTitle())) {
+                    mTabManager.selectTab(tab);
+                    return;
+                }
+            }
+        }
+
+        EditorFragment fragment = EditorFragment.newDiffInstance(file1Path, file2Path);
+        fragment.setOnDiffRevertListener(new EditorFragment.OnDiffRevertListener() {
+            @Override
+            public boolean onAcceptHunk(EditorFragment frag, EditorFragment.DiffHunk hunk, String file1, String file2) {
+                boolean ok = frag.defaultApplyHunkAccept(hunk);
+                notifyGitRefresh(file2);
+                refreshActiveChatChangeset();
+                return true;
+            }
+
+            @Override
+            public boolean onRevertHunk(EditorFragment frag, EditorFragment.DiffHunk hunk, String file1, String file2) {
+                boolean ok = frag.defaultApplyHunkRevert(hunk);
+                notifyGitRefresh(file2);
+                refreshActiveChatChangeset();
+                return true;
+            }
+
+            @Override
+            public boolean onRevertAll(EditorFragment frag, String file1, String file2) {
+                boolean ok = frag.defaultApplyRevertAll();
+                notifyGitRefresh(file2);
+                refreshActiveChatChangeset();
+                return true;
+            }
+
+            private void notifyGitRefresh(String filePath) {
+                if (filePath == null) return;
+                File target = new File(filePath);
+                File repoRoot = GitManager.getInstance().findGitRoot(target);
+                if (repoRoot != null) {
+                    Context ctx = getApplicationContext();
+                    if (ctx != null) {
+                        GitManager.getInstance().refreshRepositoryState(ctx, repoRoot, null);
+                    }
+                }
+            }
+        });
+        mTabManager.openTab(TabType.EDITOR, tabTitle, fragment);
+    }
+
+    private void refreshActiveChatChangeset() {
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getType() == TabType.CHAT && tab.getFragment() instanceof ChatFragment) {
+                ChatFragment cf = (ChatFragment) tab.getFragment();
+                cf.refreshChangeset();
+            }
+        }
     }
 
     @Override
@@ -241,7 +299,6 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
     public void selectNavigationItem(int navIndex) {
         TabType type;
-        Fragment fragment = null;
 
         switch (navIndex) {
             case 2: // Terminal
@@ -249,67 +306,32 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                 break;
             case 3: // Chat
                 type = TabType.CHAT;
-                ChatSession session = ChatSessionManager.getInstance().createSession();
-                fragment = ChatFragment.newInstance(session);
                 break;
             case 4: // Browser
                 type = TabType.BROWSER;
                 break;
             case 7: // Editor
                 type = TabType.EDITOR;
-                fragment = EditorFragment.newInstance();
                 break;
             case 0: // Models
             case 1: // MCP
-            
             case 6: // Logs
             default:
                 type = TabType.SETTINGS;
-                fragment = new SettingsFragment();
                 break;
         }
 
         // Search if tab of this type already exists and select it, or open a new one
-        for (TabItem tab : mTabManager.getTabs()) {
-            if (type != TabType.CHAT && tab.getType() == type) {
-                mTabManager.selectTab(tab);
-                return;
+        if (type != TabType.CHAT && type != TabType.EDITOR && type != TabType.TERMINAL && type != TabType.BROWSER) {
+            for (TabItem tab : mTabManager.getTabs()) {
+                if (tab.getType() == type) {
+                    mTabManager.selectTab(tab);
+                    return;
+                }
             }
         }
 
-        // Create independent User-initiated session (unmapped in ToolSessionManager)
-        if (type == TabType.TERMINAL) {
-            TerminalSession session = TerminalSessionManager.getInstance().createSession(this);
-            mTabManager.openTab(
-                    TabType.TERMINAL,
-                    "Terminal",
-                    "💻",
-                    TerminalFragment.newInstance(session),
-                    true
-            );
-            return;
-        } else if (type == TabType.BROWSER) {
-            WebView webView = BrowserManager.getInstance().createWebView(this);
-            mTabManager.openTab(
-                    TabType.BROWSER,
-                    "Browser",
-                    "🌐",
-                    BrowserFragment.newInstance(webView),
-                    true
-            );
-            return;
-        } else if (type == TabType.EDITOR) {
-            mTabManager.openTab(
-                    TabType.EDITOR,
-                    null,
-                    "📝",
-                    EditorFragment.newInstance(),
-                    true
-            );
-            return;
-        }
-
-        mTabManager.openTab(type, null, null, fragment, true);
+        mTabManager.openTab(type);
     }
 
     @Override
@@ -436,6 +458,10 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
                 ivFavicon.setImageBitmap(tab.getFavicon());
                 ivFavicon.setVisibility(View.VISIBLE);
                 tvIcon.setVisibility(View.GONE);
+            } else if (tab.getIconResId() != null) {
+                ivFavicon.setImageResource(tab.getIconResId());
+                ivFavicon.setVisibility(View.VISIBLE);
+                tvIcon.setVisibility(View.GONE);
             } else {
                 tvIcon.setText(tab.getIcon());
                 tvIcon.setVisibility(View.VISIBLE);
@@ -516,7 +542,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         return uris;
     }
 
-    public void openFilesTabWithSharedUris(List<Uri> uris) {
+    public FilesFragment openFilesTab() {
         FilesFragment fragment = null;
         for (TabItem tab : mTabManager.getTabs()) {
             if (tab.getType() == TabType.FILES) {
@@ -528,9 +554,17 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             }
         }
         if (fragment == null) {
-            fragment = new FilesFragment();
-            mTabManager.openTab(TabType.FILES, "Files", "📁", fragment, true);
+            TabItem newTab = mTabManager.openTab(TabType.FILES);
+            if (newTab != null && newTab.getFragment() instanceof FilesFragment) {
+                fragment = (FilesFragment) newTab.getFragment();
+            }
         }
+        getSupportFragmentManager().executePendingTransactions();
+        return fragment;
+    }
+
+    public void openFilesTabWithSharedUris(List<Uri> uris) {
+        FilesFragment fragment = openFilesTab();
         if (fragment != null) {
             fragment.startPendingSharedFiles(uris);
         }
@@ -542,13 +576,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             if (url != null && !url.isEmpty()) {
                 BrowserManager.getInstance().navigate(webView, url);
             }
-            mTabManager.openTab(
-                    TabType.BROWSER,
-                    "Browser",
-                    "🌐",
-                    BrowserFragment.newInstance(webView),
-                    true
-            );
+            mTabManager.openTab(TabType.BROWSER, BrowserFragment.newInstance(webView));
         }
     }
 }

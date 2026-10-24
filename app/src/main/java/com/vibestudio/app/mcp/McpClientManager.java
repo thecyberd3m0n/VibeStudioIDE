@@ -2,6 +2,8 @@ package com.vibestudio.app.mcp;
 
 import android.content.Context;
 
+import com.vibestudio.app.chat.skills.Skill;
+import com.vibestudio.app.chat.skills.SkillScanner;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
@@ -58,12 +60,26 @@ public class McpClientManager {
     private final Map<String, McpServer> mRegisteredServers = new LinkedHashMap<>();
     private final Set<String> mLoadedSkills = ConcurrentHashMap.newKeySet();
     private final Map<String, JSONObject> mCachedSchemas = new ConcurrentHashMap<>();
+    private String mWorkspacePath;
 
     public McpClientManager() {
         registerServer(new FileMcpServer());
         registerServer(new EditorMcpServer());
         registerServer(new TerminalMcpServer());
         registerServer(new BrowserMcpServer());
+    }
+
+    public void setWorkspacePath(String workspacePath) {
+        this.mWorkspacePath = workspacePath;
+    }
+
+    public String getWorkspacePath() {
+        return mWorkspacePath;
+    }
+
+    public boolean isRegisteredServer(String name) {
+        if (name == null) return false;
+        return mRegisteredServers.containsKey(name.toLowerCase().trim());
     }
 
     public void registerServer(McpServer server) {
@@ -97,10 +113,12 @@ public class McpClientManager {
         }
         McpServer server = findServerForTool(toolName);
         if (server != null) {
-            CharSequence custom = server.formatToolCall(toolName, args);
-            if (custom != null) {
-                return custom;
-            }
+            try {
+                CharSequence custom = server.prepareToolCall(toolName, args, null, null);
+                if (custom != null) {
+                    return custom;
+                }
+            } catch (Exception ignored) {}
         }
         return null;
     }
@@ -178,7 +196,6 @@ public class McpClientManager {
         return mLoadedSkills.contains(skillName.toLowerCase().trim());
     }
 
-
     public String getLoadedSkillsInstructions(Context context) {
         if (mLoadedSkills.isEmpty()) {
             return "";
@@ -214,6 +231,25 @@ public class McpClientManager {
                 skills.put(skillObj);
             }
 
+            List<Skill> customSkills = SkillScanner.scanSkills(mWorkspacePath);
+            for (Skill customSkill : customSkills) {
+                boolean exists = false;
+                for (int i = 0; i < skills.length(); i++) {
+                    if (skills.getJSONObject(i).optString("name", "").equalsIgnoreCase(customSkill.getName())) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    JSONObject skillObj = new JSONObject();
+                    skillObj.put("name", customSkill.getName());
+                    skillObj.put("description", customSkill.getDescription());
+                    skillObj.put("priority_tier", 100);
+                    skillObj.put("is_loaded", isSkillLoaded(customSkill.getName()));
+                    skills.put(skillObj);
+                }
+            }
+
             catalog.put("available_skills", skills);
 
             McpTool metaTool = McpTool.builder(META_TOOL_GET_SKILL_SCHEMA, "Fetches detailed parameters and tool schemas for one or multiple skill names in a single batch call.")
@@ -235,30 +271,51 @@ public class McpClientManager {
 
         JSONObject response = new JSONObject();
         try {
-            if (skillName != null && mRegisteredServers.containsKey(skillName.toLowerCase())) {
-                String cleanSkillName = skillName.toLowerCase();
-                markSkillLoaded(cleanSkillName);
-                McpServer server = mRegisteredServers.get(cleanSkillName);
-                if (server != null) {
-                    JSONArray toolsArray = new JSONArray();
-                    for (McpTool tool : server.getTools()) {
-                        toolsArray.put(tool.toJsonSchema());
+            if (skillName != null) {
+                String cleanSkillName = skillName.toLowerCase().trim();
+                if (mRegisteredServers.containsKey(cleanSkillName)) {
+                    markSkillLoaded(cleanSkillName);
+                    McpServer server = mRegisteredServers.get(cleanSkillName);
+                    if (server != null) {
+                        JSONArray toolsArray = new JSONArray();
+                        for (McpTool tool : server.getTools()) {
+                            toolsArray.put(tool.toJsonSchema());
+                        }
+
+                        response.put("status", "success");
+                        response.put("skill", cleanSkillName);
+                        JSONObject schemaObj = new JSONObject();
+                        schemaObj.put("tools", toolsArray);
+
+                        // Load guidelines from assets/ai/<skill>_tool.md if present
+                        String instructions = loadSkillGuidelinesAsset(context, cleanSkillName);
+                        if (instructions != null && !instructions.trim().isEmpty()) {
+                            schemaObj.put("guidelines", instructions.trim());
+                        }
+
+                        response.put("schema", schemaObj);
+                        mCachedSchemas.put(cleanSkillName, response);
+                        return response;
                     }
+                }
 
-                    response.put("status", "success");
-                    response.put("skill", cleanSkillName);
-                    JSONObject schemaObj = new JSONObject();
-                    schemaObj.put("tools", toolsArray);
-
-                    // Load guidelines from assets/ai/<skill>_tool.md if present
-                    String instructions = loadSkillGuidelinesAsset(context, cleanSkillName);
-                    if (instructions != null && !instructions.trim().isEmpty()) {
-                        schemaObj.put("guidelines", instructions.trim());
+                List<Skill> customSkills = SkillScanner.scanSkills(mWorkspacePath);
+                for (Skill skill : customSkills) {
+                    if (skill.getName().equalsIgnoreCase(cleanSkillName)) {
+                        markSkillLoaded(cleanSkillName);
+                        response.put("status", "success");
+                        response.put("skill", cleanSkillName);
+                        JSONObject schemaObj = new JSONObject();
+                        if (skill.getDescription() != null && !skill.getDescription().isEmpty()) {
+                            schemaObj.put("description", skill.getDescription());
+                        }
+                        if (skill.getContent() != null && !skill.getContent().isEmpty()) {
+                            schemaObj.put("guidelines", skill.getContent());
+                        }
+                        response.put("schema", schemaObj);
+                        mCachedSchemas.put(cleanSkillName, response);
+                        return response;
                     }
-
-                    response.put("schema", schemaObj);
-                    mCachedSchemas.put(cleanSkillName, response);
-                    return response;
                 }
             }
             response.put("status", "error");
@@ -272,9 +329,6 @@ public class McpClientManager {
         return response;
     }
 
-    public JSONObject getSkillSchema(String skillName) {
-        return getSkillSchema(null, skillName);
-    }
 
     private String loadSkillGuidelinesAsset(Context context, String skillName) {
         if (context == null || skillName == null) return null;
@@ -377,9 +431,6 @@ public class McpClientManager {
         return batchResponse;
     }
 
-    public JSONObject executeToolCall(String toolName, JSONObject args) {
-        return executeToolCall(toolName, args, null);
-    }
 
     public JSONObject onToolCallCompleted(String toolName, JSONObject args, Context context, JSONObject result) {
         McpServer server = findServerForTool(toolName);

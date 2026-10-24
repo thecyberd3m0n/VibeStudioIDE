@@ -82,8 +82,8 @@ public class TwoFingerSwipeLayoutTest {
     @Test
     public void testTwoFingerSwipeInterceptedWhenTabsExist() {
         TabManager tm = TabManager.getInstance();
-        tm.openTab(TabType.TERMINAL, "Tab 1", null, null);
-        tm.openTab(TabType.EDITOR, "Tab 2", null, null);
+        tm.openTab(TabType.TERMINAL, "Tab 1", null);
+        tm.openTab(TabType.EDITOR, "Tab 2", null);
 
         MotionEvent pointerDown = createPointerDownEvent(100, 200, 150, 200);
         layout.dispatchTouchEvent(pointerDown);
@@ -98,8 +98,8 @@ public class TwoFingerSwipeLayoutTest {
     public void testTwoFingerSwipeInterceptedWhenImageViewerIsOpened() {
         TabManager tm = TabManager.getInstance();
         ImageViewerFragment ivf = ImageViewerFragment.newInstance("/path/to/image.png");
-        tm.openTab(TabType.IMAGE, "image.png", "🖼️", ivf);
-        tm.openTab(TabType.TERMINAL, "Terminal", "💻", null);
+        tm.openTab(TabType.IMAGE, "image.png", ivf);
+        tm.openTab(TabType.TERMINAL, "Terminal", null);
         tm.selectTab(tm.getTabs().get(0)); // Active tab is ImageViewer
 
         MotionEvent pointerDown = createPointerDownEvent(100, 200, 150, 200);

@@ -1,66 +1,109 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#121212"
-    android:padding="12dp">
+    android:background="#121212">
 
-    <!-- Action Toolbar -->
+    <!-- Container 1: Managed Process List -->
     <LinearLayout
+        android:id="@+id/container_process_list"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingBottom="8dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="visible">
 
         <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="App Logcat Output (~50KB Max)"
-            android:textColor="#BB86FC"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btn_copy_logs"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="Copy"
-            android:textSize="12sp"
-            android:textColor="#121212"
-            android:backgroundTint="#03DAC6"
-            android:layout_marginEnd="8dp" />
-
-        <Button
-            android:id="@+id/btn_clear_logs"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="Clear"
-            android:textSize="12sp"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#CF6679" />
-    </LinearLayout>
-
-    <!-- Scrollable Log Output -->
-    <ScrollView
-        android:id="@+id/log_scroll_view"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="#1E1E24"
-        android:fillViewport="true"
-        android:padding="12dp">
-
-        <TextView
-            android:id="@+id/tv_log_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#CDD6F4"
-            android:textSize="12sp"
-            android:typeface="monospace"
-            android:textIsSelectable="true" />
-    </ScrollView>
+            android:text="Managed System Processes &amp; PTYs"
+            android:textColor="#BB86FC"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:paddingBottom="12dp"/>
 
-</LinearLayout>
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:id="@+id/ll_process_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"/>
+        </ScrollView>
+    </LinearLayout>
+
+    <!-- Container 2: Log Viewer Detail Window -->
+    <LinearLayout
+        android:id="@+id/container_log_detail"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <!-- Action Toolbar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="8dp">
+
+            <Button
+                android:id="@+id/btn_back_to_processes"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="Back"
+                android:textSize="12sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#2E2E3E"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/tv_log_detail_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Logcat Output"
+                android:textColor="#BB86FC"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:singleLine="true"
+                android:ellipsize="end" />
+
+            <Button
+                android:id="@+id/btn_copy_logs"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="Copy"
+                android:textSize="12sp"
+                android:textColor="#121212"
+                android:backgroundTint="#03DAC6"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btn_clear_logs"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="Clear"
+                android:textSize="12sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#CF6679" />
+        </LinearLayout>
+
+        <!-- Efficient Recycled Log Output -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_log_content"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="#1E1E24"
+            android:padding="8dp"
+            android:scrollbars="vertical" />
+    </LinearLayout>
+
+</FrameLayout>
