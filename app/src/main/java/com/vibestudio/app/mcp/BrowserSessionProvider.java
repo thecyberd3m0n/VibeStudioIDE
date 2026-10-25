@@ -27,14 +27,12 @@ public class BrowserSessionProvider implements ToolSessionProvider {
 
     @Override
     public void openUiTab(Context context, int sessionId, Object handle) {
-        if (handle instanceof WebView) {
-            TabManager.getInstance().openTab(
-                    TabType.BROWSER,
-                    "Browser #" + sessionId,
-                    "🌐",
-                    BrowserFragment.newInstance((WebView) handle),
-                    false
-            );
-        }
+        WebView webView = handle instanceof WebView ? (WebView) handle : null;
+        TabManager.getInstance().openTab(
+                TabType.BROWSER,
+                "Browser #" + sessionId,
+                BrowserFragment.newInstance(webView, sessionId),
+                false
+        );
     }
 }

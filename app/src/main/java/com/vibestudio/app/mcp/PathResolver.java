@@ -21,7 +21,15 @@ public class PathResolver {
             if (context != null) {
                 homePath = new File(context.getFilesDir(), "home").getAbsolutePath();
             } else {
-                homePath = "/data/data/com.termux/files/home";
+                File vibeHomeUser0 = new File("/data/user/0/com.vibestudio.app/files/home");
+                File vibeHomeData = new File("/data/data/com.vibestudio.app/files/home");
+                if (vibeHomeUser0.exists()) {
+                    homePath = vibeHomeUser0.getAbsolutePath();
+                } else if (vibeHomeData.exists()) {
+                    homePath = vibeHomeData.getAbsolutePath();
+                } else {
+                    homePath = "/data/user/0/com.vibestudio.app/files/home";
+                }
             }
         }
 

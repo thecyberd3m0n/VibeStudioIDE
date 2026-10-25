@@ -1,5 +1,6 @@
 package com.vibestudio.app.chat;
 
+import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.chat.session.ChatSession;
 import com.vibestudio.app.chat.session.ChatSessionManager;
 import com.vibestudio.app.fragments.ChatFragment;
@@ -42,5 +43,24 @@ public class ChatSessionTest {
 
         Assert.assertEquals(session1.getId(), fragment1.getChatSession().getId());
         Assert.assertEquals(session2.getId(), fragment2.getChatSession().getId());
+    }
+
+    @Test
+    public void testSkillReferencedMessageStaysCleanAndSkillIsLoaded() {
+        ChatSession session = ChatSessionManager.getInstance().createSession();
+
+        session.addUserMessage(null, "/file edit index.html");
+
+        Assert.assertFalse(session.getMessages().isEmpty());
+        ChatMessage lastUserMsg = null;
+        for (ChatMessage msg : session.getMessages()) {
+            if (msg.isUser()) {
+                lastUserMsg = msg;
+            }
+        }
+        Assert.assertNotNull(lastUserMsg);
+        Assert.assertEquals("/file edit index.html", lastUserMsg.getText());
+
+        Assert.assertTrue(session.getMcpClientManager().isSkillLoaded("file"));
     }
 }

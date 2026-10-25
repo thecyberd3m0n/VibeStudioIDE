@@ -4,6 +4,8 @@
 build/
 bin/
 obj/
+*.apk
+VibeStudio.apk
 libtermux_classes/
 app/src/main/java/com/vibestudio/app/R.java
 debug.keystore

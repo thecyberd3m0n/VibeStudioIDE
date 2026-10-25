@@ -1,5 +1,10 @@
 package com.vibestudio.app.fragments;
 
+import com.vibestudio.app.git.GitStatusView;
+import com.vibestudio.app.git.GitManager;
+import com.vibestudio.app.git.GitRepositoryState;
+
+import android.app.AlertDialog;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
@@ -8,12 +13,14 @@ import android.provider.OpenableColumns;
 import android.text.InputType;
 import android.view.ContextThemeWrapper;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.PopupMenu;
@@ -44,7 +51,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-public class FilesFragment extends Fragment implements FileAction.FileActionListener {
+public class FilesFragment extends Fragment implements FileAction.FileActionListener, GitManager.GitStateChangeListener {
 
     private static final String ARG_CURRENT_PATH = "current_path";
     private static final String TERMUX_FILES_ROOT = "/data/data/com.termux/files";
@@ -65,11 +72,19 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
     private List<Uri> mPendingSharedUris = new ArrayList<>();
 
+    private View mLayoutGitChangesBar;
+    private TextView mTvGitChangesLabel;
+    private TextView mTvGitChangesChevron;
+    private FrameLayout mFlGitViewContainer;
+    private GitStatusView mGitStatusView;
+    private boolean mIsGitViewOpen = false;
+
     public interface FileSelectionListener {
         void onFileSelected(File file);
     }
 
     private FileSelectionListener mSelectionListener;
+    private FileSelectionListener mPickerSelectionListener;
 
     public static FilesFragment newInstance(String path) {
         FilesFragment fragment = new FilesFragment();
@@ -88,6 +103,36 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+        checkAndUpdateGitStatus();
+        if (mIsGitViewOpen && mGitStatusView != null) {
+            mGitStatusView.refreshStatus();
+        }
+    }
+
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (!hidden) {
+            checkAndUpdateGitStatus();
+            if (mIsGitViewOpen && mGitStatusView != null) {
+                mGitStatusView.refreshStatus();
+            }
+        }
+    }
+
+    @Override
+    public void setUserVisibleHint(boolean isVisibleToUser) {
+        super.setUserVisibleHint(isVisibleToUser);
+        if (isVisibleToUser) {
+            checkAndUpdateGitStatus();
+            if (mIsGitViewOpen && mGitStatusView != null) {
+                mGitStatusView.refreshStatus();
+            }
+        }
+    }
+
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
@@ -146,10 +191,84 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         }
 
         mBtnNewFolder.setOnClickListener(v -> showAddMenu(v));
+        GitManager.getInstance().addStateChangeListener(this);
+
+        mLayoutGitChangesBar = view.findViewById(R.id.layout_git_changes_bar);
+        mTvGitChangesLabel = view.findViewById(R.id.tv_git_changes_label);
+        mTvGitChangesChevron = view.findViewById(R.id.tv_git_changes_chevron);
+        mFlGitViewContainer = view.findViewById(R.id.fl_git_view_container);
+
+        View btnGitToggle = view.findViewById(R.id.btn_git_changes_toggle);
+        if (btnGitToggle != null) {
+            btnGitToggle.setOnClickListener(v -> toggleGitView());
+
+            final float[] startY = new float[1];
+            final float[] initialTranslationY = new float[1];
+            final boolean[] isDragging = new boolean[1];
+
+            btnGitToggle.setOnTouchListener((v, event) -> {
+                if (mFlGitViewContainer == null) return false;
+
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startY[0] = event.getRawY();
+                        preloadGitView();
+                        int height = getGitContainerHeight();
+
+                        if (!mIsGitViewOpen) {
+                            mFlGitViewContainer.setTranslationY(height);
+                        }
+                        if (mGitStatusView != null) {
+                            mGitStatusView.setTranslationY(0);
+                        }
+                        initialTranslationY[0] = mFlGitViewContainer.getTranslationY();
+                        isDragging[0] = false;
+                        return true;
+
+                    case MotionEvent.ACTION_MOVE:
+                        float dy = event.getRawY() - startY[0];
+                        if (Math.abs(dy) > 10) {
+                            isDragging[0] = true;
+                        }
+                        int containerHeight = getGitContainerHeight();
+                        float targetTrans = initialTranslationY[0] + dy;
+                        if (targetTrans < 0) targetTrans = 0;
+                        if (targetTrans > containerHeight) targetTrans = containerHeight;
+                        mFlGitViewContainer.setTranslationY(targetTrans);
+                        return true;
+
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        float totalDy = event.getRawY() - startY[0];
+                        if (!isDragging[0] && Math.abs(totalDy) < 15) {
+                            v.performClick();
+                            return true;
+                        }
+                        int viewHeight = getGitContainerHeight();
+                        float threshold = Math.max(30f, viewHeight * 0.15f);
+                        if (totalDy < -threshold) {
+                            openGitView();
+                        } else if (totalDy > threshold) {
+                            closeGitView();
+                        } else {
+                            if (mIsGitViewOpen) openGitView(); else closeGitView();
+                        }
+                        return true;
+                }
+                return false;
+            });
+        }
 
         loadDirectory(mCurrentDir);
 
-        if (!mPendingSharedUris.isEmpty()) {
+        if (mPickerSelectionListener != null) {
+            setBottomBarText("Select file to upload");
+            setBottomBarVisible(true);
+            setOnBottomBarCancelClickListener(v -> cancelFilePickerMode());
+            if (mBtnBottomBarOk != null) {
+                mBtnBottomBarOk.setVisibility(View.GONE);
+            }
+        } else if (!mPendingSharedUris.isEmpty()) {
             setBottomBarText("Select destination");
             setBottomBarVisible(true);
         }
@@ -182,6 +301,33 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     public void setOnBottomBarOkClickListener(View.OnClickListener listener) {
         if (mBtnBottomBarOk != null) {
             mBtnBottomBarOk.setOnClickListener(listener);
+        }
+    }
+
+    public void startFilePickerMode(String text, FileSelectionListener listener) {
+        if (mPickerSelectionListener != null) {
+            FileSelectionListener prevListener = mPickerSelectionListener;
+            mPickerSelectionListener = null;
+            prevListener.onFileSelected(null);
+        }
+        mPickerSelectionListener = listener;
+        setBottomBarText(text != null ? text : "Select file");
+        setBottomBarVisible(true);
+        setOnBottomBarCancelClickListener(v -> cancelFilePickerMode());
+        if (mBtnBottomBarOk != null) {
+            mBtnBottomBarOk.setVisibility(View.GONE);
+        }
+    }
+
+    public void cancelFilePickerMode() {
+        if (mPickerSelectionListener != null) {
+            FileSelectionListener listener = mPickerSelectionListener;
+            mPickerSelectionListener = null;
+            listener.onFileSelected(null);
+        }
+        setBottomBarVisible(false);
+        if (mBtnBottomBarOk != null) {
+            mBtnBottomBarOk.setVisibility(View.VISIBLE);
         }
     }
 
@@ -351,13 +497,33 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             View itemView = inflater.inflate(R.layout.item_file_entry, listContainer, false);
 
             TextView tvIcon = itemView.findViewById(R.id.tv_file_icon);
+            ImageView imgIcon = itemView.findViewById(R.id.img_file_icon);
             TextView tvName = itemView.findViewById(R.id.tv_file_name);
             TextView tvDetails = itemView.findViewById(R.id.tv_file_details);
             TextView btnMenu = itemView.findViewById(R.id.btn_file_menu);
 
             tvName.setText(entry.getName());
-            tvIcon.setText(entry.getIconSymbol());
-            tvDetails.setText(entry.getDetailsText(getContext()));
+            if (entry.getIconResId() != null) {
+                tvIcon.setVisibility(View.GONE);
+                imgIcon.setVisibility(View.VISIBLE);
+                imgIcon.setImageResource(entry.getIconResId());
+            } else {
+                imgIcon.setVisibility(View.GONE);
+                tvIcon.setVisibility(View.VISIBLE);
+                tvIcon.setText(entry.getIconSymbol());
+            }
+            String details = entry.getDetailsText(getContext());
+            File repoRoot = GitManager.getInstance().findGitRoot(mCurrentDir);
+            if (repoRoot != null) {
+                GitRepositoryState cachedState = GitManager.getInstance().getCachedState(repoRoot);
+                if (cachedState != null) {
+                    String gitStatusText = getGitStatusForFile(repoRoot, entry.getFile(), cachedState);
+                    if (gitStatusText != null && !gitStatusText.isEmpty()) {
+                        details = details + " • " + gitStatusText;
+                    }
+                }
+            }
+            tvDetails.setText(details);
 
             List<FileAction> actions = FileActionRegistry.getAvailableActionsFor(entry);
             if (actions.isEmpty()) {
@@ -377,7 +543,15 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 });
             } else {
                 itemView.setOnClickListener(v -> {
-                    if (mSelectionListener != null) {
+                    if (mPickerSelectionListener != null) {
+                        FileSelectionListener pickerListener = mPickerSelectionListener;
+                        mPickerSelectionListener = null;
+                        setBottomBarVisible(false);
+                        if (mBtnBottomBarOk != null) {
+                            mBtnBottomBarOk.setVisibility(View.VISIBLE);
+                        }
+                        pickerListener.onFileSelected(entry.getFile());
+                    } else if (mSelectionListener != null) {
                         mSelectionListener.onFileSelected(entry.getFile());
                     } else {
                         Toast.makeText(getContext(), "Selected: " + entry.getName(), Toast.LENGTH_SHORT).show();
@@ -410,6 +584,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         mCurrentDir = dir;
         updatePathHeader();
+        checkAndUpdateGitStatus();
 
         List<FileEntry> items = fetchDirectoryItems(mCurrentDir);
 
@@ -459,6 +634,214 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         oldView.startAnimation(outAnim);
         newView.startAnimation(inAnim);
+    }
+
+    private void updateGitChangesBar(GitRepositoryState state) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(() -> {
+            if (state == null) {
+                if (mTvGitChangesLabel != null) {
+                    mTvGitChangesLabel.setText("Changes | +0, -0");
+                }
+                return;
+            }
+            if (mTvGitChangesLabel != null) {
+                mTvGitChangesLabel.setText("Changes | +" + state.totalAdditions + ", -" + state.totalDeletions);
+            }
+        });
+    }
+
+    @Override
+    public void onGitStateChanged(GitRepositoryState state) {
+        if (mCurrentDir == null || state == null || state.repoRoot == null) return;
+        File repoRoot = GitManager.getInstance().findGitRoot(mCurrentDir);
+        if (repoRoot != null && repoRoot.getAbsolutePath().equals(state.repoRoot.getAbsolutePath())) {
+            updateGitChangesBar(state);
+            if (getActivity() != null) {
+                getActivity().runOnUiThread(this::refreshDirectoryViews);
+            }
+        }
+    }
+
+    private void refreshDirectoryViews() {
+        if (mCurrentDir != null && getContext() != null) {
+            List<FileEntry> items = fetchDirectoryItems(mCurrentDir);
+            View newView = buildDirectoryView(items);
+            if (newView != null) {
+                mFlContentContainer.removeAllViews();
+                mFlContentContainer.addView(newView);
+            }
+        }
+    }
+
+    private String getGitStatusForFile(File repoRoot, File itemFile, GitRepositoryState state) {
+        if (repoRoot == null || itemFile == null || state == null) return null;
+        try {
+            String relPath = repoRoot.toPath().relativize(itemFile.toPath()).toString().replace('\\', '/');
+            if (relPath.isEmpty()) return null;
+
+            if (itemFile.isFile()) {
+                for (GitStatusView.GitFileStatus f : state.stagedFiles) {
+                    if (relPath.equals(f.filePath)) {
+                        return "Staged (+" + f.additions + ", -" + f.deletions + ")";
+                    }
+                }
+                for (GitStatusView.GitFileStatus f : state.unstagedFiles) {
+                    if (relPath.equals(f.filePath)) {
+                        if ("??".equals(f.status)) {
+                            return "Untracked (+" + f.additions + ")";
+                        }
+                        return "Modified (+" + f.additions + ", -" + f.deletions + ")";
+                    }
+                }
+            } else if (itemFile.isDirectory()) {
+                String dirPrefix = relPath + "/";
+                int totalAdd = 0;
+                int totalDel = 0;
+                boolean hasChanges = false;
+
+                for (GitStatusView.GitFileStatus f : state.stagedFiles) {
+                    if (f.filePath != null && f.filePath.startsWith(dirPrefix)) {
+                        totalAdd += f.additions;
+                        totalDel += f.deletions;
+                        hasChanges = true;
+                    }
+                }
+                for (GitStatusView.GitFileStatus f : state.unstagedFiles) {
+                    if (f.filePath != null && f.filePath.startsWith(dirPrefix)) {
+                        totalAdd += f.additions;
+                        totalDel += f.deletions;
+                        hasChanges = true;
+                    }
+                }
+                if (hasChanges) {
+                    return "Modified (+" + totalAdd + ", -" + totalDel + ")";
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    @Override
+    public void onDestroyView() {
+        cancelFilePickerMode();
+        super.onDestroyView();
+        GitManager.getInstance().removeStateChangeListener(this);
+    }
+
+    private void preloadGitView() {
+        if (mFlGitViewContainer == null || mCurrentDir == null || getContext() == null) return;
+        File repoRoot = GitManager.getInstance().findGitRoot(mCurrentDir);
+        if (repoRoot == null) return;
+
+        if (mGitStatusView == null) {
+            mGitStatusView = new GitStatusView(requireContext());
+            mGitStatusView.setOnCloseListener(this::closeGitView);
+            mGitStatusView.setOnStatusUpdatedListener(() -> {
+                GitRepositoryState state = GitManager.getInstance().getCachedState(repoRoot);
+                if (state != null) {
+                    updateGitChangesBar(state);
+                }
+            });
+            mFlGitViewContainer.addView(mGitStatusView);
+        }
+        mGitStatusView.setRepoDir(repoRoot);
+    }
+
+    private void checkAndUpdateGitStatus() {
+        if (mCurrentDir == null || getContext() == null) return;
+
+        File repoRoot = GitManager.getInstance().findGitRoot(mCurrentDir);
+        if (repoRoot == null) {
+            if (mLayoutGitChangesBar != null) mLayoutGitChangesBar.setVisibility(View.GONE);
+            closeGitView();
+            return;
+        }
+
+        if (mLayoutGitChangesBar != null) {
+            mLayoutGitChangesBar.setVisibility(View.VISIBLE);
+        }
+
+        preloadGitView();
+
+        GitRepositoryState cached = GitManager.getInstance().getCachedState(repoRoot);
+        if (cached != null) {
+            updateGitChangesBar(cached);
+        }
+
+        GitManager.getInstance().refreshRepositoryState(getContext(), repoRoot, this::updateGitChangesBar);
+    }
+
+    private int getGitContainerHeight() {
+        if (mFlGitViewContainer == null) return 1000;
+        int h = mFlGitViewContainer.getHeight();
+        if (h > 0) return h;
+        if (mFlGitViewContainer.getParent() instanceof View) {
+            h = ((View) mFlGitViewContainer.getParent()).getHeight();
+            if (h > 0) return h;
+        }
+        h = mFlGitViewContainer.getMeasuredHeight();
+        if (h > 0) return h;
+        return 1000;
+    }
+
+    private void toggleGitView() {
+        if (mIsGitViewOpen) {
+            closeGitView();
+        } else {
+            openGitView();
+        }
+    }
+
+    private void openGitView() {
+        if (mFlGitViewContainer == null || mCurrentDir == null) return;
+        mIsGitViewOpen = true;
+        preloadGitView();
+        mFlGitViewContainer.setVisibility(View.VISIBLE);
+
+        mFlGitViewContainer.animate().cancel();
+        if (mGitStatusView != null) {
+            mGitStatusView.setTranslationY(0);
+        }
+        
+        int height = getGitContainerHeight();
+
+        if (mFlGitViewContainer.getTranslationY() >= height) {
+            mFlGitViewContainer.setTranslationY(height);
+        }
+
+        mFlGitViewContainer.animate()
+                .translationY(0)
+                .setDuration(200)
+                .start();
+
+        if (mTvGitChangesChevron != null) {
+            mTvGitChangesChevron.setText("▼");
+        }
+    }
+
+    private void closeGitView() {
+        mIsGitViewOpen = false;
+        if (mFlGitViewContainer != null) {
+            mFlGitViewContainer.animate().cancel();
+            if (mGitStatusView != null) {
+                mGitStatusView.setTranslationY(0);
+            }
+            int height = getGitContainerHeight();
+
+            mFlGitViewContainer.animate()
+                    .translationY(height)
+                    .setDuration(200)
+                    .withEndAction(() -> {
+                        if (!mIsGitViewOpen && mFlGitViewContainer != null) {
+                            mFlGitViewContainer.setVisibility(View.GONE);
+                        }
+                    })
+                    .start();
+        }
+        if (mTvGitChangesChevron != null) {
+            mTvGitChangesChevron.setText("▲");
+        }
     }
 
     public void loadDirectory(File dir) {
@@ -521,6 +904,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         popup.getMenu().add(0, 0, 0, "New File");
         popup.getMenu().add(0, 1, 1, "New Directory");
+        popup.getMenu().add(0, 2, 2, "New repository");
 
         popup.setOnMenuItemClickListener(menuItem -> {
             if (menuItem.getItemId() == 0) {
@@ -528,6 +912,9 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 return true;
             } else if (menuItem.getItemId() == 1) {
                 showCreateFolderDialog();
+                return true;
+            } else if (menuItem.getItemId() == 2) {
+                showCreateRepositoryDialog();
                 return true;
             }
             return false;
@@ -538,7 +925,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     private void showCreateFileDialog() {
         if (getContext() == null) return;
         Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(themedContext);
+        AlertDialog.Builder builder = new AlertDialog.Builder(themedContext);
         builder.setTitle("Create New File");
 
         final EditText input = new EditText(themedContext);
@@ -559,7 +946,15 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                         if (newFile.createNewFile()) {
                             Toast.makeText(getContext(), "File created", Toast.LENGTH_SHORT).show();
                             loadDirectory(mCurrentDir);
-                            if (mSelectionListener != null) {
+                            if (mPickerSelectionListener != null) {
+                                FileSelectionListener pickerListener = mPickerSelectionListener;
+                                mPickerSelectionListener = null;
+                                setBottomBarVisible(false);
+                                if (mBtnBottomBarOk != null) {
+                                    mBtnBottomBarOk.setVisibility(View.VISIBLE);
+                                }
+                                pickerListener.onFileSelected(newFile);
+                            } else if (mSelectionListener != null) {
                                 mSelectionListener.onFileSelected(newFile);
                             }
                         } else {
@@ -575,10 +970,58 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         builder.show();
     }
 
+    private void showCreateRepositoryDialog() {
+        if (getContext() == null) return;
+        Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
+        AlertDialog.Builder builder = new AlertDialog.Builder(themedContext);
+        builder.setTitle("Create New Repository");
+
+        final EditText input = new EditText(themedContext);
+        input.setHint("Repository name");
+        input.setTextColor(0xFFFFFFFF);
+        input.setHintTextColor(0x88FFFFFF);
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        builder.setView(input);
+
+        builder.setPositiveButton("Create", (dialog, which) -> {
+            String repoName = input.getText().toString().trim();
+            if (!repoName.isEmpty()) {
+                File newDir = new File(mCurrentDir, repoName);
+                if (newDir.exists()) {
+                    Toast.makeText(getContext(), "Directory already exists", Toast.LENGTH_SHORT).show();
+                } else {
+                    if (newDir.mkdirs()) {
+                        Context ctx = getContext();
+                        if (ctx != null) {
+                            GitManager.getInstance().initRepository(ctx, newDir, (success, output) -> {
+                                if (getActivity() != null) {
+                                    getActivity().runOnUiThread(() -> {
+                                        if (success) {
+                                            Toast.makeText(getContext(), "Repository initialized", Toast.LENGTH_SHORT).show();
+                                        } else {
+                                            Toast.makeText(getContext(), "Failed to initialize git repository", Toast.LENGTH_SHORT).show();
+                                        }
+                                        loadDirectory(mCurrentDir);
+                                    });
+                                }
+                            });
+                        }
+                        Toast.makeText(getContext(), "Creating repository...", Toast.LENGTH_SHORT).show();
+                        loadDirectory(mCurrentDir);
+                    } else {
+                        Toast.makeText(getContext(), "Failed to create repository", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+        });
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
+
     private void showCreateFolderDialog() {
         if (getContext() == null) return;
         Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(themedContext);
+        AlertDialog.Builder builder = new AlertDialog.Builder(themedContext);
         builder.setTitle("Create New Directory");
 
         final EditText input = new EditText(themedContext);

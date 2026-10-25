@@ -1,0 +1,18 @@
+{
+  "name": "diff",
+  "scopeName": "source.diff",
+  "patterns": [
+    {
+      "name": "meta.diff.header",
+      "match": "^(--- |\\+\\+\\+ |@@|diff |index ).*$"
+    },
+    {
+      "name": "markup.inserted",
+      "match": "^\\+.*$"
+    },
+    {
+      "name": "markup.deleted",
+      "match": "^-.*$"
+    }
+  ]
+}

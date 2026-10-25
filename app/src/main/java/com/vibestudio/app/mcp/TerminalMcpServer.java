@@ -3,6 +3,7 @@ package com.vibestudio.app.mcp;
 import android.content.Context;
 
 import com.termux.terminal.TerminalSession;
+import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
@@ -29,7 +30,7 @@ public class TerminalMcpServer implements McpServer {
     }
 
     @Override
-    public CharSequence formatToolCall(String toolName, JSONObject args) {
+    public CharSequence prepareToolCall(String toolName, JSONObject args, Context context, WorkspaceChangesetTracker tracker) throws Exception {
         JSONObject formatArgs = args != null ? args : new JSONObject();
         if ("execute_command".equalsIgnoreCase(toolName) || "execute_command_async".equalsIgnoreCase(toolName)) {
             return "$ " + formatArgs.optString("command", "");

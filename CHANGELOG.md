@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0]
+
+### Added
+- **Terminal Foreground Service & WakeLock**: Bound active terminal sessions to `TerminalService` foreground service holding a `PARTIAL_WAKE_LOCK` to prevent background process/server suspension when switching apps. Added an **Exit** notification action to terminate active sessions and stop the service.
+- **Built-in Git Manager & Status Panel**: Complete Git integration (`GitManager`, `GitStatusView`) in `FilesFragment` featuring real-time status inspection, branch dropdown selector, branch switching/creation, staging/unstaging, stashing, commits, and line addition/deletion counters (+N/-N). Includes a smooth swipe gesture panel with responsive 150ms snap animations.
+- **In-Editor Diff Overlay & Hunk Operations**: Interactive diff viewer in `EditorFragment` with declarable hunk options, line-by-line highlight rendering, and Accept/Revert controls for individual hunks or entire files. Added TextMate diff grammar syntax highlighting.
+- **Workspace Scoping & Safety Changeset Tracker**: Introduced `WorkspaceBoundaryGuard` for workspace scoping and `WorkspaceChangesetTracker` for real-time tracking of file creations, modifications, and deletions with one-click Keep/Undo rollback bar in the chat UI.
+- **Chrome DevTools Protocol (CDP) & Browser Engine**: Implemented `CdpLocalClient` for persistent WebSocket CDP connections, supporting native DOM file upload inputs and interactive browser control.
+- **Workspace Skills Scanner & Actions**: Added `SkillScanner` to discover workspace skills dynamically and added "Open Scoped Chat" file action.
+- **Log Viewer & Filtering**: Enhanced `LogViewerFragment` with real-time log streaming, log level filtering, search, and export capabilities.
+
+### Fixed
+- **Git Execution & Parser Sanitization**: Resolved compound shell subcommand syntax errors in `GitManager` and sanitized terminal stdout line echoes to prevent parser corruption.
+- **Diff Hunk Recursion**: Fixed a recursive overlay update loop (`StackOverflowError`) during post-revert hunk updates by decoupling diff revert listeners.
+- **Chat UI Theme Tinting**: Fixed changeset bar button background tinting issues by utilizing clickable `TextView` elements.
+
 ## [0.0.4]
 
 ### Added

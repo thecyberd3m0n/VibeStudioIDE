@@ -29,7 +29,6 @@ public class FileSessionProvider implements ToolSessionProvider {
             TabManager.getInstance().openTab(
                     TabType.FILES,
                     "File Manager #" + sessionId,
-                    "📁",
                     (FilesFragment) handle,
                     false
             );

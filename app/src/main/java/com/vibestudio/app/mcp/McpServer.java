@@ -1,6 +1,8 @@
 package com.vibestudio.app.mcp;
 
 import android.content.Context;
+
+import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.view.BaseToolMessageView;
@@ -22,6 +24,15 @@ public interface McpServer {
 
     default JSONObject onToolCallCompleted(String toolName, Map<String, Object> arguments, Context context, JSONObject result) {
         return result;
+    }
+
+    /**
+     * Single funneled pre-execution hook for state preparation (e.g. changeset backups)
+     * and UI display text formatting.
+     * Returns custom formatted status text for chat UI. Throws Exception if preparation fails.
+     */
+    default CharSequence prepareToolCall(String toolName, JSONObject args, Context context, WorkspaceChangesetTracker tracker) throws Exception {
+        return null;
     }
 
     /**
@@ -51,12 +62,4 @@ public interface McpServer {
      * Creates a tool message view for chat UI for tools handled by this McpServer.
      */
     BaseToolMessageView createToolMessageView(Context context, String toolName);
-
-    /**
-     * Optional custom formatting of tool call messages for chat UI display.
-     * Return null to use default fallback formatting.
-     */
-    default CharSequence formatToolCall(String toolName, JSONObject args) {
-        return null;
-    }
 }

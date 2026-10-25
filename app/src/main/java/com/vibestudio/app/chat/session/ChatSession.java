@@ -10,11 +10,16 @@ import com.vibestudio.app.chat.model.ChatMessage;
 import org.json.JSONObject;
 import com.vibestudio.app.chat.model.ToolResult;
 import com.vibestudio.app.chat.router.AiRouter;
-import com.vibestudio.app.chat.tool.ToolCallParser;
+import com.vibestudio.app.chat.safety.PermissionPromptManager;
+import com.vibestudio.app.chat.safety.WorkspaceBoundaryGuard;
+import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
+import com.vibestudio.app.chat.skills.Skill;
+import com.vibestudio.app.chat.skills.SkillScanner;
 import com.vibestudio.app.chat.tool.ToolExecutionManager;
 import com.vibestudio.app.mcp.McpClientManager;
 import com.vibestudio.app.service.LogViewerService;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -29,6 +34,7 @@ public class ChatSession {
     }
 
     private final String mId;
+    private String mWorkspacePath;
     private final List<ChatMessage> mMessages = new ArrayList<>();
     private final List<OnChatMessageListener> mListeners = new ArrayList<>();
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
@@ -36,19 +42,47 @@ public class ChatSession {
     private final McpClientManager mMcpClientManager;
     private final ToolExecutionManager mToolExecutionManager;
     private final AiRouter mAiRouter;
+    private WorkspaceChangesetTracker mChangesetTracker;
+
     private boolean mIsLoading = false;
     private volatile boolean mStopRequested = false;
 
     public ChatSession() {
+        this(null);
+    }
+
+    public ChatSession(String workspacePath) {
         this.mId = UUID.randomUUID().toString();
+        this.mWorkspacePath = workspacePath;
         this.mMcpClientManager = new McpClientManager();
+        this.mMcpClientManager.setWorkspacePath(workspacePath);
         this.mToolExecutionManager = new ToolExecutionManager(this.mMcpClientManager);
         this.mAiRouter = AiRouter.getInstance();
-        this.mMessages.add(new ChatMessage("Assistant", "Hello! Welcome to VibeStudio. I am configured with lazy-loaded MCP skills. How can I assist you?", false));
+        
+        String welcomeMsg = "Hello! Welcome to VibeStudio. How can I assist you?";
+        this.mMessages.add(new ChatMessage("Assistant", welcomeMsg, false));
     }
 
     public String getId() {
         return mId;
+    }
+
+    public String getWorkspacePath() {
+        return mWorkspacePath;
+    }
+
+    public void setWorkspacePath(String workspacePath) {
+        this.mWorkspacePath = workspacePath;
+        if (this.mMcpClientManager != null) {
+            this.mMcpClientManager.setWorkspacePath(workspacePath);
+        }
+    }
+
+    public synchronized WorkspaceChangesetTracker getChangesetTracker(Context context) {
+        if (mChangesetTracker == null && context != null) {
+            mChangesetTracker = new WorkspaceChangesetTracker(context);
+        }
+        return mChangesetTracker;
     }
 
     public synchronized List<ChatMessage> getMessages() {
@@ -65,6 +99,25 @@ public class ChatSession {
 
     public boolean isStopRequested() {
         return mStopRequested;
+    }
+
+    public List<Skill> getAvailableSkills() {
+        return SkillScanner.scanSkills(mWorkspacePath);
+    }
+
+    public Skill resolveSkill(String slashCommandOrName) {
+        if (slashCommandOrName == null) return null;
+        String name = slashCommandOrName.trim();
+        if (name.startsWith("/")) {
+            name = name.substring(1);
+        }
+        name = name.toLowerCase();
+        for (Skill skill : getAvailableSkills()) {
+            if (skill.getName().equalsIgnoreCase(name)) {
+                return skill;
+            }
+        }
+        return null;
     }
 
     public void stopAgentExecution() {
@@ -111,6 +164,12 @@ public class ChatSession {
         }
         mIsLoading = true;
         mStopRequested = false;
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                notifyLoading(true);
+            }
+        });
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -123,7 +182,22 @@ public class ChatSession {
         if (userText == null || userText.trim().isEmpty()) return;
 
         mStopRequested = false;
-        ChatMessage userMsg = new ChatMessage("User", userText, true);
+        String messageToStore = userText;
+        String trimmed = userText.trim();
+        if (trimmed.startsWith("/")) {
+            int spaceIdx = trimmed.indexOf(" ");
+            String cmdName = spaceIdx > 0 ? trimmed.substring(1, spaceIdx) : trimmed.substring(1);
+            cmdName = cmdName.toLowerCase().trim();
+
+            Skill matchedSkill = resolveSkill(cmdName);
+            if (matchedSkill != null) {
+                mMcpClientManager.markSkillLoaded(matchedSkill.getName());
+            } else if (mMcpClientManager.isRegisteredServer(cmdName)) {
+                mMcpClientManager.markSkillLoaded(cmdName);
+            }
+        }
+
+        ChatMessage userMsg = new ChatMessage("User", messageToStore, true);
 
         synchronized (this) {
             mMessages.add(userMsg);
@@ -165,11 +239,16 @@ public class ChatSession {
         // Apply automatic token history compression rule before sending payload
         snapshot = HistoryCompressor.compressIfNeeded(snapshot);
 
-        // Attach system instructions with high level skills catalog + loaded skills schemas
+        // Attach system instructions with workspace scope + high level skills catalog + loaded skills schemas
         String baseInstruction = mAiRouter.getSystemInstruction(context);
+        String workspaceInstruction = (mWorkspacePath != null && !mWorkspacePath.isEmpty())
+                ? "\n=== ACTIVE WORKSPACE SCOPE ===\nTarget Workspace Path: " + mWorkspacePath
+                + "\nAll file tool paths and terminal working directories default to this workspace scope. Do not read/modify files outside this path without need.\n"
+                : "";
         String catalogString = mMcpClientManager.getHighLevelCatalog().toString();
         String loadedSkillsString = mMcpClientManager.getLoadedSkillsInstructions(context);
         String fullSystemInstruction = baseInstruction 
+                + workspaceInstruction
                 + "\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n" + catalogString
                 + (loadedSkillsString != null && !loadedSkillsString.isEmpty() ? "\n" + loadedSkillsString : "");
 
@@ -189,16 +268,71 @@ public class ChatSession {
 
         String rawReply = response.getContent();
 
-        // Check if response contains a tool call request
-        JSONObject toolCallObj = ToolCallParser.parse(rawReply);
+        if (rawReply == null || rawReply.trim().isEmpty()) {
+            LogViewerService.getInstance().w(TAG, "Received empty response content from " + activeProviderName);
+            postErrorResponse("Error: Received empty response from " + activeProviderName + ". Please tap Retry below.");
+            return;
+        }
 
-        if (toolCallObj != null) {
-            String toolName = toolCallObj.optString("tool", "unknown");
-            JSONObject args = toolCallObj.optJSONObject("args");
-            if (args == null) args = new JSONObject();
+        if (rawReply.startsWith("Error:")) {
+            postErrorResponse(rawReply);
+            return;
+        }
 
-            String requestMsg = rawReply;
+        // 1. Tool Call Parsing, Path Canonicalization & Pre-execution State Preparation (Funneled)
+        WorkspaceChangesetTracker tracker = context != null ? getChangesetTracker(context) : null;
+        ToolExecutionManager.PreparedToolCall prep = null;
+        try {
+            prep = mToolExecutionManager.prepareToolCall(context, rawReply, mWorkspacePath, tracker);
+        } catch (Exception e) {
+            String errorMsg = "Error: " + e.getMessage();
+            LogViewerService.getInstance().e(TAG, errorMsg);
+            postToolStatusMessage(rawReply, ChatMessage.MessageType.ERROR, "tool", null);
+            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, "tool", null);
+            ChatMessage toolResultMsg = new ChatMessage("System Tool", errorMsg, true, ChatMessage.MessageType.ERROR, "tool", null);
+            synchronized (ChatSession.this) {
+                mMessages.add(modelCallMsg);
+                mMessages.add(toolResultMsg);
+            }
+            notifyMessageAdded(modelCallMsg);
+            notifyMessageAdded(toolResultMsg);
+            notifyLoading(false);
+            return;
+        }
 
+        if (prep != null) {
+            JSONObject toolCallObj = prep.getToolCallObj();
+            String toolName = prep.getToolName();
+            JSONObject args = prep.getArgs();
+
+            // 2. Boundary Guard Check & Permission Escalation
+            if (mWorkspacePath != null && !mWorkspacePath.isEmpty()) {
+                List<String> targetPaths = WorkspaceBoundaryGuard.getToolTargetPaths(toolName, args);
+                for (String targetPath : targetPaths) {
+                    boolean insideWorkspace = WorkspaceBoundaryGuard.isWithinWorkspace(targetPath, mWorkspacePath);
+                    if (!insideWorkspace) {
+                        boolean granted = PermissionPromptManager.getInstance().requestPermissionSync(context, toolName, targetPath);
+                        if (!granted) {
+                            String blockedMsg = "Error: Access denied to path outside workspace boundary (" + targetPath + ").";
+                            postToolStatusMessage(blockedMsg, ChatMessage.MessageType.ERROR, toolName, args);
+
+                            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
+                            ChatMessage toolResultMsg = new ChatMessage("System Tool", blockedMsg, true, ChatMessage.MessageType.ERROR, toolName, null);
+                            synchronized (ChatSession.this) {
+                                mMessages.add(modelCallMsg);
+                                mMessages.add(toolResultMsg);
+                            }
+
+                            if (!mStopRequested) {
+                                new Thread(() -> processUserRequest(context)).start();
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+
+            String requestMsg = prep.getFormattedText() != null ? prep.getFormattedText().toString() : rawReply;
             LogViewerService.getInstance().i(TAG, "Executing tool call requested by AI: " + toolName + " | Args: " + args.toString());
 
             postToolStatusMessage(requestMsg, ChatMessage.MessageType.TOOL_CALL, toolName, args);

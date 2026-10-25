@@ -72,9 +72,60 @@
             android:textSize="16sp"
             android:visibility="gone" />
 
+        <!-- Git Status Overlay View (git-filesystem-view) -->
+        <FrameLayout
+            android:id="@+id/fl_git_view_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
     </FrameLayout>
 
-    <!-- Invisible (by default) fixed bottom bar for sharing/pasting action -->
+    <!-- Git Changes Bottom Bar (Shown when in a Git repository) -->
+    <LinearLayout
+        android:id="@+id/layout_git_changes_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#2A2A3C" />
+
+        <LinearLayout
+            android:id="@+id/btn_git_changes_toggle"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#1E1E2A"
+            android:paddingHorizontal="16dp"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:id="@+id/tv_git_changes_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Changes | +0, -0"
+                android:textColor="#82AAFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_git_changes_chevron"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▲"
+                android:textColor="#A0A0B0"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Fixed bottom bar for sharing/pasting action -->
     <LinearLayout
         android:id="@+id/layout_bottom_bar"
         android:layout_width="match_parent"

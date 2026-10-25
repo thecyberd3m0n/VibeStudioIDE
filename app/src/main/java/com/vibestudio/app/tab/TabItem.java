@@ -9,14 +9,20 @@ public class TabItem {
     private final TabType type;
     private String title;
     private String icon;
+    private Integer iconResId;
     private Bitmap favicon;
     private Fragment fragment;
 
     public TabItem(TabType type, String title, String icon, Fragment fragment) {
+        this(type, title, icon, null, fragment);
+    }
+
+    public TabItem(TabType type, String title, String icon, Integer iconResId, Fragment fragment) {
         this.id = UUID.randomUUID().toString();
         this.type = type;
         this.title = title != null ? title : type.getDefaultTitle();
         this.icon = icon != null ? icon : type.getDefaultIcon();
+        this.iconResId = iconResId;
         this.fragment = fragment;
     }
 
@@ -42,6 +48,14 @@ public class TabItem {
 
     public void setIcon(String icon) {
         this.icon = icon;
+    }
+
+    public Integer getIconResId() {
+        return iconResId;
+    }
+
+    public void setIconResId(Integer iconResId) {
+        this.iconResId = iconResId;
     }
 
     public Bitmap getFavicon() {

@@ -28,13 +28,7 @@ public class OpenTerminalAction implements FileAction {
 
         TerminalSession session = TerminalSessionManager.getInstance().createSession(context, path);
         if (session != null) {
-            TabManager.getInstance().openTab(
-                    TabType.TERMINAL,
-                    "Terminal",
-                    "💻",
-                    TerminalFragment.newInstance(session),
-                    true
-            );
+            TabManager.getInstance().openTab(TabType.TERMINAL, TerminalFragment.newInstance(session));
         } else {
             Toast.makeText(context, "Failed to start terminal session", Toast.LENGTH_SHORT).show();
         }

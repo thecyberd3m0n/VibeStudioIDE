@@ -27,14 +27,12 @@ public class TerminalSessionProvider implements ToolSessionProvider {
 
     @Override
     public void openUiTab(Context context, int sessionId, Object handle) {
-        if (handle instanceof TerminalSession) {
-            TabManager.getInstance().openTab(
-                    TabType.TERMINAL,
-                    "Terminal #" + sessionId,
-                    "💻",
-                    TerminalFragment.newInstance((TerminalSession) handle),
-                    false
-            );
-        }
+        TerminalSession session = handle instanceof TerminalSession ? (TerminalSession) handle : null;
+        TabManager.getInstance().openTab(
+                TabType.TERMINAL,
+                "Terminal #" + sessionId,
+                TerminalFragment.newInstance(session),
+                false
+        );
     }
 }

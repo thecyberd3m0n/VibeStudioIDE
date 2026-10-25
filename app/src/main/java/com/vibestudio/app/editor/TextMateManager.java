@@ -114,6 +114,8 @@ public class TextMateManager {
         extensionToScopeMap.put("bash", "source.shell");
         extensionToScopeMap.put("zsh", "source.shell");
         extensionToScopeMap.put("sql", "source.sql");
+        extensionToScopeMap.put("diff", "source.diff");
+        extensionToScopeMap.put("patch", "source.diff");
 
         // Common exact filenames & dotfiles
         exactFileNameToScopeMap.put("dockerfile", "source.shell");
