@@ -13,6 +13,9 @@ import com.termux.terminal.TerminalSessionClient;
 import com.termux.view.TerminalView;
 import com.vibestudio.app.logging.CrashHandler;
 import com.vibestudio.app.service.LogViewerService;
+import com.vibestudio.app.service.TerminalService;
+import java.util.Collections;
+import java.util.HashSet;
 
 import java.io.File;
 import java.io.InputStreamReader;
@@ -39,6 +42,8 @@ public class TerminalSessionManager {
 
     private final Object mCommandLock = new Object();
     private final Map<TerminalSession, TerminalView> mViews = new WeakHashMap<>();
+    private final Set<TerminalSession> mActiveSessions = Collections.synchronizedSet(new HashSet<>());
+    private Context mAppContext;
     private SessionEventListener mSessionEventListener;
 
     private TerminalSessionManager() {}
@@ -138,6 +143,10 @@ public class TerminalSessionManager {
                     LogViewerService.getInstance().w(TAG, "TerminalSession finished");
                     synchronized (TerminalSessionManager.this) {
                         mViews.remove(finishedSession);
+                        mActiveSessions.remove(finishedSession);
+                        if (mActiveSessions.isEmpty() && mAppContext != null) {
+                            TerminalService.stop(mAppContext);
+                        }
                     }
                 }
 
@@ -206,6 +215,10 @@ public class TerminalSessionManager {
                     sessionClient
             );
             session.updateSize(80, 24, 0, 0);
+
+            mAppContext = context.getApplicationContext();
+            mActiveSessions.add(session);
+            TerminalService.start(mAppContext);
 
             return session;
 
@@ -630,9 +643,13 @@ public class TerminalSessionManager {
     public synchronized void closeSession(TerminalSession session) {
         if (session == null) return;
         mViews.remove(session);
+        mActiveSessions.remove(session);
         try {
             session.finishIfRunning();
         } catch (Exception ignored) {}
+        if (mActiveSessions.isEmpty() && mAppContext != null) {
+            TerminalService.stop(mAppContext);
+        }
     }
 
     public String runCommandSync(Context context, String command, File workingDir, int timeoutMs) {
