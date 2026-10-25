@@ -63,4 +63,31 @@ public class GitManagerTest {
         Assert.assertFalse(GitManager.isAuthorIdentityError("fatal: pathspec 'nonexistent' did not match any files"));
         Assert.assertFalse(GitManager.isAuthorIdentityError(null));
     }
+
+    @Test
+    public void testParseRepositoryStateWithLeakedEcho() {
+        String leakedOutput = "___CMD_START_12345___\n" +
+                "cd '/data/app' && git --no-pager (git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; echo \"===STATUS===\" ; git status --porcelain ; echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat\n" +
+                "main\n" +
+                "===STATUS===\n" +
+                " M README.md\n" +
+                "===NUMSTAT_STAGED===\n" +
+                "===NUMSTAT_UNSTAGED===\n" +
+                "1\t1\tREADME.md\n" +
+                "___CMD_END_12345___";
+
+        GitRepositoryState state = GitManager.parseRepositoryState(new File("/tmp"), leakedOutput);
+        Assert.assertNotNull(state);
+        Assert.assertEquals("main", state.branchName);
+        Assert.assertEquals(0, state.stagedFiles.size());
+        Assert.assertEquals(1, state.unstagedFiles.size());
+
+        GitStatusView.GitFileStatus status = state.unstagedFiles.get(0);
+        Assert.assertEquals("M", status.status);
+        Assert.assertEquals("README.md", status.filePath);
+        Assert.assertEquals(1, status.additions);
+        Assert.assertEquals(1, status.deletions);
+        Assert.assertEquals(1, state.totalAdditions);
+        Assert.assertEquals(1, state.totalDeletions);
+    }
 }

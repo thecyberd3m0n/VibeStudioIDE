@@ -314,7 +314,16 @@ public class GitManager {
         }
 
         String trimmed = gitArgs.trim();
-        String gitCmd = trimmed.startsWith("git ") ? "git --no-pager " + trimmed.substring(4) : "git --no-pager " + trimmed;
+        String gitCmd;
+        if (trimmed.startsWith("git --no-pager ")) {
+            gitCmd = trimmed;
+        } else if (trimmed.startsWith("git ")) {
+            gitCmd = "git --no-pager " + trimmed.substring(4);
+        } else if (trimmed.startsWith("(") || trimmed.contains("|| git") || trimmed.contains("&& git") || trimmed.contains(";")) {
+            gitCmd = trimmed;
+        } else {
+            gitCmd = "git --no-pager " + trimmed;
+        }
 
         String fullCommand = gitCmd;
         if (repoDir != null && repoDir.isDirectory()) {
@@ -341,7 +350,7 @@ public class GitManager {
         return "(git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; echo \"===STATUS===\" ; git status --porcelain ; echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat";
     }
 
-    private static GitRepositoryState parseRepositoryState(File repoDir, String output) {
+    public static GitRepositoryState parseRepositoryState(File repoDir, String output) {
         GitRepositoryState state = new GitRepositoryState(repoDir);
         if (output == null || output.trim().isEmpty()) {
             return state;
@@ -351,9 +360,18 @@ public class GitManager {
 
         int idxBranch = cleaned.indexOf("===STATUS===");
         if (idxBranch != -1) {
-            String b = cleaned.substring(0, idxBranch).trim();
-            if (!b.isEmpty()) {
-                state.branchName = b;
+            String branchRaw = cleaned.substring(0, idxBranch).trim();
+            if (!branchRaw.isEmpty()) {
+                String[] branchLines = branchRaw.split("\n");
+                for (String line : branchLines) {
+                    String lineTrimmed = line.trim();
+                    if (lineTrimmed.isEmpty()) continue;
+                    if (lineTrimmed.contains("___CMD_") || lineTrimmed.contains("git --no-pager") || lineTrimmed.startsWith("cd ")) {
+                        continue;
+                    }
+                    state.branchName = lineTrimmed;
+                    break;
+                }
             }
             cleaned = cleaned.substring(idxBranch + "===STATUS===".length());
         }
@@ -487,7 +505,16 @@ public class GitManager {
             if (trimmed.startsWith("___CMD_START_") || trimmed.startsWith("___CMD_END_")) {
                 continue;
             }
-            if (trimmed.contains("echo ___CMD_START_")) {
+            if (trimmed.contains("echo ___CMD_START_") || trimmed.contains("echo ___CMD_END_")) {
+                continue;
+            }
+            if (trimmed.startsWith("cd ") && (trimmed.contains("git") || trimmed.contains("&&"))) {
+                continue;
+            }
+            if (trimmed.contains("echo \"===STATUS===\"") || trimmed.contains("echo \"===NUMSTAT_")) {
+                continue;
+            }
+            if (trimmed.startsWith("git --no-pager") || trimmed.startsWith("(git branch")) {
                 continue;
             }
             sb.append(line).append("\n");

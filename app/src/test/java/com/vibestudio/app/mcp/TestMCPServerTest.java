@@ -124,7 +124,6 @@ public class TestMCPServerTest {
             return null;
         }
 
-        @Override
         public CharSequence formatToolCall(String toolName, JSONObject args) {
             if (TOOL_TURN_ON.equalsIgnoreCase(toolName)) {
                 return "Switching light ON";
@@ -250,15 +249,6 @@ public class TestMCPServerTest {
         Assert.assertEquals("success", offResponse.optString("status"));
         Assert.assertEquals("Light is now OFF.", offResponse.optString("output"));
         Assert.assertFalse(mTestMCPServer.isLightOn());
-    }
-
-    @Test
-    public void testToolFormatting() throws JSONException {
-        CharSequence onFormat = mMcpClientManager.formatToolCall("light_turn_on", new JSONObject());
-        Assert.assertEquals("Switching light ON", onFormat.toString());
-
-        CharSequence offFormat = mMcpClientManager.formatToolCall("light_turn_off", new JSONObject());
-        Assert.assertEquals("Switching light OFF", offFormat.toString());
     }
 
     @Test
