@@ -305,6 +305,35 @@ public class GitManager {
             && email != null && !email.trim().isEmpty() && !email.contains("error") && !email.contains("fatal");
     }
 
+    
+    public String getSshPublicKey(Context context) {
+        if (context == null) return null;
+        File sshDir = new File(context.getFilesDir(), "home/.ssh");
+        if (!sshDir.exists()) {
+            sshDir = new File("/data/data/" + context.getPackageName() + "/files/home/.ssh");
+        }
+        if (sshDir.exists() && sshDir.isDirectory()) {
+            String[] pubKeys = new String[]{"id_ed25519.pub", "id_rsa.pub", "id_ecdsa.pub", "id_dsa.pub"};
+            for (String pub : pubKeys) {
+                File k = new File(sshDir, pub);
+                if (k.exists() && k.length() > 0) {
+                    try (BufferedReader reader = new BufferedReader(new FileReader(k))) {
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            sb.append(line).append("\n");
+                        }
+                        String keyStr = sb.toString().trim();
+                        if (!keyStr.isEmpty()) {
+                            return keyStr;
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+        return null;
+    }
+
     public boolean isSshKeyConfigured(Context context) {
         if (context == null) return false;
         File sshDir = new File(context.getFilesDir(), "home/.ssh");

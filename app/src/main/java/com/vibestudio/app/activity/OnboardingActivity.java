@@ -6,6 +6,10 @@ import com.vibestudio.app.logging.CrashHandler;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.fragments.*;
 import com.vibestudio.app.git.GitManager;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.widget.EditText;
 
 import com.libtermux.LibTermux;
 import com.libtermux.TermuxConfig;
@@ -105,6 +109,8 @@ public class OnboardingActivity extends Activity {
 
     private Button mBtnConfigGitUser;
     private Button mBtnConfigSshKeys;
+    private EditText mTxtSshPublicKey;
+    private Button mBtnCopySshKey;
 
     private TextView mStatusMessage;
     private TextView mInstallLogText;
@@ -162,6 +168,17 @@ public class OnboardingActivity extends Activity {
 
             mBtnConfigGitUser = (Button) findViewById(R.id.btn_config_git_user);
             mBtnConfigSshKeys = (Button) findViewById(R.id.btn_config_ssh_keys);
+            mTxtSshPublicKey = (EditText) findViewById(R.id.txt_ssh_public_key);
+            mBtnCopySshKey = (Button) findViewById(R.id.btn_copy_ssh_key);
+
+            if (mBtnCopySshKey != null) {
+                mBtnCopySshKey.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        copySshPublicKeyToClipboard();
+                    }
+                });
+            }
 
             if (mBtnConfigGitUser != null) {
                 mBtnConfigGitUser.setOnClickListener(new View.OnClickListener() {
@@ -291,6 +308,15 @@ public class OnboardingActivity extends Activity {
                 mBtnConfigSshKeys.setText("Configure");
                 mBtnConfigSshKeys.setEnabled(true);
                 mBtnConfigSshKeys.setBackgroundResource(R.drawable.bg_btn_primary);
+            }
+        }
+
+        String pubKey = GitManager.getInstance().getSshPublicKey(this);
+        if (mTxtSshPublicKey != null) {
+            if (pubKey != null && !pubKey.trim().isEmpty()) {
+                mTxtSshPublicKey.setText(pubKey);
+            } else {
+                mTxtSshPublicKey.setText("not configured");
             }
         }
 
@@ -1081,4 +1107,23 @@ public class OnboardingActivity extends Activity {
             LogViewerService.getInstance().w(TAG, "Failed to setup default mirrors", e);
         }
     }
+
+    public void copySshPublicKeyToClipboard() {
+        String pubKey = GitManager.getInstance().getSshPublicKey(this);
+        if (pubKey != null && !pubKey.trim().isEmpty()) {
+            try {
+                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                ClipData clip = ClipData.newPlainText("SSH Public Key", pubKey);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(clip);
+                    Toast.makeText(this, "SSH public key copied to clipboard", Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception e) {
+                Toast.makeText(this, "Failed to copy SSH key", Toast.LENGTH_SHORT).show();
+            }
+        } else {
+            Toast.makeText(this, "No SSH key configured to copy", Toast.LENGTH_SHORT).show();
+        }
+    }
+
 }
