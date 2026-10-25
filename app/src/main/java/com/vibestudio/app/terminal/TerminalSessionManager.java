@@ -640,6 +640,13 @@ public class TerminalSessionManager {
         }
     }
 
+    public synchronized void closeAllSessions() {
+        Set<TerminalSession> sessionsToClose = new HashSet<>(mActiveSessions);
+        for (TerminalSession session : sessionsToClose) {
+            closeSession(session);
+        }
+    }
+
     public synchronized void closeSession(TerminalSession session) {
         if (session == null) return;
         mViews.remove(session);

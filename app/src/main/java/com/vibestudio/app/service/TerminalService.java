@@ -3,6 +3,7 @@ package com.vibestudio.app.service;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -14,6 +15,7 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 import com.vibestudio.app.R;
+import com.vibestudio.app.terminal.TerminalSessionManager;
 
 public class TerminalService extends Service {
 
@@ -23,6 +25,7 @@ public class TerminalService extends Service {
 
     public static final String ACTION_START = "com.vibestudio.app.service.TerminalService.START";
     public static final String ACTION_STOP = "com.vibestudio.app.service.TerminalService.STOP";
+    public static final String ACTION_EXIT = "com.vibestudio.app.service.TerminalService.EXIT";
 
     private PowerManager.WakeLock mWakeLock;
 
@@ -63,11 +66,21 @@ public class TerminalService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            releaseWakeLock();
-            stopForeground(true);
-            stopSelf();
-            return START_NOT_STICKY;
+        if (intent != null) {
+            String action = intent.getAction();
+            if (ACTION_STOP.equals(action)) {
+                releaseWakeLock();
+                stopForeground(true);
+                stopSelf();
+                return START_NOT_STICKY;
+            } else if (ACTION_EXIT.equals(action)) {
+                LogViewerService.getInstance().i(TAG, "User requested exit via notification action");
+                TerminalSessionManager.getInstance().closeAllSessions();
+                releaseWakeLock();
+                stopForeground(true);
+                stopSelf();
+                return START_NOT_STICKY;
+            }
         }
 
         Notification notification = createNotification();
@@ -99,12 +112,21 @@ public class TerminalService extends Service {
     }
 
     private Notification createNotification() {
+        Intent exitIntent = new Intent(this, TerminalService.class);
+        exitIntent.setAction(ACTION_EXIT);
+        int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        PendingIntent exitPendingIntent = PendingIntent.getService(this, 0, exitIntent, pendingFlags);
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("VibeStudio IDE - Terminal Active")
                 .setContentText("Background terminal sessions are active")
                 .setSmallIcon(R.drawable.ic_launcher)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setOngoing(true);
+                .setOngoing(true)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitPendingIntent);
         return builder.build();
     }
 
