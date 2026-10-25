@@ -641,4 +641,58 @@ public class GitManager {
         if (path == null) return "''";
         return "'" + path.replace("'", "'\\''") + "'";
     }
+
+    public String getGitUserName(Context context) {
+        if (context == null) return "";
+        File gitConfig = new File(context.getFilesDir(), "home/.gitconfig");
+        if (!gitConfig.exists()) {
+            gitConfig = new File("/data/data/" + context.getPackageName() + "/files/home/.gitconfig");
+        }
+        if (gitConfig.exists()) {
+            try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("name =") || trimmed.startsWith("name=")) {
+                        return trimmed.substring(trimmed.indexOf("=") + 1).trim();
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        String name = runGitCommandSync(context, "config --global user.name", null);
+        if (name != null && !name.contains("error") && !name.contains("fatal")) {
+            return name.trim();
+        }
+        return "";
+    }
+
+    public String getGitUserEmail(Context context) {
+        if (context == null) return "";
+        File gitConfig = new File(context.getFilesDir(), "home/.gitconfig");
+        if (!gitConfig.exists()) {
+            gitConfig = new File("/data/data/" + context.getPackageName() + "/files/home/.gitconfig");
+        }
+        if (gitConfig.exists()) {
+            try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("email =") || trimmed.startsWith("email=")) {
+                        return trimmed.substring(trimmed.indexOf("=") + 1).trim();
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        String email = runGitCommandSync(context, "config --global user.email", null);
+        if (email != null && !email.contains("error") && !email.contains("fatal")) {
+            return email.trim();
+        }
+        return "";
+    }
+
+    public void generateSshKey(Context context, GitCallback callback) {
+        String cmd = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keygen -t ed25519 -C \"vibestudio@termux\" -N \"\" -f ~/.ssh/id_ed25519";
+        runGitCommandAsync(context, cmd, null, callback);
+    }
+
 }

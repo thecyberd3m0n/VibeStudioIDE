@@ -17,6 +17,7 @@ public class SettingsFragment extends Fragment {
 
     private TextView mBtnModels;
     private TextView mBtnLogs;
+    private TextView mBtnGit;
 
     @Nullable
     @Override
@@ -25,9 +26,11 @@ public class SettingsFragment extends Fragment {
 
         mBtnModels = view.findViewById(R.id.btn_settings_models);
         mBtnLogs = view.findViewById(R.id.btn_settings_logs);
+        mBtnGit = view.findViewById(R.id.btn_settings_git);
 
-        mBtnModels.setOnClickListener(v -> switchSubTab(0));
-        mBtnLogs.setOnClickListener(v -> switchSubTab(1));
+        if (mBtnModels != null) mBtnModels.setOnClickListener(v -> switchSubTab(0));
+        if (mBtnLogs != null) mBtnLogs.setOnClickListener(v -> switchSubTab(1));
+        if (mBtnGit != null) mBtnGit.setOnClickListener(v -> switchSubTab(2));
 
         if (savedInstanceState == null) {
             switchSubTab(0);
@@ -36,7 +39,7 @@ public class SettingsFragment extends Fragment {
         return view;
     }
 
-    private void switchSubTab(int index) {
+    public void switchSubTab(int index) {
         Fragment selectedFragment;
         resetTabStyles();
 
@@ -46,9 +49,13 @@ public class SettingsFragment extends Fragment {
                 setTabActive(mBtnModels);
                 break;
             case 1:
-            default:
                 selectedFragment = new LogViewerFragment();
                 setTabActive(mBtnLogs);
+                break;
+            case 2:
+            default:
+                selectedFragment = new GitSettingsFragment();
+                setTabActive(mBtnGit);
                 break;
         }
 
@@ -62,14 +69,24 @@ public class SettingsFragment extends Fragment {
         int inactiveBg = Color.parseColor("#1E1E28");
         int inactiveText = Color.parseColor("#A0A0A0");
 
-        mBtnModels.setBackgroundColor(inactiveBg);
-        mBtnModels.setTextColor(inactiveText);
-        mBtnLogs.setBackgroundColor(inactiveBg);
-        mBtnLogs.setTextColor(inactiveText);
+        if (mBtnModels != null) {
+            mBtnModels.setBackgroundColor(inactiveBg);
+            mBtnModels.setTextColor(inactiveText);
+        }
+        if (mBtnLogs != null) {
+            mBtnLogs.setBackgroundColor(inactiveBg);
+            mBtnLogs.setTextColor(inactiveText);
+        }
+        if (mBtnGit != null) {
+            mBtnGit.setBackgroundColor(inactiveBg);
+            mBtnGit.setTextColor(inactiveText);
+        }
     }
 
     private void setTabActive(TextView textView) {
-        textView.setBackgroundColor(Color.parseColor("#2C2C3A"));
-        textView.setTextColor(Color.parseColor("#03DAC6"));
+        if (textView != null) {
+            textView.setBackgroundColor(Color.parseColor("#2C2C3A"));
+            textView.setTextColor(Color.parseColor("#03DAC6"));
+        }
     }
 }
