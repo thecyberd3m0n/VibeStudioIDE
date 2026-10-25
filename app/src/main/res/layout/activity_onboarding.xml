@@ -48,11 +48,11 @@
         <!-- Divider Line 1 -->
         <View
             android:id="@+id/step_divider_1"
-            android:layout_width="24dp"
+            android:layout_width="16dp"
             android:layout_height="2dp"
             android:background="#333333"
-            android:layout_marginLeft="8dp"
-            android:layout_marginRight="8dp" />
+            android:layout_marginLeft="4dp"
+            android:layout_marginRight="4dp" />
 
         <!-- Step 2 Item -->
         <LinearLayout
@@ -85,11 +85,11 @@
         <!-- Divider Line 2 -->
         <View
             android:id="@+id/step_divider_2"
-            android:layout_width="24dp"
+            android:layout_width="16dp"
             android:layout_height="2dp"
             android:background="#333333"
-            android:layout_marginLeft="8dp"
-            android:layout_marginRight="8dp" />
+            android:layout_marginLeft="4dp"
+            android:layout_marginRight="4dp" />
 
         <!-- Step 3 Item (Environment Install) -->
         <LinearLayout
@@ -114,6 +114,43 @@
                 android:layout_width="-2px"
                 android:layout_height="-2px"
                 android:text="Environment"
+                android:textColor="#666666"
+                android:textSize="12sp"
+                android:layout_marginLeft="6dp" />
+        </LinearLayout>
+
+        <!-- Divider Line 3 -->
+        <View
+            android:id="@+id/step_divider_3"
+            android:layout_width="16dp"
+            android:layout_height="2dp"
+            android:background="#333333"
+            android:layout_marginLeft="4dp"
+            android:layout_marginRight="4dp" />
+
+        <!-- Step 4 Item (Version Control) -->
+        <LinearLayout
+            android:layout_width="-2px"
+            android:layout_height="-2px"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/step4_indicator"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="@drawable/bg_step_circle_inactive"
+                android:textColor="#888888"
+                android:text="4"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:gravity="center" />
+
+            <TextView
+                android:id="@+id/step4_title"
+                android:layout_width="-2px"
+                android:layout_height="-2px"
+                android:text="Git"
                 android:textColor="#666666"
                 android:textSize="12sp"
                 android:layout_marginLeft="6dp" />
@@ -260,7 +297,7 @@
 
                 <Button
                     android:id="@+id/btn_copy_logs"
-                    android:layout_width="wrap_content"
+                    android:layout_width="-2px"
                     android:layout_height="32dp"
                     android:layout_alignParentEnd="true"
                     android:layout_alignParentRight="true"
@@ -273,6 +310,110 @@
                     android:paddingLeft="10dp"
                     android:paddingRight="10dp" />
             </RelativeLayout>
+
+        </LinearLayout>
+
+        <!-- Step 4 Content (Configure Version Control) -->
+        <LinearLayout
+            android:id="@+id/step4_layout"
+            android:layout_width="-1px"
+            android:layout_height="-1px"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:visibility="gone"
+            android:padding="8dp">
+
+            <TextView
+                android:layout_width="-2px"
+                android:layout_height="-2px"
+                android:text="🔧"
+                android:textSize="48sp"
+                android:layout_marginBottom="12dp" />
+
+            <TextView
+                android:layout_width="-2px"
+                android:layout_height="-2px"
+                android:text="Configure Version Control"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <!-- Section 1: Git User and Email -->
+            <LinearLayout
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:orientation="vertical"
+                android:background="#1E1E1E"
+                android:padding="12dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="-2px"
+                    android:layout_height="-2px"
+                    android:text="Configure Git User and Email"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="-2px"
+                    android:layout_height="-2px"
+                    android:text="Set global author name and email for Git commits."
+                    android:textColor="#888888"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="10dp" />
+
+                <Button
+                    android:id="@+id/btn_config_git_user"
+                    android:layout_width="-2px"
+                    android:layout_height="36dp"
+                    android:text="Configure"
+                    android:textColor="#FFFFFF"
+                    android:background="@drawable/bg_btn_primary"
+                    android:textSize="12sp"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp" />
+            </LinearLayout>
+
+            <!-- Section 2: SSH Keys -->
+            <LinearLayout
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:orientation="vertical"
+                android:background="#1E1E1E"
+                android:padding="12dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="-2px"
+                    android:layout_height="-2px"
+                    android:text="Configure SSH keys"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="-2px"
+                    android:layout_height="-2px"
+                    android:text="Generate or import SSH keys for remote Git repositories."
+                    android:textColor="#888888"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="10dp" />
+
+                <Button
+                    android:id="@+id/btn_config_ssh_keys"
+                    android:layout_width="-2px"
+                    android:layout_height="36dp"
+                    android:text="Configure"
+                    android:textColor="#FFFFFF"
+                    android:background="@drawable/bg_btn_primary"
+                    android:textSize="12sp"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp" />
+            </LinearLayout>
 
         </LinearLayout>
 

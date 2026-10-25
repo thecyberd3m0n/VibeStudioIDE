@@ -273,6 +273,56 @@ public class GitManager {
         runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
+    
+    public boolean isGitUserConfigured(Context context) {
+        if (context == null) return false;
+        File gitConfig = new File(context.getFilesDir(), "home/.gitconfig");
+        if (!gitConfig.exists()) {
+            gitConfig = new File("/data/data/" + context.getPackageName() + "/files/home/.gitconfig");
+        }
+        if (gitConfig.exists()) {
+            try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
+                String line;
+                boolean hasName = false;
+                boolean hasEmail = false;
+                while ((line = br.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("name =") || trimmed.startsWith("name=")) {
+                        String val = trimmed.substring(trimmed.indexOf("=") + 1).trim();
+                        if (!val.isEmpty()) hasName = true;
+                    }
+                    if (trimmed.startsWith("email =") || trimmed.startsWith("email=")) {
+                        String val = trimmed.substring(trimmed.indexOf("=") + 1).trim();
+                        if (!val.isEmpty()) hasEmail = true;
+                    }
+                }
+                if (hasName && hasEmail) return true;
+            } catch (Exception ignored) {}
+        }
+        String name = runGitCommandSync(context, "config --global user.name", null);
+        String email = runGitCommandSync(context, "config --global user.email", null);
+        return name != null && !name.trim().isEmpty() && !name.contains("error") && !name.contains("fatal")
+            && email != null && !email.trim().isEmpty() && !email.contains("error") && !email.contains("fatal");
+    }
+
+    public boolean isSshKeyConfigured(Context context) {
+        if (context == null) return false;
+        File sshDir = new File(context.getFilesDir(), "home/.ssh");
+        if (!sshDir.exists()) {
+            sshDir = new File("/data/data/" + context.getPackageName() + "/files/home/.ssh");
+        }
+        if (sshDir.exists() && sshDir.isDirectory()) {
+            String[] keys = new String[]{"id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"};
+            for (String key : keys) {
+                File k = new File(sshDir, key);
+                if (k.exists() && k.length() > 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     public boolean isGitRoot(File dir) {
         if (dir == null || !dir.isDirectory()) return false;
         File gitFolder = new File(dir, ".git");

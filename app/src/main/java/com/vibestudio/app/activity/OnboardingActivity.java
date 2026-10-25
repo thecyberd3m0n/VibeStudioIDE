@@ -5,6 +5,7 @@ import com.vibestudio.app.db.DatabaseHelper;
 import com.vibestudio.app.logging.CrashHandler;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.fragments.*;
+import com.vibestudio.app.git.GitManager;
 
 import com.libtermux.LibTermux;
 import com.libtermux.TermuxConfig;
@@ -90,14 +91,20 @@ public class OnboardingActivity extends Activity {
     private View mStep1Layout;
     private View mStep2Layout;
     private View mStep3Layout;
+    private View mStep4Layout;
 
     private TextView mStep1Indicator;
     private TextView mStep2Indicator;
     private TextView mStep3Indicator;
+    private TextView mStep4Indicator;
 
     private TextView mStep1Title;
     private TextView mStep2Title;
     private TextView mStep3Title;
+    private TextView mStep4Title;
+
+    private Button mBtnConfigGitUser;
+    private Button mBtnConfigSshKeys;
 
     private TextView mStatusMessage;
     private TextView mInstallLogText;
@@ -141,14 +148,38 @@ public class OnboardingActivity extends Activity {
             mStep1Layout = findViewById(R.id.step1_layout);
             mStep2Layout = findViewById(R.id.step2_layout);
             mStep3Layout = findViewById(R.id.step3_layout);
+            mStep4Layout = findViewById(R.id.step4_layout);
 
             mStep1Indicator = (TextView) findViewById(R.id.step1_indicator);
             mStep2Indicator = (TextView) findViewById(R.id.step2_indicator);
             mStep3Indicator = (TextView) findViewById(R.id.step3_indicator);
+            mStep4Indicator = (TextView) findViewById(R.id.step4_indicator);
 
             mStep1Title = (TextView) findViewById(R.id.step1_title);
             mStep2Title = (TextView) findViewById(R.id.step2_title);
             mStep3Title = (TextView) findViewById(R.id.step3_title);
+            mStep4Title = (TextView) findViewById(R.id.step4_title);
+
+            mBtnConfigGitUser = (Button) findViewById(R.id.btn_config_git_user);
+            mBtnConfigSshKeys = (Button) findViewById(R.id.btn_config_ssh_keys);
+
+            if (mBtnConfigGitUser != null) {
+                mBtnConfigGitUser.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        onConfigureGitUserRequested();
+                    }
+                });
+            }
+
+            if (mBtnConfigSshKeys != null) {
+                mBtnConfigSshKeys.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        onConfigureSshKeysRequested();
+                    }
+                });
+            }
 
             mStatusMessage = (TextView) findViewById(R.id.status_message);
             mInstallLogText = (TextView) findViewById(R.id.install_log_text);
@@ -162,16 +193,17 @@ public class OnboardingActivity extends Activity {
             mBtnNext.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    if (mCurrentStep < 3) {
+                    if (mCurrentStep < 4) {
+                        if (mCurrentStep == 3 && !mIsInstalled) {
+                            return;
+                        }
                         mCurrentStep++;
                         updateStepUi();
                         if (mCurrentStep == 3 && !mIsInstalled && !mIsInstalling) {
                             startEnvironmentInstallation();
                         }
-                    } else {
-                        if (mIsInstalled) {
-                            navigateToMain();
-                        }
+                    } else if (mCurrentStep == 4) {
+                        navigateToMain();
                     }
                 }
             });
@@ -179,7 +211,9 @@ public class OnboardingActivity extends Activity {
             mBtnBack.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    if (mCurrentStep > 1 && !mIsInstalling) {
+                    if (mCurrentStep == 4) {
+                        navigateToMain();
+                    } else if (mCurrentStep > 1 && !mIsInstalling) {
                         mCurrentStep--;
                         updateStepUi();
                     }
@@ -195,25 +229,88 @@ public class OnboardingActivity extends Activity {
         mStep1Layout.setVisibility(mCurrentStep == 1 ? View.VISIBLE : View.GONE);
         mStep2Layout.setVisibility(mCurrentStep == 2 ? View.VISIBLE : View.GONE);
         mStep3Layout.setVisibility(mCurrentStep == 3 ? View.VISIBLE : View.GONE);
+        if (mStep4Layout != null) {
+            mStep4Layout.setVisibility(mCurrentStep == 4 ? View.VISIBLE : View.GONE);
+        }
 
         updateIndicator(mStep1Indicator, mStep1Title, mCurrentStep == 1, mCurrentStep > 1);
         updateIndicator(mStep2Indicator, mStep2Title, mCurrentStep == 2, mCurrentStep > 2);
-        updateIndicator(mStep3Indicator, mStep3Title, mCurrentStep == 3, mIsInstalled);
+        updateIndicator(mStep3Indicator, mStep3Title, mCurrentStep == 3, mCurrentStep > 3 || mIsInstalled);
+        if (mStep4Indicator != null && mStep4Title != null) {
+            boolean isGitConfigured = GitManager.getInstance().isGitUserConfigured(this);
+            updateIndicator(mStep4Indicator, mStep4Title, mCurrentStep == 4, isGitConfigured);
+        }
 
-        mBtnBack.setVisibility(mCurrentStep > 1 && !mIsInstalling ? View.VISIBLE : View.INVISIBLE);
+        if (mCurrentStep == 4) {
+            mBtnBack.setText("Later");
+            mBtnBack.setVisibility(View.VISIBLE);
+        } else {
+            mBtnBack.setText("Back");
+            mBtnBack.setVisibility(mCurrentStep > 1 && !mIsInstalling ? View.VISIBLE : View.INVISIBLE);
+        }
 
         if (mCurrentStep < 3) {
             mBtnNext.setText("Next");
             mBtnNext.setEnabled(true);
-        } else {
+        } else if (mCurrentStep == 3) {
             if (mIsInstalled) {
-                mBtnNext.setText("Finish & Launch");
+                mBtnNext.setText("Next");
                 mBtnNext.setEnabled(true);
             } else {
                 mBtnNext.setText("Installing...");
                 mBtnNext.setEnabled(false);
             }
+        } else if (mCurrentStep == 4) {
+            mBtnNext.setText("Finish & Launch");
+            checkGitConfigState();
         }
+    }
+
+    public void checkGitConfigState() {
+        boolean gitUserConfigured = GitManager.getInstance().isGitUserConfigured(this);
+        boolean sshKeysConfigured = GitManager.getInstance().isSshKeyConfigured(this);
+
+        if (mBtnConfigGitUser != null) {
+            if (gitUserConfigured) {
+                mBtnConfigGitUser.setText("Done");
+                mBtnConfigGitUser.setEnabled(false);
+                mBtnConfigGitUser.setBackgroundResource(R.drawable.bg_btn_secondary);
+            } else {
+                mBtnConfigGitUser.setText("Configure");
+                mBtnConfigGitUser.setEnabled(true);
+                mBtnConfigGitUser.setBackgroundResource(R.drawable.bg_btn_primary);
+            }
+        }
+
+        if (mBtnConfigSshKeys != null) {
+            if (sshKeysConfigured) {
+                mBtnConfigSshKeys.setText("Done");
+                mBtnConfigSshKeys.setEnabled(false);
+                mBtnConfigSshKeys.setBackgroundResource(R.drawable.bg_btn_secondary);
+            } else {
+                mBtnConfigSshKeys.setText("Configure");
+                mBtnConfigSshKeys.setEnabled(true);
+                mBtnConfigSshKeys.setBackgroundResource(R.drawable.bg_btn_primary);
+            }
+        }
+
+        if (mCurrentStep == 4) {
+            if (gitUserConfigured) {
+                mBtnNext.setEnabled(true);
+                mBtnNext.setBackgroundResource(R.drawable.bg_btn_primary);
+            } else {
+                mBtnNext.setEnabled(false);
+                mBtnNext.setBackgroundResource(R.drawable.bg_btn_secondary);
+            }
+        }
+    }
+
+    public void onConfigureGitUserRequested() {
+        checkGitConfigState();
+    }
+
+    public void onConfigureSshKeysRequested() {
+        checkGitConfigState();
     }
 
     private void updateIndicator(TextView indicator, TextView title, boolean isActive, boolean isDone) {
@@ -383,7 +480,7 @@ public class OnboardingActivity extends Activity {
                     mDbHelper.setSetting("env_prefix", usrDir.getAbsolutePath());
                     mDbHelper.setSetting("env_home", homeDir.getAbsolutePath());
                     mDbHelper.setSetting("env_shell", bashFile.getAbsolutePath());
-                    mDbHelper.setEnvInitialized(true);
+                    // mDbHelper.setEnvInitialized(true); // set when onboarding finished in navigateToMain
 
                     appendLog("[libtermux] LibTermux Environment setup complete!");
 
@@ -687,6 +784,9 @@ public class OnboardingActivity extends Activity {
     }
 
     private void navigateToMain(Intent originalIntent) {
+        if (mDbHelper != null) {
+            // mDbHelper.setEnvInitialized(true); // set when onboarding finished in navigateToMain
+        }
         Intent intent = new Intent(OnboardingActivity.this, MainActivity.class);
         if (originalIntent != null) {
             if (originalIntent.getAction() != null) {

@@ -65,6 +65,45 @@ public class GitManagerTest {
     }
 
     @Test
+    public void testIsGitUserConfiguredWithMockGitconfig() throws IOException {
+        File homeDir = new File(context.getFilesDir(), "home");
+        if (!homeDir.exists()) homeDir.mkdirs();
+        File gitConfigFile = new File(homeDir, ".gitconfig");
+
+        if (gitConfigFile.exists()) gitConfigFile.delete();
+
+        java.nio.file.Files.write(gitConfigFile.toPath(), "[user]\n\tname = Vibe Developer\n\temail = dev@vibestudio.app\n".getBytes());
+        boolean configured = gitManager.isGitUserConfigured(context);
+        Assert.assertTrue("isGitUserConfigured should be true when .gitconfig has name and email", configured);
+
+        gitConfigFile.delete();
+    }
+
+    @Test
+    public void testIsSshKeyConfiguredWithMockSshDir() throws IOException {
+        File homeDir = new File(context.getFilesDir(), "home");
+        File sshDir = new File(homeDir, ".ssh");
+        if (sshDir.exists()) {
+            File[] files = sshDir.listFiles();
+            if (files != null) {
+                for (File f : files) f.delete();
+            }
+            sshDir.delete();
+        }
+
+        Assert.assertFalse("isSshKeyConfigured should be false when .ssh directory does not exist", gitManager.isSshKeyConfigured(context));
+
+        sshDir.mkdirs();
+        File idRsa = new File(sshDir, "id_rsa");
+        java.nio.file.Files.write(idRsa.toPath(), "-----BEGIN OPENSSH PRIVATE KEY-----\n".getBytes());
+
+        Assert.assertTrue("isSshKeyConfigured should be true when id_rsa exists", gitManager.isSshKeyConfigured(context));
+
+        idRsa.delete();
+        sshDir.delete();
+    }
+
+    @Test
     public void testParseRepositoryStateWithLeakedEcho() {
         String leakedOutput = "___CMD_START_12345___\n" +
                 "cd '/data/app' && git --no-pager (git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; echo \"===STATUS===\" ; git status --porcelain ; echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat\n" +
