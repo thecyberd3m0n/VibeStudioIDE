@@ -7,12 +7,16 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 import com.vibestudio.app.R;
 import com.vibestudio.app.terminal.TerminalSessionManager;
@@ -101,7 +105,7 @@ public class TerminalService extends Service {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
                     "Terminal Background Service",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_DEFAULT
             );
             channel.setDescription("Keeps terminal sessions and background servers running");
             NotificationManager nm = getSystemService(NotificationManager.class);
@@ -123,11 +127,29 @@ public class TerminalService extends Service {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("VibeStudio IDE - Terminal Active")
                 .setContentText("Background terminal sessions are active")
-                .setSmallIcon(R.drawable.ic_launcher)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setLargeIcon(getNotificationLargeIcon())
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setOngoing(true)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitPendingIntent);
         return builder.build();
+    }
+
+    private Bitmap getNotificationLargeIcon() {
+        try {
+            Drawable drawable = ContextCompat.getDrawable(this, R.drawable.ic_launcher_foreground);
+            if (drawable == null) return null;
+            int size = 128;
+            Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            canvas.drawColor(0xFF121212);
+            drawable.setBounds(0, 0, size, size);
+            drawable.draw(canvas);
+            return bitmap;
+        } catch (Exception e) {
+            LogViewerService.getInstance().e(TAG, "Failed to render large notification icon", e);
+            return null;
+        }
     }
 
     private synchronized void acquireWakeLock() {
