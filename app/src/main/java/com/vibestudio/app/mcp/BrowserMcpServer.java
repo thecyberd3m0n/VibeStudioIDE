@@ -5,10 +5,13 @@ import android.webkit.WebView;
 
 import com.vibestudio.app.browser.BrowserManager;
 import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
+import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
 import com.vibestudio.app.mcp.model.PropertyType;
 import com.vibestudio.app.service.LogViewerService;
+import com.vibestudio.app.tab.TabItem;
+import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.view.BaseToolMessageView;
 import com.vibestudio.app.view.BrowserLogsToolMessage;
 import com.vibestudio.app.view.BrowserToolMessage;
@@ -36,10 +39,13 @@ public class BrowserMcpServer implements McpServer {
         } else if ("form_file_attach".equalsIgnoreCase(toolName) || "browser_form_file_attach".equalsIgnoreCase(toolName) || "attach_file".equalsIgnoreCase(toolName)) {
             String path = toolArgs.optString("file_path", toolArgs.optString("path", "file"));
             return "Attaching file: " + path;
+        } else if ("browser_list_tabs".equalsIgnoreCase(toolName) || "browser_list_sessions".equalsIgnoreCase(toolName)) {
+            return "Listing open browser tabs";
+        } else if ("browser_select_tab".equalsIgnoreCase(toolName)) {
+            return "Switching active browser tab to session #" + toolArgs.optInt("session_id", -1);
         }
         return "Browser Tool [" + toolName + "]: " + toolArgs.toString();
     }
-
 
     @Override
     public BaseToolMessageView createToolMessageView(Context context, String toolName) {
@@ -49,10 +55,9 @@ public class BrowserMcpServer implements McpServer {
         return new BrowserToolMessage(context);
     }
 
-
     private static final String TAG = "BrowserMcpServer";
     private static final String NAME = "browser";
-    private static final String DESCRIPTION = "Allows opening a new browser tab via 'browser_open_tab', navigating webview sessions, setting user-agent, clearing cookies, inspecting active URL, clicking elements, typing text, executing JS scripts, taking screenshots, and reading browser console/navigation logs.";
+    private static final String DESCRIPTION = "Allows opening browser tabs via 'browser_open_tab', listing tabs via 'browser_list_tabs', switching active tab via 'browser_select_tab', navigating webview sessions, setting user-agent, clearing cookies, inspecting current URL/title, clicking elements, typing text, executing JS scripts, taking screenshots, and reading browser console/navigation logs.";
 
     private boolean mIsActive = true;
     private final List<McpTool> mTools;
@@ -123,13 +128,14 @@ public class BrowserMcpServer implements McpServer {
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
                 .build());
 
-        // Tool 11: form_file_attach (not works for now)
-//        mTools.add(McpTool.builder("form_file_attach", "Auto-provide a file to the web file chooser and attach it to an input element.")
-//                .addProperty("file_path", PropertyType.STRING, "Path to the local file to attach (e.g. '/path/to/file.png' or '~/file.txt').", true)
-//                .addProperty("selector", PropertyType.STRING, "Optional CSS selector of the file input element to click (default: 'input[type=file]').", false)
-//                .addProperty("session_id", PropertyType.INTEGER, "Optional target browser session ID (integer, e.g. 1).", false)
-//                .build());
+        // Tool 11: browser_list_tabs
+        mTools.add(McpTool.builder("browser_list_tabs", "List all currently open browser WebView tabs/sessions, including their session IDs, current URLs, page titles, and which tab is currently active.")
+                .build());
 
+        // Tool 12: browser_select_tab
+        mTools.add(McpTool.builder("browser_select_tab", "Switch the active browser tab in the IDE to the given session_id.")
+                .addProperty("session_id", PropertyType.INTEGER, "The target browser session ID to select as active.", true)
+                .build());
     }
 
     @Override
@@ -167,7 +173,7 @@ public class BrowserMcpServer implements McpServer {
     @Override
     public boolean handlesTool(String toolName) {
         if (toolName == null) return false;
-        if ("read_browser_logs".equals(toolName) || "form_file_attach".equals(toolName) || "browser_form_file_attach".equals(toolName) || "form_file_upload".equals(toolName) || "attach_file".equals(toolName) || "browser_attach_file".equals(toolName)) return true;
+        if ("read_browser_logs".equals(toolName) || "form_file_attach".equals(toolName) || "browser_form_file_attach".equals(toolName) || "form_file_upload".equals(toolName) || "attach_file".equals(toolName) || "browser_attach_file".equals(toolName) || "browser_list_sessions".equals(toolName) || "list_tabs".equals(toolName) || "select_tab".equals(toolName)) return true;
         for (McpTool tool : mTools) {
             if (tool.getName().equals(toolName)) {
                 return true;
@@ -190,9 +196,67 @@ public class BrowserMcpServer implements McpServer {
                 return McpToolResult.success(extras);
             }
 
+            if ("browser_list_tabs".equals(toolName) || "browser_list_sessions".equals(toolName) || "list_tabs".equals(toolName)) {
+                List<ToolSessionManager.ToolSession> sessions = sessionManager.getSessionsForType(ToolType.BROWSER);
+                int activeSessionId = sessionManager.getActiveSessionId(ToolType.BROWSER);
+
+                List<Map<String, Object>> sessionList = new ArrayList<>();
+                for (ToolSessionManager.ToolSession s : sessions) {
+                    WebView wv = s.getWebView();
+                    if (wv != null) {
+                        Map<String, Object> item = new HashMap<>();
+                        item.put("session_id", s.id);
+                        item.put("url", browserManager.getCurrentUrl(wv));
+                        item.put("title", browserManager.getCurrentTitle(wv));
+                        item.put("is_active", s.id == activeSessionId);
+                        sessionList.add(item);
+                    }
+                }
+
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("sessions", sessionList);
+                return McpToolResult.success(extras);
+            }
+
+            if ("browser_select_tab".equals(toolName) || "select_tab".equals(toolName)) {
+                int targetSessionId = arguments != null ? getIntArg(arguments, "session_id", -1) : -1;
+                if (targetSessionId <= 0) {
+                    return McpToolResult.error("Missing required argument: 'session_id' (integer).");
+                }
+                ToolSessionManager.SessionValidationResult validation = sessionManager.validateSession(targetSessionId, ToolType.BROWSER);
+                if (!validation.isValid()) {
+                    return McpToolResult.error(validation.errorMessage);
+                }
+
+                sessionManager.setActiveSession(ToolType.BROWSER, targetSessionId);
+
+                WebView targetWebView = validation.session.getWebView();
+                if (targetWebView != null) {
+                    for (TabItem tab : TabManager.getInstance().getTabs()) {
+                        if (tab.getFragment() instanceof BrowserFragment) {
+                            BrowserFragment bf = (BrowserFragment) tab.getFragment();
+                            if (bf.getWebView() == targetWebView) {
+                                TabManager.getInstance().selectTab(tab);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", targetSessionId);
+                extras.put("message", "Switched active browser tab to session #" + targetSessionId + ".");
+                return McpToolResult.success(extras);
+            }
+
             if ("browser_reset_cookies".equals(toolName)) {
                 String resStr = browserManager.resetCookies();
-                return McpToolResult.success(resStr);
+                Map<String, Object> extras = new HashMap<>();
+                int activeSessionId = sessionManager.getActiveSessionId(ToolType.BROWSER);
+                if (activeSessionId > 0) {
+                    extras.put("session_id", activeSessionId);
+                }
+                return McpToolResult.success(resStr, extras);
             }
 
             if ("browser_read_logs".equals(toolName) || "read_browser_logs".equals(toolName)) {
@@ -203,6 +267,10 @@ public class BrowserMcpServer implements McpServer {
                 
                 Map<String, Object> extras = new HashMap<>();
                 extras.put("logs", logs);
+                int activeSessionId = sessionManager.getActiveSessionId(ToolType.BROWSER);
+                if (activeSessionId > 0) {
+                    extras.put("session_id", activeSessionId);
+                }
                 return McpToolResult.success(extras);
             }
 
@@ -231,52 +299,71 @@ public class BrowserMcpServer implements McpServer {
             if ("browser_navigate".equals(toolName)) {
                 String url = arguments != null ? getStringArg(arguments, "url", "") : "";
                 String resStr = browserManager.navigate(webView, url);
-                return McpToolResult.success(resStr);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
+                return McpToolResult.success(resStr, extras);
 
             } else if ("browser_get_current_url".equals(toolName)) {
                 String currentUrl = browserManager.getCurrentUrl(webView);
+                String currentTitle = browserManager.getCurrentTitle(webView);
                 Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
                 extras.put("url", currentUrl);
+                extras.put("title", currentTitle);
                 return McpToolResult.success(extras);
 
             } else if ("browser_set_user_agent".equals(toolName)) {
                 String userAgent = arguments != null ? getStringArg(arguments, "user_agent", "") : "";
                 String resStr = browserManager.setUserAgent(webView, userAgent);
-                return McpToolResult.success(resStr);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
+                return McpToolResult.success(resStr, extras);
 
             } else if ("browser_execute_js".equals(toolName)) {
                 String script = arguments != null ? getStringArg(arguments, "script", "") : "";
                 String resStr = browserManager.executeJs(webView, script);
                 Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
                 extras.put("result", resStr);
                 return McpToolResult.success(extras);
 
             } else if ("browser_click".equals(toolName)) {
                 String selector = arguments != null ? getStringArg(arguments, "selector", "") : "";
                 String resStr = browserManager.click(webView, selector);
-                return McpToolResult.success(resStr);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
+                return McpToolResult.success(resStr, extras);
 
             } else if ("browser_type".equals(toolName)) {
                 String selector = arguments != null ? getStringArg(arguments, "selector", "") : "";
                 String text = arguments != null ? getStringArg(arguments, "text", "") : "";
                 String resStr = browserManager.type(webView, selector, text);
-                return McpToolResult.success(resStr);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
+                return McpToolResult.success(resStr, extras);
 
             } else if ("browser_cdp_command".equals(toolName) || "browser_cdp".equals(toolName) || "browser_attach_file_cdp".equals(toolName)) {
                 String method = arguments != null ? getStringArg(arguments, "method", "DOM.setFileInputFiles") : "DOM.setFileInputFiles";
                 String paramsStr = arguments != null ? getStringArg(arguments, "params", "{}") : "{}";
                 String resStr = browserManager.executeCdpCommand(webView, method, paramsStr);
-                return McpToolResult.success(resStr);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
+                return McpToolResult.success(resStr, extras);
 
             } else if ("form_file_attach".equals(toolName) || "browser_form_file_attach".equals(toolName) || "form_file_upload".equals(toolName) || "attach_file".equals(toolName) || "browser_attach_file".equals(toolName)) {
                 String filePath = arguments != null ? getStringArg(arguments, "file_path", getStringArg(arguments, "path", "")) : "";
                 String selector = arguments != null ? getStringArg(arguments, "selector", "input[type='file']") : "input[type='file']";
 
                 String resStr = browserManager.attachFile(context, webView, selector, filePath);
-                return McpToolResult.success(resStr);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
+                return McpToolResult.success(resStr, extras);
 
             } else if ("browser_screenshot".equals(toolName)) {
                 JSONObject jsonRes = browserManager.takeScreenshot(webView, context);
+                if (jsonRes != null) {
+                    jsonRes.put("session_id", session.id);
+                }
                 return jsonToToolResult(jsonRes);
 
             } else {

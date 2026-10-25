@@ -5,8 +5,12 @@ import android.webkit.WebView;
 
 import com.termux.terminal.TerminalSession;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 
 public class ToolSessionManager {
@@ -121,7 +125,7 @@ public class ToolSessionManager {
 
         if (!isSessionAlive(session)) {
             mSessionsById.remove(sessionId);
-            if (mActiveSessionByToolType.get(session.toolType) != null && mActiveSessionByToolType.get(session.toolType) == sessionId) {
+            if (Objects.equals(mActiveSessionByToolType.get(session.toolType), sessionId)) {
                 mActiveSessionByToolType.remove(session.toolType);
             }
             return new SessionValidationResult(null, "Session #" + sessionId + " is no longer alive.");
@@ -138,5 +142,39 @@ public class ToolSessionManager {
         if (session == null) return false;
         ToolSessionProvider provider = mProviders.get(session.toolType);
         return provider != null && provider.isSessionAlive(session.sessionHandle);
+    }
+
+    public synchronized List<ToolSession> getSessionsForType(ToolType toolType) {
+        List<ToolSession> list = new ArrayList<>();
+        Iterator<Map.Entry<Integer, ToolSession>> iterator = mSessionsById.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Integer, ToolSession> entry = iterator.next();
+            ToolSession session = entry.getValue();
+            if (session != null && session.toolType == toolType) {
+                if (isSessionAlive(session)) {
+                    list.add(session);
+                } else {
+                    iterator.remove();
+                    if (Objects.equals(mActiveSessionByToolType.get(toolType), session.id)) {
+                        mActiveSessionByToolType.remove(toolType);
+                    }
+                }
+            }
+        }
+        return list;
+    }
+
+    public synchronized int getActiveSessionId(ToolType toolType) {
+        Integer activeId = mActiveSessionByToolType.get(toolType);
+        return activeId != null ? activeId : -1;
+    }
+
+    public synchronized boolean setActiveSession(ToolType toolType, int sessionId) {
+        ToolSession session = mSessionsById.get(sessionId);
+        if (session != null && session.toolType == toolType && isSessionAlive(session)) {
+            mActiveSessionByToolType.put(toolType, sessionId);
+            return true;
+        }
+        return false;
     }
 }
