@@ -59,6 +59,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     private File mRootDir;
     private File mHomeDir;
     private File mCurrentDir;
+    private GitRepositoryState mCurrentGitState;
 
     private TextView mTvCurrentPath;
     private ImageButton mBtnNewFolder;
@@ -514,13 +515,10 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             }
             String details = entry.getDetailsText(getContext());
             File repoRoot = GitManager.getInstance().findGitRoot(mCurrentDir);
-            if (repoRoot != null) {
-                GitRepositoryState cachedState = GitManager.getInstance().getCachedState(repoRoot);
-                if (cachedState != null) {
-                    String gitStatusText = getGitStatusForFile(repoRoot, entry.getFile(), cachedState);
-                    if (gitStatusText != null && !gitStatusText.isEmpty()) {
-                        details = details + " • " + gitStatusText;
-                    }
+            if (repoRoot != null && mCurrentGitState != null) {
+                String gitStatusText = getGitStatusForFile(repoRoot, entry.getFile(), mCurrentGitState);
+                if (gitStatusText != null && !gitStatusText.isEmpty()) {
+                    details = details + " • " + gitStatusText;
                 }
             }
             tvDetails.setText(details);
@@ -637,6 +635,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     }
 
     private void updateGitChangesBar(GitRepositoryState state) {
+        mCurrentGitState = state;
         if (getActivity() == null) return;
         getActivity().runOnUiThread(() -> {
             if (state == null) {
@@ -738,9 +737,8 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             mGitStatusView = new GitStatusView(requireContext());
             mGitStatusView.setOnCloseListener(this::closeGitView);
             mGitStatusView.setOnStatusUpdatedListener(() -> {
-                GitRepositoryState state = GitManager.getInstance().getCachedState(repoRoot);
-                if (state != null) {
-                    updateGitChangesBar(state);
+                if (mGitStatusView.getLastState() != null) {
+                    updateGitChangesBar(mGitStatusView.getLastState());
                 }
             });
             mFlGitViewContainer.addView(mGitStatusView);
@@ -764,10 +762,8 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         preloadGitView();
 
-        GitRepositoryState cached = GitManager.getInstance().getCachedState(repoRoot);
-        if (cached != null) {
-            updateGitChangesBar(cached);
-        }
+        mCurrentGitState = null;
+        updateGitChangesBar(null);
 
         GitManager.getInstance().refreshRepositoryState(getContext(), repoRoot, this::updateGitChangesBar);
     }

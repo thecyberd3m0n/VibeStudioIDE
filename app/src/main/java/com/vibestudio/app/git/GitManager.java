@@ -29,8 +29,7 @@ public class GitManager {
     private static GitManager sInstance;
 
     private TerminalSession mGitSession;
-    private final Map<String, GitRepositoryState> mStateCache = new ConcurrentHashMap<>();
-    private final List<GitStateChangeListener> mListeners = new CopyOnWriteArrayList<>();
+        private final List<GitStateChangeListener> mListeners = new CopyOnWriteArrayList<>();
     private final ExecutorService mGitExecutor = Executors.newSingleThreadExecutor();
     private final Set<String> mPendingRefreshes = ConcurrentHashMap.newKeySet();
 
@@ -69,12 +68,6 @@ public class GitManager {
         if (listener != null) {
             mListeners.remove(listener);
         }
-    }
-
-    public GitRepositoryState getCachedState(File repoDir) {
-        File root = findGitRoot(repoDir);
-        if (root == null) return null;
-        return mStateCache.get(root.getAbsolutePath());
     }
 
     public synchronized void ensureGitSession(Context context) {
@@ -230,8 +223,6 @@ public class GitManager {
 
         if (mPendingRefreshes.contains(repoPath)) {
             LogViewerService.getInstance().d(TAG, "Git refresh already pending for: " + repoPath + ", skipping duplicate request.");
-            GitRepositoryState cached = mStateCache.get(repoPath);
-            if (callback != null) callback.onStateUpdated(cached);
             return;
         }
 
@@ -241,7 +232,6 @@ public class GitManager {
         runGitCommandAsync(context, gitCmd, root, (success, output) -> {
             mPendingRefreshes.remove(repoPath);
             GitRepositoryState state = parseRepositoryState(root, success ? output : "");
-            mStateCache.put(repoPath, state);
 
             Handler mainHandler = new Handler(Looper.getMainLooper());
             mainHandler.post(() -> {

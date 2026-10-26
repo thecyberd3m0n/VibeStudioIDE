@@ -218,11 +218,14 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         GitManager.getInstance().removeStateChangeListener(this);
     }
 
+        public GitRepositoryState getLastState() {
+        return mLastState;
+    }
+
     public void setRepoDir(File repoDir) {
-        this.mRepoDir = repoDir;
-        GitRepositoryState cached = GitManager.getInstance().getCachedState(repoDir);
-        if (cached != null) {
-            renderState(cached);
+        if (this.mRepoDir == null || !this.mRepoDir.equals(repoDir)) {
+            this.mRepoDir = repoDir;
+            renderState(null);
         }
         refreshStatus();
     }
