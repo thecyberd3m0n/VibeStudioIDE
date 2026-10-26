@@ -388,7 +388,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         builder.setPositiveButton("Create & Checkout", (dialog, which) -> {
             String newBranch = input.getText().toString().trim();
             if (!newBranch.isEmpty()) {
-                GitManager.getInstance().checkoutBranch(getContext(), mRepoDir, newBranch,
+                GitManager.getInstance().createAndCheckoutBranch(getContext(), mRepoDir, newBranch,
                         handleGitResult("Created and switched to " + newBranch, this::showCreateBranchDialog));
             }
         });

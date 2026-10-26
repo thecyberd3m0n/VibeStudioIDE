@@ -160,6 +160,11 @@ public class GitManager {
         runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
+    public void createAndCheckoutBranch(Context context, File repoDir, String branchName, GitCallback callback) {
+        String cmd = "checkout -b " + quotePath(branchName);
+        runGitCommandAsync(context, cmd, repoDir, callback);
+    }
+
     public void mergeBranch(Context context, File repoDir, String branchName, GitCallback callback) {
         String cmd = "merge " + quotePath(branchName);
         runGitCommandAsync(context, cmd, repoDir, callback);
@@ -196,15 +201,16 @@ public class GitManager {
     }
 
     public void revertFile(Context context, File repoDir, String filePath, String fileStatus, boolean isStaged, GitCallback callback) {
-        String cmd;
         if ("??".equals(fileStatus)) {
-            cmd = "clean -f -- " + quotePath(filePath);
+            String cmd = "clean -f -- " + quotePath(filePath);
+            runGitCommandAsync(context, cmd, repoDir, callback);
         } else if (isStaged) {
-            cmd = "checkout HEAD -- " + quotePath(filePath);
+            String cmd = "restore --staged --worktree -- " + quotePath(filePath);
+            runGitCommandAsync(context, cmd, repoDir, callback);
         } else {
-            cmd = "checkout -- " + quotePath(filePath);
+            String cmd = "checkout HEAD -- " + quotePath(filePath);
+            runGitCommandAsync(context, cmd, repoDir, callback);
         }
-        runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
     public void refreshRepositoryState(Context context, File repoDir, GitStateCallback callback) {
@@ -416,7 +422,7 @@ public class GitManager {
     }
 
     private static String getRefreshRepositoryStateCommand() {
-        return "(git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; echo \"===STATUS===\" ; git status --porcelain ; echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat";
+        return "(git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; echo \"===STATUS===\" ; git status --porcelain --ignored=no ; echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat";
     }
 
     public static GitRepositoryState parseRepositoryState(File repoDir, String output) {
@@ -473,6 +479,10 @@ public class GitManager {
 
                 String statusIndex = line.substring(0, 1);
                 String statusWorktree = line.substring(1, 2);
+
+                if ("!".equals(statusIndex) || "!".equals(statusWorktree)) {
+                    continue;
+                }
                 String filePath = line.substring(2).trim();
 
                 if (filePath.contains(" -> ")) {

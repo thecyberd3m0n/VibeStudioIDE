@@ -58,6 +58,17 @@
             android:minHeight="0dp"
             android:enabled="false" />
 
+        <ImageButton
+            android:id="@+id/btn_more"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_more_vert"
+            android:scaleType="centerInside"
+            android:contentDescription="More options"
+            android:padding="6dp" />
+
     </LinearLayout>
 
     <FrameLayout
