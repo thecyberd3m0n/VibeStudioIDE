@@ -4,6 +4,17 @@ This document outlines the strict architectural principles, code rules, and desi
 
 ---
 
+## 🧹 The Anti-Slop Rule (Bugfixes & Code Hygiene)
+
+1. **Bugfixes Must Prefer Code Net Removal**: When fixing bugs or refactoring existing logic, agents must strive to remove obsolete abstractions, caches, indirection layers, and redundant checks rather than stacking new conditionals or workaround flags on top ("code slop").
+2. **Justification & Developer Permission for Net Additions during Bugfixes**:
+   - For **New Features**: Code net additions are fully expected and justified.
+   - For **Bugfixes**: The fix should ideally result in a net deletion of code (`deletions > additions`).
+   - If a bugfix **must add more code than it removes** (`additions >= deletions`), the agent **MUST STOP and ask developer permission with a clear justification** before committing, compiling, or applying changes.
+3. **Simplicity Over Workarounds**: Always choose architectural simplification and statelessness over state management hacks when resolving synchronization or stale data bugs.
+
+---
+
 ## ⚡ Pragmatic Engineering & Locality of Behavior
 
 > **Core Philosophy:** Dogmatic "Clean Code" rules (such as "keep methods under 20 lines", "keep classes tiny", or "never duplicate code / DRY at all costs") lead to architectural fragmentation—splitting single operations into dozens of tiny classes, interfaces, and factories. Real elegance is **Locality of Behavior**: being able to read, debug, and understand what the system does without leaving the screen.
