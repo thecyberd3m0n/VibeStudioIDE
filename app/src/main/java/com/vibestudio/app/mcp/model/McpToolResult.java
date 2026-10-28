@@ -29,6 +29,14 @@ public class McpToolResult {
         return new McpToolResult(true, output, null, summary, null);
     }
 
+    public static McpToolResult success(String output, Map<String, Object> extraFields) {
+        return new McpToolResult(true, output, null, null, extraFields);
+    }
+
+    public static McpToolResult success(String output, String summary, Map<String, Object> extraFields) {
+        return new McpToolResult(true, output, null, summary, extraFields);
+    }
+
     public static McpToolResult success(Map<String, Object> extraFields) {
         return new McpToolResult(true, null, null, null, extraFields);
     }

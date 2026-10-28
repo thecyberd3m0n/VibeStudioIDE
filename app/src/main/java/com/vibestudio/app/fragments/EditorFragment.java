@@ -12,12 +12,14 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.MenuItem;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.PopupMenu;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -63,6 +65,7 @@ public class EditorFragment extends Fragment {
     private TextView mTvFilePath;
     private Button mBtnSave;
     private ImageButton mBtnUndo;
+    private ImageButton mBtnMore;
     private FrameLayout mFlOverlayContainer;
 
     private String mFilePath;
@@ -219,6 +222,11 @@ public class EditorFragment extends Fragment {
         mTvFilePath = view.findViewById(R.id.tv_file_path);
         mBtnSave = view.findViewById(R.id.btn_save);
         mBtnUndo = view.findViewById(R.id.btn_undo);
+        mBtnMore = view.findViewById(R.id.btn_more);
+
+        if (mBtnMore != null) {
+            mBtnMore.setOnClickListener(v -> showContextMenu(v));
+        }
         mFlOverlayContainer = view.findViewById(R.id.overlay_hunks_container);
 
         if (mBtnSave != null) {
@@ -1021,6 +1029,51 @@ public class EditorFragment extends Fragment {
 
     public boolean isModified() {
         return mIsModified;
+    }
+
+    private void showContextMenu(View anchor) {
+        if (getContext() == null) return;
+        Context themedContext = new android.view.ContextThemeWrapper(getContext(), android.R.style.Theme_DeviceDefault_Settings);
+        PopupMenu popup = new PopupMenu(themedContext, anchor);
+
+        if (mIsDiffMode) {
+            popup.getMenu().add("Revert All Changes");
+        } else {
+            popup.getMenu().add("Save");
+            popup.getMenu().add("Reload File");
+        }
+
+        boolean isWordWrap = mCodeEditor != null && mCodeEditor.isWordwrap();
+        MenuItem wordWrapItem = popup.getMenu().add(0, 101, 0, "Word Wrap");
+        wordWrapItem.setCheckable(true);
+        wordWrapItem.setChecked(isWordWrap);
+
+        popup.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 101) {
+                boolean newState = !item.isChecked();
+                item.setChecked(newState);
+                if (mCodeEditor != null) {
+                    mCodeEditor.setWordwrap(newState);
+                }
+                return true;
+            }
+            String title = item.getTitle().toString();
+            if ("Save".equals(title)) {
+                performSave();
+                return true;
+            } else if ("Reload File".equals(title)) {
+                if (mFilePath != null && !mFilePath.isEmpty()) {
+                    loadFileContent(mFilePath);
+                    Toast.makeText(getContext(), "File reloaded", Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            } else if ("Revert All Changes".equals(title)) {
+                showRevertAllDialog();
+                return true;
+            }
+            return false;
+        });
+        popup.show();
     }
 
     @Override

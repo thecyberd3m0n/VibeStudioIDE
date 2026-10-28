@@ -218,11 +218,14 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         GitManager.getInstance().removeStateChangeListener(this);
     }
 
+        public GitRepositoryState getLastState() {
+        return mLastState;
+    }
+
     public void setRepoDir(File repoDir) {
-        this.mRepoDir = repoDir;
-        GitRepositoryState cached = GitManager.getInstance().getCachedState(repoDir);
-        if (cached != null) {
-            renderState(cached);
+        if (this.mRepoDir == null || !this.mRepoDir.equals(repoDir)) {
+            this.mRepoDir = repoDir;
+            renderState(null);
         }
         refreshStatus();
     }
@@ -385,7 +388,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         builder.setPositiveButton("Create & Checkout", (dialog, which) -> {
             String newBranch = input.getText().toString().trim();
             if (!newBranch.isEmpty()) {
-                GitManager.getInstance().checkoutBranch(getContext(), mRepoDir, newBranch,
+                GitManager.getInstance().createAndCheckoutBranch(getContext(), mRepoDir, newBranch,
                         handleGitResult("Created and switched to " + newBranch, this::showCreateBranchDialog));
             }
         });

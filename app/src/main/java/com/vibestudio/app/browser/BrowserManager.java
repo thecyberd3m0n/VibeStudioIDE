@@ -369,6 +369,29 @@ public class BrowserManager {
         return urlRef.get();
     }
 
+    public String getCurrentTitle(final WebView webView) {
+        if (webView == null) return "";
+
+        final AtomicReference<String> titleRef = new AtomicReference<>("");
+        final CountDownLatch latch = new CountDownLatch(1);
+
+        mMainHandler.post(() -> {
+            try {
+                titleRef.set(webView.getTitle() != null ? webView.getTitle() : "");
+            } catch (Exception e) {
+                titleRef.set("");
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        try {
+            latch.await(2, TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {}
+
+        return titleRef.get();
+    }
+
     public String setUserAgent(final WebView webView, final String userAgent) {
         if (webView == null) return "Error: WebView not initialized.";
 

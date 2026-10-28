@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="-1px"
+    android:layout_height="-1px"
+    android:background="#121212"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="-1px"
+        android:layout_height="-2px"
+        android:orientation="vertical">
+
+        <!-- Title -->
+        <TextView
+            android:layout_width="-1px"
+            android:layout_height="-2px"
+            android:text="🌿 Git Settings"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:paddingBottom="16dp"/>
+
+        <!-- Git Identity Section Card -->
+        <LinearLayout
+            android:layout_width="-1px"
+            android:layout_height="-2px"
+            android:orientation="vertical"
+            android:background="#1E1E28"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:text="Git User Identity"
+                android:textColor="#03DAC6"
+                android:textSize="16sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:text="Configures global git user name and email for commits."
+                android:textColor="#A0A0A0"
+                android:textSize="12sp"
+                android:paddingTop="4dp"
+                android:paddingBottom="12dp"/>
+
+            <EditText
+                android:id="@+id/edit_git_user_name"
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:hint="Name (e.g. John Doe)"
+                android:textColorHint="#606060"
+                android:textColor="#FFFFFF"
+                android:background="#2C2C3A"
+                android:padding="12dp"
+                android:textSize="14sp"
+                android:layout_marginBottom="10dp"/>
+
+            <EditText
+                android:id="@+id/edit_git_user_email"
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:hint="Email (e.g. user@example.com)"
+                android:textColorHint="#606060"
+                android:textColor="#FFFFFF"
+                android:background="#2C2C3A"
+                android:padding="12dp"
+                android:textSize="14sp"
+                android:inputType="textEmailAddress"
+                android:layout_marginBottom="12dp"/>
+
+            <Button
+                android:id="@+id/btn_save_git_identity"
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:text="Save Git Identity"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:background="@drawable/bg_btn_primary"/>
+        </LinearLayout>
+
+        <!-- SSH Key Section Card -->
+        <LinearLayout
+            android:layout_width="-1px"
+            android:layout_height="-2px"
+            android:orientation="vertical"
+            android:background="#1E1E28"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:text="SSH Key Pair"
+                android:textColor="#03DAC6"
+                android:textSize="16sp"
+                android:textStyle="bold"/>
+
+            <TextView
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:text="Copy public key to add to GitHub, GitLab, or Bitbucket."
+                android:textColor="#A0A0A0"
+                android:textSize="12sp"
+                android:paddingTop="4dp"
+                android:paddingBottom="12dp"/>
+
+            <EditText
+                android:id="@+id/txt_ssh_public_key"
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:minLines="3"
+                android:maxLines="6"
+                android:gravity="top|left"
+                android:focusable="false"
+                android:clickable="true"
+                android:cursorVisible="false"
+                android:textColor="#03DAC6"
+                android:textColorHint="#606060"
+                android:textSize="12sp"
+                android:typeface="monospace"
+                android:background="#2C2C3A"
+                android:padding="10dp"
+                android:textIsSelectable="true"
+                android:hint="No SSH public key found"
+                android:layout_marginBottom="12dp"/>
+
+            <LinearLayout
+                android:layout_width="-1px"
+                android:layout_height="-2px"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_copy_ssh_key"
+                    android:layout_width="0dp"
+                    android:layout_height="-2px"
+                    android:layout_weight="1"
+                    android:text="Copy Public Key"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp"
+                    android:background="@drawable/bg_btn_primary"
+                    android:layout_marginRight="6dp"/>
+
+                <Button
+                    android:id="@+id/btn_generate_ssh_key"
+                    android:layout_width="0dp"
+                    android:layout_height="-2px"
+                    android:layout_weight="1"
+                    android:text="Generate SSH Key"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp"
+                    android:background="@drawable/bg_btn_secondary"
+                    android:layout_marginLeft="6dp"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Status Message -->
+        <TextView
+            android:id="@+id/tv_git_settings_status"
+            android:layout_width="-1px"
+            android:layout_height="-2px"
+            android:textColor="#03DAC6"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:visibility="gone"/>
+
+    </LinearLayout>
+</ScrollView>

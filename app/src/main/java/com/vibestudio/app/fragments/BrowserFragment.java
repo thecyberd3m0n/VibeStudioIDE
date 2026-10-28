@@ -216,9 +216,16 @@ public class BrowserFragment extends Fragment implements BrowserManager.BrowserS
         LogViewerService.getInstance().i("BrowserFragment", "onStart called for " + this);
     }
 
+    public int getSessionId() {
+        return mSessionId;
+    }
+
     @Override
     public void onResume() {
         super.onResume();
+        if (mSessionId > 0) {
+            com.vibestudio.app.mcp.ToolSessionManager.getInstance().setActiveSession(com.vibestudio.app.mcp.ToolType.BROWSER, mSessionId);
+        }
         LogViewerService.getInstance().i("BrowserFragment", "onResume called, mWebView=" + (mWebView != null));
         if (mWebView != null) {
             mWebView.post(() -> {

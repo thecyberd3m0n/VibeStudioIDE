@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1]
+
+### Added
+- **Git & Version Control Onboarding**: Integrated a Version Control setup step into `OnboardingActivity` (Step 4) allowing developers to configure Git author name/email and generate or copy SSH public keys.
+- **Git Settings Sub-Tab**: Added a dedicated Git configuration sub-tab inside `SettingsFragment` (`GitSettingsFragment`) for post-onboarding Git identity and SSH key management.
+- **Editor Word Wrap**: Added toggleable word wrapping support for file viewing and editing in `EditorFragment`.
+
+### Fixed
+- **Stateless Git Execution**: Refactored `GitManager` to operate statelessly and clear stale repository status when navigating away or switching directory contexts.
+- **MCP Session ID Resolution**: Fixed session ID tracking for browser tabs and MCP tools in `ToolSessionManager` and `BrowserMcpServer`.
+- **Notification Priority & Icons**: Restored proper notification icons and set default channel importance and priority for background terminal services.
+- **Code Hygiene Guidelines**: Added the Anti-Slop Rule to `CODE_QUALITY.md` enforcing net code deletion preference for bugfixes.
+
 ## [0.1.0]
 
 ### Added

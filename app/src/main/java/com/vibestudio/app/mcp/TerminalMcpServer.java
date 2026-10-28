@@ -13,6 +13,7 @@ import com.vibestudio.app.view.BaseToolMessageView;
 import com.vibestudio.app.view.TerminalToolMessage;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.json.JSONObject;
@@ -141,7 +142,9 @@ public class TerminalMcpServer implements McpServer {
 
             if ("terminal_open_tab".equals(toolName) || "open_tab".equals(toolName)) {
                 int newSessionId = sessionManager.getOrCreateSession(ToolType.TERMINAL, context, true);
-                return McpToolResult.success("Opened new terminal tab with session_id: " + newSessionId);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", newSessionId);
+                return McpToolResult.success("Opened new terminal tab with session_id: " + newSessionId, extras);
             }
 
             int sessionIdArg = arguments != null ? getIntArg(arguments, "session_id", -1) : -1;
@@ -179,7 +182,9 @@ public class TerminalMcpServer implements McpServer {
 
                 if (success) {
                     mPendingTerminalSessions.set(termSession);
-                    return McpToolResult.success("Command dispatched to terminal session #" + session.id + ".");
+                    Map<String, Object> extras = new HashMap<>();
+                    extras.put("session_id", session.id);
+                    return McpToolResult.success("Command dispatched to terminal session #" + session.id + ".", extras);
                 } else {
                     return McpToolResult.error("Failed to dispatch command to session #" + session.id + ".");
                 }
@@ -198,7 +203,9 @@ public class TerminalMcpServer implements McpServer {
                 if (success) {
                     mPendingTerminalSessions.set(termSession);
                     String info = keyCode > 0 ? "keycode: " + keyCode : keystroke;
-                    return McpToolResult.success("Keystroke injected into terminal session #" + session.id + ": " + info);
+                    Map<String, Object> extras = new HashMap<>();
+                    extras.put("session_id", session.id);
+                    return McpToolResult.success("Keystroke injected into terminal session #" + session.id + ": " + info, extras);
                 } else {
                     return McpToolResult.error("Failed to inject keystroke.");
                 }
@@ -211,7 +218,9 @@ public class TerminalMcpServer implements McpServer {
 
                 String output = TerminalSessionManager.getInstance().readTerminalOutput(termSession, maxLines, startLine, tailOnly, grepPattern);
 
-                return McpToolResult.success(output);
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
+                return McpToolResult.success(output, extras);
 
             } else {
                 return McpToolResult.error("Unknown tool: " + toolName);

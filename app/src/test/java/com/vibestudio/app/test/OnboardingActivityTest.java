@@ -40,4 +40,31 @@ public class OnboardingActivityTest {
         Assert.assertEquals("Button should be visible", View.VISIBLE, btnNext.getVisibility());
         Assert.assertTrue("Button should be enabled", btnNext.isEnabled());
     }
+
+    @Test
+    public void testStep4VersionControlConfigurationLayoutAndControls() {
+        OnboardingActivity activity = Robolectric.buildActivity(OnboardingActivity.class)
+                .create()
+                .start()
+                .resume()
+                .get();
+
+        Button btnNext = activity.findViewById(R.id.btn_next);
+        Button btnBack = activity.findViewById(R.id.btn_back);
+        Button btnConfigGitUser = activity.findViewById(R.id.btn_config_git_user);
+        Button btnConfigSshKeys = activity.findViewById(R.id.btn_config_ssh_keys);
+        View step4Layout = activity.findViewById(R.id.step4_layout);
+
+        Assert.assertNotNull("btn_config_git_user should exist", btnConfigGitUser);
+        Assert.assertNotNull("btn_config_ssh_keys should exist", btnConfigSshKeys);
+        Assert.assertNotNull("step4_layout should exist", step4Layout);
+
+        // Navigate step 1 -> step 2
+        btnNext.performClick();
+        Assert.assertEquals("Back button should show 'Back' on step 2", "Back", btnBack.getText().toString());
+
+        // Navigate step 2 -> step 3
+        btnNext.performClick();
+        Assert.assertEquals("Next button should say 'Installing...'", "Installing...", btnNext.getText().toString());
+    }
 }
