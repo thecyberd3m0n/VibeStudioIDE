@@ -1,5 +1,7 @@
 package com.vibestudio.app.terminal;
 
+import com.vibestudio.app.db.DatabaseHelper;
+
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -65,6 +67,10 @@ public class TerminalSessionManager {
 
     public synchronized TerminalSession createSession(final Context context, String initialCwd) {
         if (context == null) return null;
+        DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
+        if (!dbHelper.isEnvInitialized()) {
+            throw new IllegalStateException("Cannot create TerminalSession before environment initialization!");
+        }
 
         try {
             File filesDir = context.getApplicationContext().getFilesDir();
@@ -662,6 +668,10 @@ public class TerminalSessionManager {
     public String runCommandSync(Context context, String command, File workingDir, int timeoutMs) {
         if (context == null || command == null || command.isEmpty()) {
             return null;
+        }
+        DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
+        if (!dbHelper.isEnvInitialized()) {
+            throw new IllegalStateException("Cannot run command on TerminalSessionManager before environment initialization!");
         }
         try {
             File filesDir = context.getApplicationContext().getFilesDir();

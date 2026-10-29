@@ -254,7 +254,7 @@ public class OnboardingActivity extends Activity {
         updateIndicator(mStep2Indicator, mStep2Title, mCurrentStep == 2, mCurrentStep > 2);
         updateIndicator(mStep3Indicator, mStep3Title, mCurrentStep == 3, mCurrentStep > 3 || mIsInstalled);
         if (mStep4Indicator != null && mStep4Title != null) {
-            boolean isGitConfigured = GitManager.getInstance().isGitUserConfigured(this);
+            boolean isGitConfigured = mIsInstalled && GitManager.getInstance().isGitUserConfigured(this);
             updateIndicator(mStep4Indicator, mStep4Title, mCurrentStep == 4, isGitConfigured);
         }
 
@@ -284,6 +284,7 @@ public class OnboardingActivity extends Activity {
     }
 
     public void checkGitConfigState() {
+        if (!mIsInstalled) return;
         boolean gitUserConfigured = GitManager.getInstance().isGitUserConfigured(this);
         boolean sshKeysConfigured = GitManager.getInstance().isSshKeyConfigured(this);
 
@@ -506,7 +507,7 @@ public class OnboardingActivity extends Activity {
                     mDbHelper.setSetting("env_prefix", usrDir.getAbsolutePath());
                     mDbHelper.setSetting("env_home", homeDir.getAbsolutePath());
                     mDbHelper.setSetting("env_shell", bashFile.getAbsolutePath());
-                    // mDbHelper.setEnvInitialized(true); // set when onboarding finished in navigateToMain
+                    mDbHelper.setEnvInitialized(true);
 
                     appendLog("[libtermux] LibTermux Environment setup complete!");
 
@@ -811,7 +812,7 @@ public class OnboardingActivity extends Activity {
 
     private void navigateToMain(Intent originalIntent) {
         if (mDbHelper != null) {
-            // mDbHelper.setEnvInitialized(true); // set when onboarding finished in navigateToMain
+            mDbHelper.setEnvInitialized(true);
         }
         Intent intent = new Intent(OnboardingActivity.this, MainActivity.class);
         if (originalIntent != null) {
@@ -1109,6 +1110,10 @@ public class OnboardingActivity extends Activity {
     }
 
     public void copySshPublicKeyToClipboard() {
+        if (!mIsInstalled) {
+            Toast.makeText(this, "No SSH key configured to copy", Toast.LENGTH_SHORT).show();
+            return;
+        }
         String pubKey = GitManager.getInstance().getSshPublicKey(this);
         if (pubKey != null && !pubKey.trim().isEmpty()) {
             try {
