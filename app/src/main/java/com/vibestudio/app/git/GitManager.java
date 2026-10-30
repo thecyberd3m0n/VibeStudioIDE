@@ -11,7 +11,9 @@ import com.vibestudio.app.terminal.TerminalSessionManager;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -260,70 +262,132 @@ public class GitManager {
     }
 
     public void syncRepository(Context context, File repoDir, GitCallback callback) {
-        String cmd = "pull && git --no-pager push";
+        String cmd = "git pull && git --no-pager push";
         runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
     public void setGitCredentials(Context context, String name, String email, File repoDir, GitCallback callback) {
-        String cmd = "config --global user.name " + quotePath(name) + " && git config --global user.email " + quotePath(email);
+        if (context != null && name != null && email != null) {
+            try {
+                File homeDir = new File(context.getFilesDir(), "home");
+                if (!homeDir.exists()) homeDir.mkdirs();
+                File gitConfig = new File(homeDir, ".gitconfig");
+
+                StringBuilder sb = new StringBuilder();
+                boolean inUserSection = false;
+                boolean writtenUserSection = false;
+
+                if (gitConfig.exists()) {
+                    try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            String trimmed = line.trim();
+                            if (trimmed.equalsIgnoreCase("[user]")) {
+                                inUserSection = true;
+                                writtenUserSection = true;
+                                sb.append("[user]\n");
+                                sb.append("\tname = ").append(name).append("\n");
+                                sb.append("\temail = ").append(email).append("\n");
+                            } else if (inUserSection && (trimmed.startsWith("name") || trimmed.startsWith("email"))) {
+                                // skip existing name/email lines inside [user]
+                            } else {
+                                if (trimmed.startsWith("[")) {
+                                    inUserSection = false;
+                                }
+                                sb.append(line).append("\n");
+                            }
+                        }
+                    }
+                }
+
+                if (!writtenUserSection) {
+                    sb.append("[user]\n");
+                    sb.append("\tname = ").append(name).append("\n");
+                    sb.append("\temail = ").append(email).append("\n");
+                }
+
+                try (FileOutputStream out = new FileOutputStream(gitConfig)) {
+                    out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
+                }
+            } catch (Exception e) {
+                LogViewerService.getInstance().w(TAG, "Failed to write .gitconfig directly", e);
+            }
+        }
+
+        String cmd = "git config --global user.name " + quotePath(name) + " && git config --global user.email " + quotePath(email);
         runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
     
-    public boolean isGitUserConfigured(Context context) {
-        if (context == null) return false;
-        File gitConfig = new File(context.getFilesDir(), "home/.gitconfig");
-        if (!gitConfig.exists()) {
-            gitConfig = new File("/data/data/" + context.getPackageName() + "/files/home/.gitconfig");
-        }
-        if (gitConfig.exists()) {
-            try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
-                String line;
-                boolean hasName = false;
-                boolean hasEmail = false;
-                while ((line = br.readLine()) != null) {
-                    String trimmed = line.trim();
-                    if (trimmed.startsWith("name =") || trimmed.startsWith("name=")) {
-                        String val = trimmed.substring(trimmed.indexOf("=") + 1).trim();
-                        if (!val.isEmpty()) hasName = true;
-                    }
-                    if (trimmed.startsWith("email =") || trimmed.startsWith("email=")) {
-                        String val = trimmed.substring(trimmed.indexOf("=") + 1).trim();
-                        if (!val.isEmpty()) hasEmail = true;
-                    }
-                }
-                if (hasName && hasEmail) return true;
-            } catch (Exception ignored) {}
-        }
-        String name = runGitCommandSync(context, "config --global user.name", null);
-        String email = runGitCommandSync(context, "config --global user.email", null);
-        return name != null && !name.trim().isEmpty() && !name.contains("error") && !name.contains("fatal")
-            && email != null && !email.trim().isEmpty() && !email.contains("error") && !email.contains("fatal");
+    private List<File> getGitConfigCandidateFiles(Context context) {
+        List<File> candidates = new ArrayList<>();
+        if (context == null) return candidates;
+        candidates.add(new File(context.getFilesDir(), "home/.gitconfig"));
+        candidates.add(new File("/data/data/" + context.getPackageName() + "/files/home/.gitconfig"));
+        candidates.add(new File("/data/user/0/" + context.getPackageName() + "/files/home/.gitconfig"));
+        return candidates;
     }
 
-    
+    private List<File> getSshCandidateDirs(Context context) {
+        List<File> candidates = new ArrayList<>();
+        if (context == null) return candidates;
+        candidates.add(new File(context.getFilesDir(), "home/.ssh"));
+        candidates.add(new File("/data/data/" + context.getPackageName() + "/files/home/.ssh"));
+        candidates.add(new File("/data/user/0/" + context.getPackageName() + "/files/home/.ssh"));
+        return candidates;
+    }
+
+    public boolean isGitUserConfigured(Context context) {
+        if (context == null) return false;
+        for (File gitConfig : getGitConfigCandidateFiles(context)) {
+            if (gitConfig.exists()) {
+                try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
+                    String line;
+                    boolean hasName = false;
+                    boolean hasEmail = false;
+                    while ((line = br.readLine()) != null) {
+                        String trimmed = line.trim();
+                        if (trimmed.startsWith("name =") || trimmed.startsWith("name=")) {
+                            String val = trimmed.substring(trimmed.indexOf("=") + 1).trim();
+                            if (!val.isEmpty()) hasName = true;
+                        }
+                        if (trimmed.startsWith("email =") || trimmed.startsWith("email=")) {
+                            String val = trimmed.substring(trimmed.indexOf("=") + 1).trim();
+                            if (!val.isEmpty()) hasEmail = true;
+                        }
+                    }
+                    if (hasName && hasEmail) return true;
+                } catch (Exception ignored) {}
+            }
+        }
+        String name = runGitCommandSync(context, "config --global user.name", null);
+        if (name == null || name.trim().isEmpty() || name.contains("error") || name.contains("fatal")) {
+            return false;
+        }
+        String email = runGitCommandSync(context, "config --global user.email", null);
+        return email != null && !email.trim().isEmpty() && !email.contains("error") && !email.contains("fatal");
+    }
+
     public String getSshPublicKey(Context context) {
         if (context == null) return null;
-        File sshDir = new File(context.getFilesDir(), "home/.ssh");
-        if (!sshDir.exists()) {
-            sshDir = new File("/data/data/" + context.getPackageName() + "/files/home/.ssh");
-        }
-        if (sshDir.exists() && sshDir.isDirectory()) {
-            String[] pubKeys = new String[]{"id_ed25519.pub", "id_rsa.pub", "id_ecdsa.pub", "id_dsa.pub"};
-            for (String pub : pubKeys) {
-                File k = new File(sshDir, pub);
-                if (k.exists() && k.length() > 0) {
-                    try (BufferedReader reader = new BufferedReader(new FileReader(k))) {
-                        StringBuilder sb = new StringBuilder();
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            sb.append(line).append("\n");
-                        }
-                        String keyStr = sb.toString().trim();
-                        if (!keyStr.isEmpty()) {
-                            return keyStr;
-                        }
-                    } catch (Exception ignored) {}
+        for (File sshDir : getSshCandidateDirs(context)) {
+            if (sshDir.exists() && sshDir.isDirectory()) {
+                String[] pubKeys = new String[]{"id_ed25519.pub", "id_rsa.pub", "id_ecdsa.pub", "id_dsa.pub"};
+                for (String pub : pubKeys) {
+                    File k = new File(sshDir, pub);
+                    if (k.exists() && k.length() > 0) {
+                        try (BufferedReader reader = new BufferedReader(new FileReader(k))) {
+                            StringBuilder sb = new StringBuilder();
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                sb.append(line).append("\n");
+                            }
+                            String keyStr = sb.toString().trim();
+                            if (!keyStr.isEmpty()) {
+                                return keyStr;
+                            }
+                        } catch (Exception ignored) {}
+                    }
                 }
             }
         }
@@ -332,16 +396,14 @@ public class GitManager {
 
     public boolean isSshKeyConfigured(Context context) {
         if (context == null) return false;
-        File sshDir = new File(context.getFilesDir(), "home/.ssh");
-        if (!sshDir.exists()) {
-            sshDir = new File("/data/data/" + context.getPackageName() + "/files/home/.ssh");
-        }
-        if (sshDir.exists() && sshDir.isDirectory()) {
-            String[] keys = new String[]{"id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"};
-            for (String key : keys) {
-                File k = new File(sshDir, key);
-                if (k.exists() && k.length() > 0) {
-                    return true;
+        for (File sshDir : getSshCandidateDirs(context)) {
+            if (sshDir.exists() && sshDir.isDirectory()) {
+                String[] keys = new String[]{"id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"};
+                for (String key : keys) {
+                    File k = new File(sshDir, key);
+                    if (k.exists() && k.length() > 0) {
+                        return true;
+                    }
                 }
             }
         }
@@ -394,7 +456,9 @@ public class GitManager {
             gitCmd = trimmed;
         } else if (trimmed.startsWith("git ")) {
             gitCmd = "git --no-pager " + trimmed.substring(4);
-        } else if (trimmed.startsWith("(") || trimmed.contains("|| git") || trimmed.contains("&& git") || trimmed.contains(";")) {
+        } else if (trimmed.startsWith("(") || trimmed.startsWith("mkdir") || trimmed.startsWith("chmod") 
+                || trimmed.startsWith("rm") || trimmed.startsWith("ssh-keygen") || trimmed.startsWith("echo")
+                || trimmed.contains("||") || trimmed.contains("&&") || trimmed.contains(";")) {
             gitCmd = trimmed;
         } else {
             gitCmd = "git --no-pager " + trimmed;
@@ -644,23 +708,21 @@ public class GitManager {
 
     public String getGitUserName(Context context) {
         if (context == null) return "";
-        File gitConfig = new File(context.getFilesDir(), "home/.gitconfig");
-        if (!gitConfig.exists()) {
-            gitConfig = new File("/data/data/" + context.getPackageName() + "/files/home/.gitconfig");
-        }
-        if (gitConfig.exists()) {
-            try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String trimmed = line.trim();
-                    if (trimmed.startsWith("name =") || trimmed.startsWith("name=")) {
-                        return trimmed.substring(trimmed.indexOf("=") + 1).trim();
+        for (File gitConfig : getGitConfigCandidateFiles(context)) {
+            if (gitConfig.exists()) {
+                try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        String trimmed = line.trim();
+                        if (trimmed.startsWith("name =") || trimmed.startsWith("name=")) {
+                            return trimmed.substring(trimmed.indexOf("=") + 1).trim();
+                        }
                     }
-                }
-            } catch (Exception ignored) {}
+                } catch (Exception ignored) {}
+            }
         }
         String name = runGitCommandSync(context, "config --global user.name", null);
-        if (name != null && !name.contains("error") && !name.contains("fatal")) {
+        if (name != null && !name.trim().isEmpty() && !name.contains("error") && !name.contains("fatal")) {
             return name.trim();
         }
         return "";
@@ -668,30 +730,38 @@ public class GitManager {
 
     public String getGitUserEmail(Context context) {
         if (context == null) return "";
-        File gitConfig = new File(context.getFilesDir(), "home/.gitconfig");
-        if (!gitConfig.exists()) {
-            gitConfig = new File("/data/data/" + context.getPackageName() + "/files/home/.gitconfig");
-        }
-        if (gitConfig.exists()) {
-            try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String trimmed = line.trim();
-                    if (trimmed.startsWith("email =") || trimmed.startsWith("email=")) {
-                        return trimmed.substring(trimmed.indexOf("=") + 1).trim();
+        for (File gitConfig : getGitConfigCandidateFiles(context)) {
+            if (gitConfig.exists()) {
+                try (BufferedReader br = new BufferedReader(new FileReader(gitConfig))) {
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        String trimmed = line.trim();
+                        if (trimmed.startsWith("email =") || trimmed.startsWith("email=")) {
+                            return trimmed.substring(trimmed.indexOf("=") + 1).trim();
+                        }
                     }
-                }
-            } catch (Exception ignored) {}
+                } catch (Exception ignored) {}
+            }
         }
         String email = runGitCommandSync(context, "config --global user.email", null);
-        if (email != null && !email.contains("error") && !email.contains("fatal")) {
+        if (email != null && !email.trim().isEmpty() && !email.contains("error") && !email.contains("fatal")) {
             return email.trim();
         }
         return "";
     }
 
     public void generateSshKey(Context context, GitCallback callback) {
-        String cmd = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && ssh-keygen -t ed25519 -C \"vibestudio@termux\" -N \"\" -f ~/.ssh/id_ed25519";
+        generateSshKey(context, null, null, callback);
+    }
+
+    public void generateSshKey(Context context, String passphrase, GitCallback callback) {
+        generateSshKey(context, passphrase, null, callback);
+    }
+
+    public void generateSshKey(Context context, String passphrase, String comment, GitCallback callback) {
+        String pass = (passphrase != null) ? passphrase : "";
+        String comm = (comment != null && !comment.trim().isEmpty()) ? comment.trim() : "vibestudio@termux";
+        String cmd = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && rm -f ~/.ssh/id_ed25519 ~/.ssh/id_ed25519.pub && ssh-keygen -t ed25519 -C " + quotePath(comm) + " -N " + quotePath(pass) + " -f ~/.ssh/id_ed25519";
         runGitCommandAsync(context, cmd, null, callback);
     }
 

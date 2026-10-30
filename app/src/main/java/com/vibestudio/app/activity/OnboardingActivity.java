@@ -9,6 +9,7 @@ import com.vibestudio.app.git.GitManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.text.InputType;
 import android.widget.EditText;
 
 import com.libtermux.LibTermux;
@@ -19,6 +20,7 @@ import com.libtermux.bootstrap.InstallState;
 import android.widget.Toast;
 import com.vibestudio.app.util.IntentUtils;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -29,6 +31,7 @@ import android.system.Os;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -95,20 +98,20 @@ public class OnboardingActivity extends Activity {
     private View mStep1Layout;
     private View mStep2Layout;
     private View mStep3Layout;
-    private View mStep4Layout;
 
     private TextView mStep1Indicator;
     private TextView mStep2Indicator;
     private TextView mStep3Indicator;
-    private TextView mStep4Indicator;
 
     private TextView mStep1Title;
     private TextView mStep2Title;
     private TextView mStep3Title;
-    private TextView mStep4Title;
 
     private Button mBtnConfigGitUser;
+    private TextView mTxtGitUserCheckmark;
+    private TextView mTxtGitUserCredentials;
     private Button mBtnConfigSshKeys;
+    private TextView mTxtSshKeysCheckmark;
     private EditText mTxtSshPublicKey;
     private Button mBtnCopySshKey;
 
@@ -154,20 +157,20 @@ public class OnboardingActivity extends Activity {
             mStep1Layout = findViewById(R.id.step1_layout);
             mStep2Layout = findViewById(R.id.step2_layout);
             mStep3Layout = findViewById(R.id.step3_layout);
-            mStep4Layout = findViewById(R.id.step4_layout);
 
             mStep1Indicator = (TextView) findViewById(R.id.step1_indicator);
             mStep2Indicator = (TextView) findViewById(R.id.step2_indicator);
             mStep3Indicator = (TextView) findViewById(R.id.step3_indicator);
-            mStep4Indicator = (TextView) findViewById(R.id.step4_indicator);
 
             mStep1Title = (TextView) findViewById(R.id.step1_title);
             mStep2Title = (TextView) findViewById(R.id.step2_title);
             mStep3Title = (TextView) findViewById(R.id.step3_title);
-            mStep4Title = (TextView) findViewById(R.id.step4_title);
 
             mBtnConfigGitUser = (Button) findViewById(R.id.btn_config_git_user);
+            mTxtGitUserCheckmark = (TextView) findViewById(R.id.txt_git_user_checkmark);
+            mTxtGitUserCredentials = (TextView) findViewById(R.id.txt_git_user_credentials);
             mBtnConfigSshKeys = (Button) findViewById(R.id.btn_config_ssh_keys);
+            mTxtSshKeysCheckmark = (TextView) findViewById(R.id.txt_ssh_keys_checkmark);
             mTxtSshPublicKey = (EditText) findViewById(R.id.txt_ssh_public_key);
             mBtnCopySshKey = (Button) findViewById(R.id.btn_copy_ssh_key);
 
@@ -210,16 +213,18 @@ public class OnboardingActivity extends Activity {
             mBtnNext.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    if (mCurrentStep < 4) {
-                        if (mCurrentStep == 3 && !mIsInstalled) {
+                    if (mCurrentStep < 3) {
+                        if (mCurrentStep == 2 && !mIsInstalled) {
                             return;
                         }
                         mCurrentStep++;
                         updateStepUi();
-                        if (mCurrentStep == 3 && !mIsInstalled && !mIsInstalling) {
-                            startEnvironmentInstallation();
+                        if (mCurrentStep == 2 && !mIsInstalled && !mIsInstalling) {
+                            installTermux2ndStep();
+                        } else if (mCurrentStep == 3) {
+                            configureGit3rdStep();
                         }
-                    } else if (mCurrentStep == 4) {
+                    } else if (mCurrentStep == 3) {
                         navigateToMain();
                     }
                 }
@@ -228,7 +233,7 @@ public class OnboardingActivity extends Activity {
             mBtnBack.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    if (mCurrentStep == 4) {
+                    if (mCurrentStep == 3) {
                         navigateToMain();
                     } else if (mCurrentStep > 1 && !mIsInstalling) {
                         mCurrentStep--;
@@ -246,19 +251,14 @@ public class OnboardingActivity extends Activity {
         mStep1Layout.setVisibility(mCurrentStep == 1 ? View.VISIBLE : View.GONE);
         mStep2Layout.setVisibility(mCurrentStep == 2 ? View.VISIBLE : View.GONE);
         mStep3Layout.setVisibility(mCurrentStep == 3 ? View.VISIBLE : View.GONE);
-        if (mStep4Layout != null) {
-            mStep4Layout.setVisibility(mCurrentStep == 4 ? View.VISIBLE : View.GONE);
-        }
 
         updateIndicator(mStep1Indicator, mStep1Title, mCurrentStep == 1, mCurrentStep > 1);
-        updateIndicator(mStep2Indicator, mStep2Title, mCurrentStep == 2, mCurrentStep > 2);
-        updateIndicator(mStep3Indicator, mStep3Title, mCurrentStep == 3, mCurrentStep > 3 || mIsInstalled);
-        if (mStep4Indicator != null && mStep4Title != null) {
-            boolean isGitConfigured = mIsInstalled && GitManager.getInstance().isGitUserConfigured(this);
-            updateIndicator(mStep4Indicator, mStep4Title, mCurrentStep == 4, isGitConfigured);
+        updateIndicator(mStep2Indicator, mStep2Title, mCurrentStep == 2, mCurrentStep > 2 || mIsInstalled);
+        if (mStep3Indicator != null && mStep3Title != null) {
+            updateIndicator(mStep3Indicator, mStep3Title, mCurrentStep == 3, false);
         }
 
-        if (mCurrentStep == 4) {
+        if (mCurrentStep == 3) {
             mBtnBack.setText("Later");
             mBtnBack.setVisibility(View.VISIBLE);
         } else {
@@ -266,10 +266,10 @@ public class OnboardingActivity extends Activity {
             mBtnBack.setVisibility(mCurrentStep > 1 && !mIsInstalling ? View.VISIBLE : View.INVISIBLE);
         }
 
-        if (mCurrentStep < 3) {
+        if (mCurrentStep == 1) {
             mBtnNext.setText("Next");
             mBtnNext.setEnabled(true);
-        } else if (mCurrentStep == 3) {
+        } else if (mCurrentStep == 2) {
             if (mIsInstalled) {
                 mBtnNext.setText("Next");
                 mBtnNext.setEnabled(true);
@@ -277,67 +277,218 @@ public class OnboardingActivity extends Activity {
                 mBtnNext.setText("Installing...");
                 mBtnNext.setEnabled(false);
             }
-        } else if (mCurrentStep == 4) {
+        } else if (mCurrentStep == 3) {
             mBtnNext.setText("Finish & Launch");
-            checkGitConfigState();
         }
     }
 
-    public void checkGitConfigState() {
+    public void configureGit3rdStep() {
         if (!mIsInstalled) return;
-        boolean gitUserConfigured = GitManager.getInstance().isGitUserConfigured(this);
-        boolean sshKeysConfigured = GitManager.getInstance().isSshKeyConfigured(this);
 
-        if (mBtnConfigGitUser != null) {
-            if (gitUserConfigured) {
-                mBtnConfigGitUser.setText("Done");
-                mBtnConfigGitUser.setEnabled(false);
-                mBtnConfigGitUser.setBackgroundResource(R.drawable.bg_btn_secondary);
-            } else {
-                mBtnConfigGitUser.setText("Configure");
-                mBtnConfigGitUser.setEnabled(true);
-                mBtnConfigGitUser.setBackgroundResource(R.drawable.bg_btn_primary);
-            }
-        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final boolean gitUserConfigured = GitManager.getInstance().isGitUserConfigured(OnboardingActivity.this);
+                final boolean sshKeysConfigured = GitManager.getInstance().isSshKeyConfigured(OnboardingActivity.this);
+                final String gitUserName = GitManager.getInstance().getGitUserName(OnboardingActivity.this);
+                final String gitUserEmail = GitManager.getInstance().getGitUserEmail(OnboardingActivity.this);
+                final String pubKey = GitManager.getInstance().getSshPublicKey(OnboardingActivity.this);
 
-        if (mBtnConfigSshKeys != null) {
-            if (sshKeysConfigured) {
-                mBtnConfigSshKeys.setText("Done");
-                mBtnConfigSshKeys.setEnabled(false);
-                mBtnConfigSshKeys.setBackgroundResource(R.drawable.bg_btn_secondary);
-            } else {
-                mBtnConfigSshKeys.setText("Configure");
-                mBtnConfigSshKeys.setEnabled(true);
-                mBtnConfigSshKeys.setBackgroundResource(R.drawable.bg_btn_primary);
-            }
-        }
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (mStep3Indicator != null && mStep3Title != null) {
+                            updateIndicator(mStep3Indicator, mStep3Title, mCurrentStep == 3, gitUserConfigured);
+                        }
 
-        String pubKey = GitManager.getInstance().getSshPublicKey(this);
-        if (mTxtSshPublicKey != null) {
-            if (pubKey != null && !pubKey.trim().isEmpty()) {
-                mTxtSshPublicKey.setText(pubKey);
-            } else {
-                mTxtSshPublicKey.setText("not configured");
-            }
-        }
+                        if (mBtnConfigGitUser != null) {
+                            if (gitUserConfigured) {
+                                mBtnConfigGitUser.setText("Configured");
+                                mBtnConfigGitUser.setEnabled(false);
+                                mBtnConfigGitUser.setBackgroundResource(R.drawable.bg_btn_secondary);
+                            } else {
+                                mBtnConfigGitUser.setText("Configure");
+                                mBtnConfigGitUser.setEnabled(true);
+                                mBtnConfigGitUser.setBackgroundResource(R.drawable.bg_btn_primary);
+                            }
+                        }
 
-        if (mCurrentStep == 4) {
-            if (gitUserConfigured) {
-                mBtnNext.setEnabled(true);
-                mBtnNext.setBackgroundResource(R.drawable.bg_btn_primary);
-            } else {
-                mBtnNext.setEnabled(false);
-                mBtnNext.setBackgroundResource(R.drawable.bg_btn_secondary);
+                        if (mTxtGitUserCheckmark != null) {
+                            mTxtGitUserCheckmark.setVisibility(gitUserConfigured ? View.VISIBLE : View.GONE);
+                        }
+
+                        if (mTxtGitUserCredentials != null) {
+                            if (gitUserConfigured && gitUserName != null && !gitUserName.isEmpty() && gitUserEmail != null && !gitUserEmail.isEmpty()) {
+                                mTxtGitUserCredentials.setText("👤 " + gitUserName + " <" + gitUserEmail + ">");
+                                mTxtGitUserCredentials.setVisibility(View.VISIBLE);
+                            } else {
+                                mTxtGitUserCredentials.setVisibility(View.GONE);
+                            }
+                        }
+
+                        if (mBtnConfigSshKeys != null) {
+                            if (sshKeysConfigured) {
+                                mBtnConfigSshKeys.setText("Configured");
+                                mBtnConfigSshKeys.setEnabled(false);
+                                mBtnConfigSshKeys.setBackgroundResource(R.drawable.bg_btn_secondary);
+                            } else {
+                                mBtnConfigSshKeys.setText("Configure");
+                                mBtnConfigSshKeys.setEnabled(true);
+                                mBtnConfigSshKeys.setBackgroundResource(R.drawable.bg_btn_primary);
+                            }
+                        }
+
+                        if (mTxtSshKeysCheckmark != null) {
+                            mTxtSshKeysCheckmark.setVisibility(sshKeysConfigured ? View.VISIBLE : View.GONE);
+                        }
+
+                        if (mTxtSshPublicKey != null) {
+                            if (pubKey != null && !pubKey.trim().isEmpty()) {
+                                mTxtSshPublicKey.setText(pubKey);
+                            } else {
+                                mTxtSshPublicKey.setText("not configured");
+                            }
+                        }
+
+                        if (mCurrentStep == 3) {
+                            if (gitUserConfigured) {
+                                mBtnNext.setEnabled(true);
+                                mBtnNext.setBackgroundResource(R.drawable.bg_btn_primary);
+                            } else {
+                                mBtnNext.setEnabled(false);
+                                mBtnNext.setBackgroundResource(R.drawable.bg_btn_secondary);
+                            }
+                        }
+                    }
+                });
             }
-        }
+        }).start();
     }
 
     public void onConfigureGitUserRequested() {
-        checkGitConfigState();
+        if (!mIsInstalled) {
+            Toast.makeText(this, "Environment is not installed yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
+        builder.setTitle("Configure Git User");
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(40, 20, 40, 20);
+
+        final EditText inputName = new EditText(this);
+        inputName.setHint("Name (e.g. John Doe)");
+        inputName.setTextColor(Color.WHITE);
+        inputName.setHintTextColor(Color.GRAY);
+        layout.addView(inputName);
+
+        final EditText inputEmail = new EditText(this);
+        inputEmail.setHint("Email (e.g. john@example.com)");
+        inputEmail.setTextColor(Color.WHITE);
+        inputEmail.setHintTextColor(Color.GRAY);
+        inputEmail.setInputType(InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        layout.addView(inputEmail);
+
+        String currentName = GitManager.getInstance().getGitUserName(this);
+        String currentEmail = GitManager.getInstance().getGitUserEmail(this);
+        if (currentName != null && !currentName.isEmpty()) {
+            inputName.setText(currentName);
+        }
+        if (currentEmail != null && !currentEmail.isEmpty()) {
+            inputEmail.setText(currentEmail);
+        }
+
+        builder.setView(layout);
+
+        builder.setPositiveButton("Save", (dialog, which) -> {
+            String name = inputName.getText().toString().trim();
+            String email = inputEmail.getText().toString().trim();
+
+            if (name.isEmpty() || email.isEmpty()) {
+                Toast.makeText(OnboardingActivity.this, "Please fill in both name and email", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            Toast.makeText(OnboardingActivity.this, "Configuring Git credentials...", Toast.LENGTH_SHORT).show();
+            GitManager.getInstance().setGitCredentials(OnboardingActivity.this, name, email, null, (success, output) -> {
+                runOnUiThread(() -> {
+                    boolean isConfigured = GitManager.getInstance().isGitUserConfigured(OnboardingActivity.this);
+                    if (success || isConfigured) {
+                        Toast.makeText(OnboardingActivity.this, "Git credentials saved!", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(OnboardingActivity.this, "Failed to set Git credentials: " + output, Toast.LENGTH_LONG).show();
+                    }
+                    configureGit3rdStep();
+                });
+            });
+        });
+
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+
+        builder.show();
     }
 
     public void onConfigureSshKeysRequested() {
-        checkGitConfigState();
+        if (!mIsInstalled) {
+            Toast.makeText(this, "Environment is not installed yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (GitManager.getInstance().isSshKeyConfigured(this)) {
+            Toast.makeText(this, "SSH Key is already configured", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
+        builder.setTitle("Generate SSH Key");
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(40, 20, 40, 20);
+
+        TextView message = new TextView(this);
+        message.setText("Generate a new ed25519 SSH key pair for remote Git authentication.");
+        message.setTextColor(Color.LTGRAY);
+        message.setTextSize(13);
+        message.setPadding(0, 0, 0, 20);
+        layout.addView(message);
+
+        final EditText inputComment = new EditText(this);
+        inputComment.setHint("Comment / Hostname (e.g. vibestudio@termux)");
+        inputComment.setText("vibestudio@termux");
+        inputComment.setTextColor(Color.WHITE);
+        inputComment.setHintTextColor(Color.GRAY);
+        layout.addView(inputComment);
+
+        final EditText inputPassphrase = new EditText(this);
+        inputPassphrase.setHint("Passphrase (optional)");
+        inputPassphrase.setTextColor(Color.WHITE);
+        inputPassphrase.setHintTextColor(Color.GRAY);
+        inputPassphrase.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        layout.addView(inputPassphrase);
+
+        builder.setView(layout);
+
+        builder.setPositiveButton("Generate", (dialog, which) -> {
+            String comment = inputComment.getText().toString().trim();
+            String passphrase = inputPassphrase.getText().toString();
+            Toast.makeText(OnboardingActivity.this, "Generating SSH key...", Toast.LENGTH_SHORT).show();
+            GitManager.getInstance().generateSshKey(OnboardingActivity.this, passphrase, comment, (success, output) -> {
+                runOnUiThread(() -> {
+                    if (success || GitManager.getInstance().isSshKeyConfigured(OnboardingActivity.this)) {
+                        Toast.makeText(OnboardingActivity.this, "SSH key generated!", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(OnboardingActivity.this, "Failed to generate SSH key", Toast.LENGTH_SHORT).show();
+                    }
+                    configureGit3rdStep();
+                });
+            });
+        });
+
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
     }
 
     private void updateIndicator(TextView indicator, TextView title, boolean isActive, boolean isDone) {
@@ -386,7 +537,7 @@ public class OnboardingActivity extends Activity {
         });
     }
 
-    private void startEnvironmentInstallation() {
+    private void installTermux2ndStep() {
         mIsInstalling = true;
         mBtnBack.setVisibility(View.INVISIBLE);
         mBtnNext.setEnabled(false);
@@ -510,6 +661,8 @@ public class OnboardingActivity extends Activity {
                     mDbHelper.setEnvInitialized(true);
 
                     appendLog("[libtermux] LibTermux Environment setup complete!");
+                    
+                    GitManager.getInstance().ensureGitSession(OnboardingActivity.this);
 
                     mHandler.post(new Runnable() {
                         @Override

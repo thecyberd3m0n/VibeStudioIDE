@@ -27,6 +27,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.Map;
 import java.util.Set;
@@ -42,7 +45,7 @@ public class TerminalSessionManager {
     private static final String TAG = "TerminalSessionManager";
     private static TerminalSessionManager sInstance;
 
-    private final Object mCommandLock = new Object();
+    private final Map<TerminalSession, ExecutorService> mSessionExecutors = new WeakHashMap<>();
     private final Map<TerminalSession, TerminalView> mViews = new WeakHashMap<>();
     private final Set<TerminalSession> mActiveSessions = Collections.synchronizedSet(new HashSet<>());
     private Context mAppContext;
@@ -52,6 +55,21 @@ public class TerminalSessionManager {
 
     public void setSessionEventListener(SessionEventListener listener) {
         mSessionEventListener = listener;
+    }
+
+    private ExecutorService getSessionExecutor(TerminalSession session) {
+        synchronized (mSessionExecutors) {
+            ExecutorService executor = mSessionExecutors.get(session);
+            if (executor == null) {
+                executor = Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r);
+                    t.setName("TerminalSessionCmd-" + session.mHandle);
+                    return t;
+                });
+                mSessionExecutors.put(session, executor);
+            }
+            return executor;
+        }
     }
 
     public static synchronized TerminalSessionManager getInstance() {
@@ -139,6 +157,9 @@ public class TerminalSessionManager {
                     if (view != null) {
                         view.post(view::onScreenUpdated);
                     }
+                    synchronized (changedSession) {
+                        changedSession.notifyAll();
+                    }
                 }
 
                 @Override
@@ -220,7 +241,7 @@ public class TerminalSessionManager {
                     10000,
                     sessionClient
             );
-            session.updateSize(80, 24, 0, 0);
+            session.initializeEmulator(80, 24, 0, 0);
 
             mAppContext = context.getApplicationContext();
             mActiveSessions.add(session);
@@ -577,12 +598,17 @@ public class TerminalSessionManager {
     }
 
     public String runCommandOnSessionSync(TerminalSession session, String command, int timeoutMs) {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            LogViewerService.getInstance().w(TAG, "runCommandOnSessionSync called on Main Thread! Returning null to prevent deadlock.");
+            return null;
+        }
+
         if (session == null || !session.isRunning() || command == null || command.isEmpty()) {
             return null;
         }
 
-        synchronized (mCommandLock) {
-            try {
+        try {
+            Future<String> future = getSessionExecutor(session).submit(() -> {
                 long startTime = System.currentTimeMillis();
                 String startMarker = "___CMD_START_" + System.currentTimeMillis() + "_" + ((int) (Math.random() * 10000)) + "___";
                 String endMarker = "___CMD_END_" + System.currentTimeMillis() + "_" + ((int) (Math.random() * 10000)) + "___";
@@ -593,11 +619,13 @@ public class TerminalSessionManager {
 
                 String capturedOutput = null;
                 while (System.currentTimeMillis() - startTime < timeoutMs) {
-                    try {
-                        Thread.sleep(50);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
+                    synchronized (session) {
+                        try {
+                            session.wait(50);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
                     }
 
                     String fullTranscript = getSessionOutput(session);
@@ -620,13 +648,13 @@ public class TerminalSessionManager {
                         }
                     }
                 }
-
                 return capturedOutput;
-            } catch (Exception e) {
-                LogViewerService.getInstance().e(TAG, "Error executing command on TerminalSession", e);
-            }
+            });
+            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            LogViewerService.getInstance().e(TAG, "Error executing command on TerminalSession", e);
+            return null;
         }
-        return null;
     }
 
     public String getSessionOutput(TerminalSession session) {
