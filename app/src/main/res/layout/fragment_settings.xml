@@ -44,7 +44,11 @@
             android:layout_height="-1px"
             android:layout_weight="1"
             android:gravity="center"
-            android:text="🌿 Git"
+            android:drawableStart="@drawable/ic_git_repo"
+            android:drawablePadding="6dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Git"
             android:textColor="#A0A0A0"
             android:textSize="14sp"
             android:background="#1E1E28"/>

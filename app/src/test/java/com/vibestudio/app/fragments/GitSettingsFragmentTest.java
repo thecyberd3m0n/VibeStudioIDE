@@ -43,7 +43,7 @@ public class GitSettingsFragmentTest {
 
         TextView btnGit = root.findViewById(R.id.btn_settings_git);
         Assert.assertNotNull("Git tab button in settings header should exist", btnGit);
-        Assert.assertEquals("🌿 Git", btnGit.getText().toString());
+        Assert.assertEquals("Git", btnGit.getText().toString());
 
         btnGit.performClick();
         ShadowLooper.idleMainLooper();

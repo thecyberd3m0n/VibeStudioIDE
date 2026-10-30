@@ -15,6 +15,7 @@ import org.robolectric.annotation.Config;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28)
@@ -65,6 +66,21 @@ public class GitManagerTest {
     }
 
     @Test
+    public void testIsGitAuthRequiredError() {
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("fatal: could not read Username for 'https://github.com': No such device or address"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("fatal: Authentication failed for 'https://github.com/user/repo.git/'"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("Username for 'https://github.com':"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("Password for 'https://user@github.com':"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("fatal: prompt failed: terminal prompts disabled"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("HTTP 401 Unauthorized"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("HTTP 403 Forbidden"));
+
+        Assert.assertFalse(GitManager.isGitAuthRequiredError("Cloning into 'repo'..."));
+        Assert.assertFalse(GitManager.isGitAuthRequiredError("fatal: repository 'https://github.com/nonexistent/repo.git/' not found"));
+        Assert.assertFalse(GitManager.isGitAuthRequiredError(null));
+    }
+
+    @Test
     public void testIsGitUserConfiguredWithMockGitconfig() throws IOException {
         File homeDir = new File(context.getFilesDir(), "home");
         if (!homeDir.exists()) homeDir.mkdirs();
@@ -72,7 +88,7 @@ public class GitManagerTest {
 
         if (gitConfigFile.exists()) gitConfigFile.delete();
 
-        java.nio.file.Files.write(gitConfigFile.toPath(), "[user]\n\tname = Vibe Developer\n\temail = dev@vibestudio.app\n".getBytes());
+        Files.write(gitConfigFile.toPath(), "[user]\n\tname = Vibe Developer\n\temail = dev@vibestudio.app\n".getBytes());
         boolean configured = gitManager.isGitUserConfigured(context);
         Assert.assertTrue("isGitUserConfigured should be true when .gitconfig has name and email", configured);
 
@@ -95,7 +111,7 @@ public class GitManagerTest {
 
         sshDir.mkdirs();
         File idRsa = new File(sshDir, "id_rsa");
-        java.nio.file.Files.write(idRsa.toPath(), "-----BEGIN OPENSSH PRIVATE KEY-----\n".getBytes());
+        Files.write(idRsa.toPath(), "-----BEGIN OPENSSH PRIVATE KEY-----\n".getBytes());
 
         Assert.assertTrue("isSshKeyConfigured should be true when id_rsa exists", gitManager.isSshKeyConfigured(context));
 
