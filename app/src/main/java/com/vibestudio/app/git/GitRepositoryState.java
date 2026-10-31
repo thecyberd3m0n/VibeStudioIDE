@@ -11,6 +11,9 @@ public class GitRepositoryState {
     public int behind = 0;
     public List<GitStatusView.GitFileStatus> stagedFiles = new ArrayList<>();
     public List<GitStatusView.GitFileStatus> unstagedFiles = new ArrayList<>();
+    public List<GitStatusView.GitFileStatus> conflictedFiles = new ArrayList<>();
+    /** "merge", "rebase", "cherry-pick" or "revert" while such an operation is stopped midway; otherwise null. */
+    public String operationInProgress;
     public int totalAdditions = 0;
     public int totalDeletions = 0;
     public boolean isValid = true;
@@ -22,6 +25,18 @@ public class GitRepositoryState {
 
     public boolean hasChanges() {
         return !stagedFiles.isEmpty() || !unstagedFiles.isEmpty();
+    }
+
+    public boolean hasConflicts() {
+        return conflictedFiles != null && !conflictedFiles.isEmpty();
+    }
+
+    public boolean hasOperationInProgress() {
+        return operationInProgress != null;
+    }
+
+    public boolean hasStagedChanges() {
+        return stagedFiles != null && !stagedFiles.isEmpty();
     }
 
     public boolean needsSync() {

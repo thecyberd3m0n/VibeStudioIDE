@@ -3,6 +3,8 @@ package com.vibestudio.app.service;
 import android.os.Process;
 import android.util.Log;
 
+import com.vibestudio.app.logging.SessionLogger;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.text.SimpleDateFormat;
@@ -12,6 +14,8 @@ import java.util.Date;
 import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 public class LogViewerService {
 
@@ -23,6 +27,8 @@ public class LogViewerService {
     private final Deque<String> mLogBuffer = new ArrayDeque<>();
     private int mCurrentSizeBytes = 0;
     private final List<OnLogListener> mListeners = new ArrayList<>();
+
+    private final Map<String, SessionLogger> mChannels = new LinkedHashMap<>();
 
     private Thread mLogcatThread;
     private volatile boolean mIsLogcatRunning = false;
@@ -136,6 +142,20 @@ public class LogViewerService {
     public synchronized void e(String tag, String message, Throwable t) {
         String msg = message + (t != null ? "\n" + Log.getStackTraceString(t) : "");
         log("ERROR", tag, msg);
+    }
+
+    /** Returns the per-session PTY log channel for the label, creating it on first use. */
+    public synchronized SessionLogger getOrCreateChannel(String label) {
+        SessionLogger channel = mChannels.get(label);
+        if (channel == null) {
+            channel = new SessionLogger(label);
+            mChannels.put(label, channel);
+        }
+        return channel;
+    }
+
+    public synchronized List<SessionLogger> getChannels() {
+        return new ArrayList<>(mChannels.values());
     }
 
     public synchronized List<String> getLogList() {

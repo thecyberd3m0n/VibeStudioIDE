@@ -30,14 +30,13 @@ import com.termux.terminal.TerminalSession;
 import com.vibestudio.app.R;
 import com.vibestudio.app.git.GitManager;
 import com.vibestudio.app.service.LogViewerService;
-import com.vibestudio.app.terminal.TerminalSessionManager;
+import com.vibestudio.app.logging.SessionLogger;
 import com.vibestudio.app.util.FontUtils;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
-public class LogViewerFragment extends Fragment implements LogViewerService.OnLogListener {
+public class LogViewerFragment extends Fragment implements LogViewerService.OnLogListener, SessionLogger.Listener {
 
     private static final int MATCH_PARENT = ViewGroup.LayoutParams.MATCH_PARENT;
     private static final int WRAP_CONTENT = ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -45,7 +44,7 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     private enum Mode {
         PROCESS_LIST,
         GLOBAL_LOGCAT,
-        GIT_PTY
+        SESSION_CHANNEL
     }
 
     private View mContainerProcessList;
@@ -63,6 +62,7 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     private Mode mCurrentMode = Mode.PROCESS_LIST;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private LogViewerService mLogService;
+    private SessionLogger mCurrentChannel;
 
     @Nullable
     @Override
@@ -97,7 +97,8 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
                 Context context = getContext();
                 if (context != null && mLogAdapter != null) {
                     ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
-                    String label = mCurrentMode == Mode.GLOBAL_LOGCAT ? "VibeStudio Logcat" : "VibeStudio Git PTY Logs";
+                    String label = mCurrentMode == Mode.GLOBAL_LOGCAT || mCurrentChannel == null
+                            ? "VibeStudio Logcat" : "VibeStudio " + mCurrentChannel.getLabel();
                     ClipData clip = ClipData.newPlainText(label, mLogAdapter.getAllText());
                     if (clipboard != null) {
                         clipboard.setPrimaryClip(clip);
@@ -111,10 +112,8 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
             mBtnClear.setOnClickListener(v -> {
                 if (mCurrentMode == Mode.GLOBAL_LOGCAT) {
                     mLogService.clear();
-                } else if (mCurrentMode == Mode.GIT_PTY) {
-                    if (mLogAdapter != null) {
-                        mLogAdapter.setLines(Arrays.asList("(PTY log cleared)"));
-                    }
+                } else if (mCurrentMode == Mode.SESSION_CHANNEL && mCurrentChannel != null) {
+                    mCurrentChannel.clear();
                 }
             });
         }
@@ -126,27 +125,22 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     @Override
     public void onStart() {
         super.onStart();
-        if (mCurrentMode == Mode.GLOBAL_LOGCAT || mCurrentMode == Mode.GIT_PTY) {
+        if (mCurrentMode == Mode.GLOBAL_LOGCAT || mCurrentMode == Mode.SESSION_CHANNEL) {
             reloadCurrentLogDetail();
-            if (mLogService != null) {
-                mLogService.addListener(this);
-            }
+            attachListeners();
         }
     }
 
     @Override
     public void onStop() {
         super.onStop();
-        if (mLogService != null) {
-            mLogService.removeListener(this);
-        }
+        detachListeners();
     }
 
     private void showProcessList() {
         mCurrentMode = Mode.PROCESS_LIST;
-        if (mLogService != null) {
-            mLogService.removeListener(this);
-        }
+        detachListeners();
+        mCurrentChannel = null;
         if (mContainerProcessList != null) mContainerProcessList.setVisibility(View.VISIBLE);
         if (mContainerLogDetail != null) mContainerLogDetail.setVisibility(View.GONE);
 
@@ -165,14 +159,20 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         addProcessCard(context, "Global Logcat", "System & app stdout/stderr (~5KB max)",
                 globalPid, globalPath, true, () -> openLogDetail(Mode.GLOBAL_LOGCAT));
 
-        // 2. Git Managed PTY Process Entry
-        TerminalSession gitSession = GitManager.getInstance().getGitSession();
-        int gitPid = (gitSession != null && gitSession.isRunning()) ? gitSession.getPid() : -1;
-        String gitCwd = (gitSession != null && gitSession.getCwd() != null) ? gitSession.getCwd() : "N/A";
-        boolean gitRunning = gitSession != null && gitSession.isRunning();
-
-        addProcessCard(context, "Git Service", "Dedicated background Git PTY session",
-                gitPid, gitCwd, gitRunning, () -> openLogDetail(Mode.GIT_PTY));
+        // 2. One entry per managed PTY session; GitManager registers its channel on first use.
+        GitManager.getInstance().getGitLogger();
+        for (SessionLogger channel : mLogService.getChannels()) {
+            boolean isGit = GitManager.GIT_SESSION_LABEL.equals(channel.getLabel());
+            TerminalSession session = isGit ? GitManager.getInstance().getGitSession() : null;
+            boolean running = session != null && session.isRunning();
+            int pid = running ? session.getPid() : -1;
+            String cwd = session != null && session.getCwd() != null ? session.getCwd() : "N/A";
+            addProcessCard(context, channel.getLabel(), "PTY stdin/stdout and command log",
+                    pid, cwd, running, () -> {
+                        mCurrentChannel = channel;
+                        openLogDetail(Mode.SESSION_CHANNEL);
+                    });
+        }
     }
 
     private void addProcessCard(Context context, String label, String description,
@@ -260,11 +260,21 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         mCurrentMode = mode;
         if (mContainerProcessList != null) mContainerProcessList.setVisibility(View.GONE);
         if (mContainerLogDetail != null) mContainerLogDetail.setVisibility(View.VISIBLE);
-
         reloadCurrentLogDetail();
-        if (mLogService != null) {
+        attachListeners();
+    }
+
+    private void attachListeners() {
+        if (mCurrentMode == Mode.GLOBAL_LOGCAT && mLogService != null) {
             mLogService.addListener(this);
+        } else if (mCurrentMode == Mode.SESSION_CHANNEL && mCurrentChannel != null) {
+            mCurrentChannel.addListener(this);
         }
+    }
+
+    private void detachListeners() {
+        if (mLogService != null) mLogService.removeListener(this);
+        if (mCurrentChannel != null) mCurrentChannel.removeListener(this);
     }
 
     private void reloadCurrentLogDetail() {
@@ -276,14 +286,13 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
                 mLogAdapter.setLines(mLogService.getLogList());
             }
             scrollToBottom();
-        } else if (mCurrentMode == Mode.GIT_PTY) {
+        } else if (mCurrentMode == Mode.SESSION_CHANNEL && mCurrentChannel != null) {
             if (mTvLogDetailTitle != null) {
-                mTvLogDetailTitle.setText("Git Service PTY Output");
+                mTvLogDetailTitle.setText(mCurrentChannel.getLabel());
             }
-            TerminalSession gitSession = GitManager.getInstance().getGitSession();
-            String output = TerminalSessionManager.getInstance().getSessionOutput(gitSession);
+            mCurrentChannel.flush();
             if (mLogAdapter != null) {
-                mLogAdapter.setLines(output != null ? Arrays.asList(output.split("\n")) : new ArrayList<>());
+                mLogAdapter.setLines(mCurrentChannel.getEntries());
             }
             scrollToBottom();
         }
@@ -291,40 +300,21 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
 
     @Override
     public void onLogAdded(String logEntry) {
-        if (mCurrentMode == Mode.GLOBAL_LOGCAT) {
-            mHandler.post(() -> {
-                if (mLogAdapter != null) {
-                    mLogAdapter.appendLine(logEntry);
-                    scrollToBottom();
-                }
-            });
-        } else if (mCurrentMode == Mode.GIT_PTY) {
-            mHandler.post(() -> {
-                TerminalSession gitSession = GitManager.getInstance().getGitSession();
-                String output = TerminalSessionManager.getInstance().getSessionOutput(gitSession);
-                if (mLogAdapter != null) {
-                    mLogAdapter.setLines(output != null ? Arrays.asList(output.split("\n")) : new ArrayList<>());
-                    scrollToBottom();
-                }
-            });
-        }
+        mHandler.post(() -> {
+            if (mLogAdapter != null) {
+                mLogAdapter.appendLine(logEntry);
+                scrollToBottom();
+            }
+        });
     }
 
     @Override
     public void onLogsCleared() {
-        if (mCurrentMode == Mode.GLOBAL_LOGCAT) {
-            mHandler.post(() -> {
-                if (mLogAdapter != null) {
-                    mLogAdapter.clear();
-                }
-            });
-        } else if (mCurrentMode == Mode.GIT_PTY) {
-            mHandler.post(() -> {
-                if (mLogAdapter != null) {
-                    mLogAdapter.setLines(Arrays.asList("(PTY log cleared)"));
-                }
-            });
-        }
+        mHandler.post(() -> {
+            if (mLogAdapter != null) {
+                mLogAdapter.clear();
+            }
+        });
     }
 
     private void scrollToBottom() {

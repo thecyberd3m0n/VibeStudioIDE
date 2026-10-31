@@ -15,6 +15,7 @@ import org.robolectric.annotation.Config;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28)
@@ -65,6 +66,31 @@ public class GitManagerTest {
     }
 
     @Test
+    public void testIsGitAuthRequiredError() {
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("fatal: could not read Username for 'https://github.com': No such device or address"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("fatal: Authentication failed for 'https://github.com/user/repo.git/'"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("Username for 'https://github.com':"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("Password for 'https://user@github.com':"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("fatal: prompt failed: terminal prompts disabled"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("HTTP 401 Unauthorized"));
+        Assert.assertTrue(GitManager.isGitAuthRequiredError("HTTP 403 Forbidden"));
+
+        Assert.assertFalse(GitManager.isGitAuthRequiredError("Cloning into 'repo'..."));
+        Assert.assertFalse(GitManager.isGitAuthRequiredError("fatal: repository 'https://github.com/nonexistent/repo.git/' not found"));
+        Assert.assertFalse(GitManager.isGitAuthRequiredError(null));
+    }
+
+    @Test
+    public void testIsNoUpstreamError() {
+        Assert.assertTrue(GitManager.isNoUpstreamError("fatal: The current branch test-branch has no upstream branch."));
+        Assert.assertTrue(GitManager.isNoUpstreamError("fatal: No upstream configured for branch 'test-branch'"));
+        Assert.assertTrue(GitManager.isNoUpstreamError("To push the current branch and set the remote as upstream, use\n  git push --set-upstream origin test-branch"));
+
+        Assert.assertFalse(GitManager.isNoUpstreamError("Everything up-to-date"));
+        Assert.assertFalse(GitManager.isNoUpstreamError(null));
+    }
+
+    @Test
     public void testIsGitUserConfiguredWithMockGitconfig() throws IOException {
         File homeDir = new File(context.getFilesDir(), "home");
         if (!homeDir.exists()) homeDir.mkdirs();
@@ -72,7 +98,7 @@ public class GitManagerTest {
 
         if (gitConfigFile.exists()) gitConfigFile.delete();
 
-        java.nio.file.Files.write(gitConfigFile.toPath(), "[user]\n\tname = Vibe Developer\n\temail = dev@vibestudio.app\n".getBytes());
+        Files.write(gitConfigFile.toPath(), "[user]\n\tname = Vibe Developer\n\temail = dev@vibestudio.app\n".getBytes());
         boolean configured = gitManager.isGitUserConfigured(context);
         Assert.assertTrue("isGitUserConfigured should be true when .gitconfig has name and email", configured);
 
@@ -95,7 +121,7 @@ public class GitManagerTest {
 
         sshDir.mkdirs();
         File idRsa = new File(sshDir, "id_rsa");
-        java.nio.file.Files.write(idRsa.toPath(), "-----BEGIN OPENSSH PRIVATE KEY-----\n".getBytes());
+        Files.write(idRsa.toPath(), "-----BEGIN OPENSSH PRIVATE KEY-----\n".getBytes());
 
         Assert.assertTrue("isSshKeyConfigured should be true when id_rsa exists", gitManager.isSshKeyConfigured(context));
 
@@ -128,5 +154,46 @@ public class GitManagerTest {
         Assert.assertEquals(1, status.deletions);
         Assert.assertEquals(1, state.totalAdditions);
         Assert.assertEquals(1, state.totalDeletions);
+    }
+
+    @Test
+    public void testParseRepositoryStateWithExportLeakedEcho() {
+        String leakedOutput = "___CMD_START_12345___\n" +
+                "export GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=\"ssh -o StrictHostKeyChecking=no\" ; cd '/data/app' && (git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; echo \"===STATUS===\" ; git status --porcelain --ignored=no ; echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat\n" +
+                "main\n" +
+                "===STATUS===\n" +
+                " M README.md\n" +
+                "===NUMSTAT_STAGED===\n" +
+                "===NUMSTAT_UNSTAGED===\n" +
+                "1\t1\tREADME.md\n" +
+                "___CMD_END_12345___";
+
+        GitRepositoryState state = GitManager.parseRepositoryState(new File("/tmp"), leakedOutput);
+        Assert.assertNotNull(state);
+        Assert.assertEquals("main", state.branchName);
+        Assert.assertEquals(0, state.stagedFiles.size());
+        Assert.assertEquals(1, state.unstagedFiles.size());
+    }
+
+    @Test
+    public void testParseRepositoryStateWithAheadBehind() {
+        String leakedOutput = "___CMD_START_12345___\n" +
+                "main\n" +
+                "===AHEAD_BEHIND===\n" +
+                "3\t1\n" +
+                "===STATUS===\n" +
+                " M README.md\n" +
+                "===NUMSTAT_STAGED===\n" +
+                "===NUMSTAT_UNSTAGED===\n" +
+                "1\t1\tREADME.md\n" +
+                "___CMD_END_12345___";
+
+        GitRepositoryState state = GitManager.parseRepositoryState(new File("/tmp"), leakedOutput);
+        Assert.assertNotNull(state);
+        Assert.assertEquals("main", state.branchName);
+        Assert.assertEquals(3, state.ahead);
+        Assert.assertEquals(1, state.behind);
+        Assert.assertEquals(0, state.stagedFiles.size());
+        Assert.assertEquals(1, state.unstagedFiles.size());
     }
 }

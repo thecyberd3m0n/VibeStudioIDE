@@ -80,6 +80,25 @@ public final class TerminalSession extends TerminalOutput {
 
     private static final String LOG_TAG = "TerminalSession";
 
+    /** Observer of the raw bytes exchanged with the shell process (stdin written, stdout received). */
+    public interface IoTap {
+        void onStdin(byte[] data, int offset, int count);
+
+        void onStdout(byte[] data, int offset, int count);
+    }
+
+    private volatile IoTap mIoTap;
+    private volatile boolean mEditHookEnabled = true;
+
+    public void setIoTap(IoTap tap) {
+        mIoTap = tap;
+    }
+
+    /** When enabled (default), typing {@code edit <file>} in an interactive session opens the file in the editor. */
+    public void setEditHookEnabled(boolean enabled) {
+        mEditHookEnabled = enabled;
+    }
+
     public TerminalSession(String shellPath, String cwd, String[] args, String[] env, Integer transcriptRows, TerminalSessionClient client) {
         this.mShellPath = shellPath;
         this.mCwd = cwd;
@@ -178,11 +197,13 @@ public final class TerminalSession extends TerminalOutput {
     @Override
     public void write(byte[] data, int offset, int count) {
         if (mShellPid > 0) {
+            IoTap tap = mIoTap;
+            if (tap != null) tap.onStdin(data, offset, count);
             int lastWritePos = offset;
             for (int i = 0; i < count; i++) {
                 byte b = data[offset + i];
                 if (b == '\r' || b == '\n') {
-                    if (mEmulator != null) {
+                    if (mEditHookEnabled && mEmulator != null) {
                         int cursorRow = mEmulator.getCursorRow();
                         String currentLine = mEmulator.getScreen().getSelectedText(0, cursorRow, mEmulator.mColumns, cursorRow).trim();
                         int editIdx = currentLine.lastIndexOf("edit ");
@@ -381,6 +402,8 @@ public final class TerminalSession extends TerminalOutput {
         public void handleMessage(Message msg) {
             int bytesRead = mProcessToTerminalIOQueue.read(mReceiveBuffer, false);
             if (bytesRead > 0) {
+                IoTap tap = mIoTap;
+                if (tap != null) tap.onStdout(mReceiveBuffer, 0, bytesRead);
                 mEmulator.append(mReceiveBuffer, bytesRead);
                 notifyScreenUpdate();
             }

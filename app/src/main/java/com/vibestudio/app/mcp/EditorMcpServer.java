@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.vibestudio.app.chat.safety.WorkspaceChangesetTracker;
+import com.vibestudio.app.fragments.DiffEditorFragment;
 import com.vibestudio.app.fragments.EditorFragment;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.mcp.model.McpToolResult;
@@ -196,7 +197,7 @@ public class EditorMcpServer implements McpServer {
                 if (!file2Arg.isEmpty()) {
                     File file2 = PathResolver.resolveFile(file2Arg, context);
                     new Handler(Looper.getMainLooper()).post(() -> {
-                        EditorFragment frag = EditorFragment.newDiffInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
+                        DiffEditorFragment frag = DiffEditorFragment.newInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
                         String tabTitle = "Diff: " + file1.getName() + " ↔ " + file2.getName();
                         TabManager.getInstance().openTab(TabType.EDITOR, tabTitle, frag);
                     });
@@ -224,7 +225,7 @@ public class EditorMcpServer implements McpServer {
                 File file2 = PathResolver.resolveFile(file2Arg, context);
 
                 new Handler(Looper.getMainLooper()).post(() -> {
-                    EditorFragment frag = EditorFragment.newDiffInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
+                    DiffEditorFragment frag = DiffEditorFragment.newInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
                     String tabTitle = "Diff: " + file1.getName() + " ↔ " + file2.getName();
                     TabManager.getInstance().openTab(TabType.EDITOR, tabTitle, frag);
                 });

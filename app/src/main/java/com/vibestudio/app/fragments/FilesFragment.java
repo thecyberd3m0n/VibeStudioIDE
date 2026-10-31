@@ -21,6 +21,7 @@ import android.view.animation.AnimationUtils;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.PopupMenu;
@@ -75,6 +76,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
     private View mLayoutGitChangesBar;
     private TextView mTvGitChangesLabel;
+    private TextView mTvGitChangesSyncIndicator;
     private TextView mTvGitChangesChevron;
     private FrameLayout mFlGitViewContainer;
     private GitStatusView mGitStatusView;
@@ -196,6 +198,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         mLayoutGitChangesBar = view.findViewById(R.id.layout_git_changes_bar);
         mTvGitChangesLabel = view.findViewById(R.id.tv_git_changes_label);
+        mTvGitChangesSyncIndicator = view.findViewById(R.id.tv_git_changes_indicator);
         mTvGitChangesChevron = view.findViewById(R.id.tv_git_changes_chevron);
         mFlGitViewContainer = view.findViewById(R.id.fl_git_view_container);
 
@@ -283,10 +286,6 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         }
     }
 
-    public boolean isBottomBarVisible() {
-        return mLayoutBottomBar != null && mLayoutBottomBar.getVisibility() == View.VISIBLE;
-    }
-
     public void setBottomBarText(String text) {
         if (mTvBottomBarText != null) {
             mTvBottomBarText.setText(text);
@@ -296,12 +295,6 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
     public void setOnBottomBarCancelClickListener(View.OnClickListener listener) {
         if (mBtnBottomBarCancel != null) {
             mBtnBottomBarCancel.setOnClickListener(listener);
-        }
-    }
-
-    public void setOnBottomBarOkClickListener(View.OnClickListener listener) {
-        if (mBtnBottomBarOk != null) {
-            mBtnBottomBarOk.setOnClickListener(listener);
         }
     }
 
@@ -642,10 +635,16 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 if (mTvGitChangesLabel != null) {
                     mTvGitChangesLabel.setText("Changes | +0, -0");
                 }
+                if (mTvGitChangesSyncIndicator != null) {
+                    mTvGitChangesSyncIndicator.setText("↑0 ↓0");
+                }
                 return;
             }
             if (mTvGitChangesLabel != null) {
                 mTvGitChangesLabel.setText("Changes | +" + state.totalAdditions + ", -" + state.totalDeletions);
+            }
+            if (mTvGitChangesSyncIndicator != null) {
+                mTvGitChangesSyncIndicator.setText("↑" + state.ahead + " ↓" + state.behind);
             }
         });
     }
@@ -726,6 +725,10 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         cancelFilePickerMode();
         super.onDestroyView();
         GitManager.getInstance().removeStateChangeListener(this);
+        // The git panel lives in this view hierarchy; the next onCreateView starts with it closed and empty.
+        mGitStatusView = null;
+        mFlGitViewContainer = null;
+        mIsGitViewOpen = false;
     }
 
     private void preloadGitView() {
@@ -762,9 +765,6 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         preloadGitView();
 
-        mCurrentGitState = null;
-        updateGitChangesBar(null);
-
         GitManager.getInstance().refreshRepositoryState(getContext(), repoRoot, this::updateGitChangesBar);
     }
 
@@ -793,6 +793,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         if (mFlGitViewContainer == null || mCurrentDir == null) return;
         mIsGitViewOpen = true;
         preloadGitView();
+        if (mGitStatusView != null) mGitStatusView.refreshStatus();
         mFlGitViewContainer.setVisibility(View.VISIBLE);
 
         mFlGitViewContainer.animate().cancel();
@@ -848,6 +849,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         mCurrentDir = dir;
         updatePathHeader();
+        checkAndUpdateGitStatus();
 
         List<FileEntry> items = fetchDirectoryItems(mCurrentDir);
 
@@ -901,6 +903,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         popup.getMenu().add(0, 0, 0, "New File");
         popup.getMenu().add(0, 1, 1, "New Directory");
         popup.getMenu().add(0, 2, 2, "New repository");
+        popup.getMenu().add(0, 3, 3, "Clone Git Repo...");
 
         popup.setOnMenuItemClickListener(menuItem -> {
             if (menuItem.getItemId() == 0) {
@@ -912,10 +915,159 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             } else if (menuItem.getItemId() == 2) {
                 showCreateRepositoryDialog();
                 return true;
+            } else if (menuItem.getItemId() == 3) {
+                showCloneRepositoryDialog();
+                return true;
             }
             return false;
         });
         popup.show();
+    }
+
+    private void showCloneRepositoryDialog() {
+        if (getContext() == null) return;
+        Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
+        AlertDialog.Builder builder = new AlertDialog.Builder(themedContext);
+        builder.setTitle("Clone Git Repository");
+
+        final EditText input = new EditText(themedContext);
+        input.setHint("Repository URL (https://... or git@...)");
+        input.setTextColor(0xFFFFFFFF);
+        input.setHintTextColor(0x88FFFFFF);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+
+        int paddingPx = (int) (16 * requireContext().getResources().getDisplayMetrics().density);
+        FrameLayout container = new FrameLayout(themedContext);
+        container.setPadding(paddingPx, paddingPx / 2, paddingPx, paddingPx / 2);
+        container.addView(input);
+        builder.setView(container);
+
+        builder.setPositiveButton("Clone", (dialog, which) -> {
+            String repoUrl = input.getText().toString().trim();
+            if (repoUrl.isEmpty()) {
+                Toast.makeText(getContext(), "Please enter a repository URL", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            performCloneRepository(repoUrl);
+        });
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
+
+    private void performCloneRepository(String repoUrl) {
+        if (getContext() == null) return;
+        Toast.makeText(getContext(), "Cloning repository...", Toast.LENGTH_SHORT).show();
+
+        boolean isHttps = repoUrl.toLowerCase().startsWith("http://") || repoUrl.toLowerCase().startsWith("https://");
+
+        GitManager.getInstance().cloneRepository(getContext(), repoUrl, mCurrentDir, (success, output) -> {
+            if (getActivity() == null || !isAdded()) return;
+            getActivity().runOnUiThread(() -> {
+                if (success) {
+                    Toast.makeText(getContext(), "Repository cloned successfully", Toast.LENGTH_SHORT).show();
+                    loadDirectory(mCurrentDir);
+                } else {
+                    if (isHttps && GitManager.isGitAuthRequiredError(output)) {
+                        showGitAuthDialog(repoUrl);
+                    } else {
+                        String errorMsg = (output != null && !output.trim().isEmpty()) ? output.trim() : "Unknown error";
+                        Toast.makeText(getContext(), "Clone failed: " + errorMsg, Toast.LENGTH_LONG).show();
+                    }
+                }
+            });
+        });
+    }
+
+    private void showGitAuthDialog(String repoUrl) {
+        if (getContext() == null) return;
+        Context themedContext = new ContextThemeWrapper(requireContext(), android.R.style.Theme_DeviceDefault_Dialog_Alert);
+        AlertDialog.Builder builder = new AlertDialog.Builder(themedContext);
+        builder.setTitle("Git Authentication Required");
+
+        String host = extractHostFromUrl(repoUrl);
+        builder.setMessage("Authentication required for " + host + ". Please enter your credentials.");
+
+        LinearLayout layout = new LinearLayout(themedContext);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int paddingPx = (int) (16 * requireContext().getResources().getDisplayMetrics().density);
+        layout.setPadding(paddingPx, paddingPx / 2, paddingPx, paddingPx / 2);
+
+        final EditText inputUsername = new EditText(themedContext);
+        inputUsername.setHint("Username");
+        inputUsername.setTextColor(0xFFFFFFFF);
+        inputUsername.setHintTextColor(0x88FFFFFF);
+        inputUsername.setInputType(InputType.TYPE_CLASS_TEXT);
+
+        final EditText inputPassword = new EditText(themedContext);
+        inputPassword.setHint("Password or Personal Access Token");
+        inputPassword.setTextColor(0xFFFFFFFF);
+        inputPassword.setHintTextColor(0x88FFFFFF);
+        inputPassword.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+
+        layout.addView(inputUsername);
+        layout.addView(inputPassword);
+        builder.setView(layout);
+
+        builder.setPositiveButton("Clone", (dialog, which) -> {
+            String username = inputUsername.getText().toString().trim();
+            String password = inputPassword.getText().toString().trim();
+            if (username.isEmpty() || password.isEmpty()) {
+                Toast.makeText(getContext(), "Username and Password/Token are required", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            String authUrl = buildAuthenticatedUrl(repoUrl, username, password);
+            Toast.makeText(getContext(), "Cloning repository...", Toast.LENGTH_SHORT).show();
+
+            GitManager.getInstance().cloneRepository(getContext(), authUrl, mCurrentDir, (success, output) -> {
+                if (getActivity() == null || !isAdded()) return;
+                getActivity().runOnUiThread(() -> {
+                    if (success) {
+                        Toast.makeText(getContext(), "Repository cloned successfully", Toast.LENGTH_SHORT).show();
+                        loadDirectory(mCurrentDir);
+                    } else {
+                        String errorMsg = (output != null && !output.trim().isEmpty()) ? output.trim() : "Authentication failed";
+                        Toast.makeText(getContext(), "Clone failed: " + errorMsg, Toast.LENGTH_LONG).show();
+                    }
+                });
+            });
+        });
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+        builder.show();
+    }
+
+    private String buildAuthenticatedUrl(String repoUrl, String username, String password) {
+        try {
+            String encodedUser = Uri.encode(username);
+            String encodedPass = Uri.encode(password);
+
+            String lower = repoUrl.toLowerCase();
+            if (lower.startsWith("https://")) {
+                String rest = repoUrl.substring("https://".length());
+                if (rest.contains("@")) {
+                    rest = rest.substring(rest.indexOf('@') + 1);
+                }
+                return "https://" + encodedUser + ":" + encodedPass + "@" + rest;
+            } else if (lower.startsWith("http://")) {
+                String rest = repoUrl.substring("http://".length());
+                if (rest.contains("@")) {
+                    rest = rest.substring(rest.indexOf('@') + 1);
+                }
+                return "http://" + encodedUser + ":" + encodedPass + "@" + rest;
+            }
+        } catch (Exception ignored) {}
+        return repoUrl;
+    }
+
+    private String extractHostFromUrl(String repoUrl) {
+        if (repoUrl == null) return "repository";
+        try {
+            Uri uri = Uri.parse(repoUrl);
+            if (uri.getHost() != null && !uri.getHost().isEmpty()) {
+                return uri.getHost();
+            }
+        } catch (Exception ignored) {}
+        return "repository";
     }
 
     private void showCreateFileDialog() {

@@ -1,9 +1,13 @@
 package com.vibestudio.app.terminal;
 
+import com.vibestudio.app.db.DatabaseHelper;
+
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.system.Os;
 
 import com.termux.terminal.TerminalBuffer;
@@ -12,6 +16,7 @@ import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 import com.termux.view.TerminalView;
 import com.vibestudio.app.logging.CrashHandler;
+import com.vibestudio.app.logging.SessionLogger;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.service.TerminalService;
 import java.util.Collections;
@@ -25,11 +30,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class TerminalSessionManager {
 
@@ -37,12 +46,45 @@ public class TerminalSessionManager {
         void onFileEditRequested(String filePath);
     }
 
+    public interface CommandCallback {
+        void onResult(CommandResult result);
+    }
+
+    public static class CommandResult {
+        public final int exitCode;
+        public final String output;
+
+        public CommandResult(int exitCode, String output) {
+            this.exitCode = exitCode;
+            this.output = output != null ? output : "";
+        }
+
+        public boolean isSuccess() {
+            return exitCode == 0;
+        }
+    }
+
     private static final String TAG = "TerminalSessionManager";
     private static TerminalSessionManager sInstance;
 
-    private final Object mCommandLock = new Object();
+    private final Map<TerminalSession, ExecutorService> mSessionExecutors = new WeakHashMap<>();
+    private final Map<TerminalSession, Object> mSessionLocks = new WeakHashMap<>();
     private final Map<TerminalSession, TerminalView> mViews = new WeakHashMap<>();
+    private final Map<TerminalSession, SessionLogger> mLoggers = Collections.synchronizedMap(new WeakHashMap<>());
+
+    private Object getSessionLock(TerminalSession session) {
+        synchronized (mSessionLocks) {
+            Object lock = mSessionLocks.get(session);
+            if (lock == null) {
+                lock = new Object();
+                mSessionLocks.put(session, lock);
+            }
+            return lock;
+        }
+    }
     private final Set<TerminalSession> mActiveSessions = Collections.synchronizedSet(new HashSet<>());
+    private final ExecutorService mCommandExecutor = Executors.newCachedThreadPool();
+    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
     private Context mAppContext;
     private SessionEventListener mSessionEventListener;
 
@@ -50,6 +92,21 @@ public class TerminalSessionManager {
 
     public void setSessionEventListener(SessionEventListener listener) {
         mSessionEventListener = listener;
+    }
+
+    private ExecutorService getSessionExecutor(TerminalSession session) {
+        synchronized (mSessionExecutors) {
+            ExecutorService executor = mSessionExecutors.get(session);
+            if (executor == null) {
+                executor = Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r);
+                    t.setName("TerminalSessionCmd-" + session.mHandle);
+                    return t;
+                });
+                mSessionExecutors.put(session, executor);
+            }
+            return executor;
+        }
     }
 
     public static synchronized TerminalSessionManager getInstance() {
@@ -64,7 +121,20 @@ public class TerminalSessionManager {
     }
 
     public synchronized TerminalSession createSession(final Context context, String initialCwd) {
+        return createSession(context, initialCwd, null);
+    }
+
+    /**
+     * Creates a PTY session. When {@code logLabel} is not null the session is a managed (programmatic) session:
+     * a {@link SessionLogger} with that label records its stdin/stdout so it can be read in the Log Viewer,
+     * and the interactive helpers (readline editing, the {@code edit <file>} hook) are disabled.
+     */
+    public synchronized TerminalSession createSession(final Context context, String initialCwd, String logLabel) {
         if (context == null) return null;
+        DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
+        if (!dbHelper.isEnvInitialized()) {
+            throw new IllegalStateException("Cannot create TerminalSession before environment initialization!");
+        }
 
         try {
             File filesDir = context.getApplicationContext().getFilesDir();
@@ -110,6 +180,11 @@ public class TerminalSessionManager {
                     "TMPDIR=" + new File(usrDir, "tmp").getAbsolutePath(),
                     "TERM=xterm-256color",
                     "LANG=en_US.UTF-8",
+                    "GIT_TERMINAL_PROMPT=0",
+                    "GIT_SSH_COMMAND=ssh -o StrictHostKeyChecking=no",
+                    "GIT_EDITOR=true",
+                    "GIT_MERGE_AUTOEDIT=no",
+                    "GIT_SEQUENCE_EDITOR=true",
                     "APT_CONFIG=" + new File(usrDir, "etc/apt/apt.conf").getAbsolutePath(),
                     "DPKG_ADMINDIR=" + new File(usrDir, "var/lib/dpkg").getAbsolutePath(),
                     "TERMUX_APP_PACKAGE_MANAGER=apt",
@@ -118,6 +193,7 @@ public class TerminalSessionManager {
             };
 
             String cwd = (initialCwd != null && new File(initialCwd).isDirectory()) ? initialCwd : homeDir.getAbsolutePath();
+            boolean managed = logLabel != null;
             String[] args = bashFile.exists() ? new String[]{"-bash"} : new String[]{shellPath};
 
             TerminalSessionClient sessionClient = new TerminalSessionClient() {
@@ -133,6 +209,9 @@ public class TerminalSessionManager {
                     if (view != null) {
                         view.post(view::onScreenUpdated);
                     }
+                    synchronized (changedSession) {
+                        changedSession.notifyAll();
+                    }
                 }
 
                 @Override
@@ -141,6 +220,10 @@ public class TerminalSessionManager {
                 @Override
                 public void onSessionFinished(TerminalSession finishedSession) {
                     LogViewerService.getInstance().w(TAG, "TerminalSession finished");
+                    SessionLogger finishedLogger = mLoggers.get(finishedSession);
+                    if (finishedLogger != null) {
+                        finishedLogger.exit("Session finished (exit status " + finishedSession.getExitStatus() + ")");
+                    }
                     synchronized (TerminalSessionManager.this) {
                         mViews.remove(finishedSession);
                         mActiveSessions.remove(finishedSession);
@@ -214,7 +297,31 @@ public class TerminalSessionManager {
                     10000,
                     sessionClient
             );
-            session.updateSize(80, 24, 0, 0);
+            if (managed) {
+                SessionLogger logger = LogViewerService.getInstance().getOrCreateChannel(logLabel);
+                mLoggers.put(session, logger);
+                session.setEditHookEnabled(false);
+                session.setIoTap(new TerminalSession.IoTap() {
+                    @Override
+                    public void onStdin(byte[] data, int offset, int count) {
+                        logger.onStdin(data, offset, count);
+                    }
+
+                    @Override
+                    public void onStdout(byte[] data, int offset, int count) {
+                        logger.onStdout(data, offset, count);
+                    }
+                });
+                logger.event("Starting session: shell=" + shellPath + ", cwd=" + cwd);
+            }
+            session.initializeEmulator(80, 24, 0, 0);
+            SessionLogger startedLogger = mLoggers.get(session);
+            if (startedLogger != null) {
+                startedLogger.event("Session started (pid=" + session.getPid() + ")");
+                // Plain tty echo instead of readline redraws, so the PTY log shows each command verbatim.
+                byte[] noEditing = "set +o emacs +o vi\n".getBytes(StandardCharsets.UTF_8);
+                session.write(noEditing, 0, noEditing.length);
+            }
 
             mAppContext = context.getApplicationContext();
             mActiveSessions.add(session);
@@ -224,6 +331,9 @@ public class TerminalSessionManager {
 
         } catch (Throwable t) {
             LogViewerService.getInstance().e(TAG, "Failed to initialize TerminalSession", t);
+            if (logLabel != null) {
+                LogViewerService.getInstance().getOrCreateChannel(logLabel).event("Failed to start session", t);
+            }
             CrashHandler.getInstance().handleException(TAG, "TerminalSession init failed", t);
             return null;
         }
@@ -285,7 +395,7 @@ public class TerminalSessionManager {
         try {
             String cmdToExecute = command.endsWith("\n") ? command : command + "\n";
             session.write(cmdToExecute.getBytes(StandardCharsets.UTF_8), 0, cmdToExecute.getBytes(StandardCharsets.UTF_8).length);
-            LogViewerService.getInstance().i(TAG, "Command written to TerminalSession: " + command.trim());
+            LogViewerService.getInstance().i(TAG, "Command written to TerminalSession: " + SessionLogger.redact(command.trim()));
             return true;
         } catch (Exception e) {
             LogViewerService.getInstance().e(TAG, "Failed to write command to TerminalSession", e);
@@ -570,57 +680,129 @@ public class TerminalSessionManager {
         }
     }
 
-    public String runCommandOnSessionSync(TerminalSession session, String command, int timeoutMs) {
+    /** Runs the command on a background thread and delivers the result to the callback on the main thread. */
+    public void runCommand(TerminalSession session, String command, int timeoutMs, CommandCallback callback) {
+        mCommandExecutor.execute(() -> {
+            CommandResult result = runCommandBlocking(session, command, timeoutMs);
+            if (callback != null) {
+                mMainHandler.post(() -> callback.onResult(result));
+            }
+        });
+    }
+
+    /**
+     * Runs the command on the calling thread and waits for it to finish (or time out). Commands on the same
+     * session are serialized. Must never run on the main thread: the emulator is fed by the main looper, so
+     * blocking it means the end marker can never arrive and every command times out.
+     */
+    private CommandResult runCommandBlocking(TerminalSession session, String command, int timeoutMs) {
+        SessionLogger logger = session != null ? mLoggers.get(session) : null;
+        String loggedCommand = SessionLogger.redact(command);
+
         if (session == null || !session.isRunning() || command == null || command.isEmpty()) {
-            return null;
+            String reason = session == null ? "no session" : (!session.isRunning() ? "session not running" : "empty command");
+            if (logger != null) {
+                logger.event("Command rejected (" + reason + "): " + loggedCommand);
+            } else {
+                LogViewerService.getInstance().w(TAG, "runCommand rejected (" + reason + "): " + loggedCommand);
+            }
+            return new CommandResult(-1, "Invalid session or command");
         }
 
-        synchronized (mCommandLock) {
-            try {
-                long startTime = System.currentTimeMillis();
-                String startMarker = "___CMD_START_" + System.currentTimeMillis() + "_" + ((int) (Math.random() * 10000)) + "___";
-                String endMarker = "___CMD_END_" + System.currentTimeMillis() + "_" + ((int) (Math.random() * 10000)) + "___";
+        int effectiveTimeout = timeoutMs > 0 ? timeoutMs : 10000;
+        synchronized (getSessionLock(session)) {
+            long startTime = System.currentTimeMillis();
+            String startMarker = "___CMD_START_" + startTime + "_" + ((int) (Math.random() * 10000)) + "___";
+            String endMarker = "___CMD_END_" + startTime + "_" + ((int) (Math.random() * 10000)) + "___";
 
-                String execCmd = "echo " + startMarker + " && " + command + " ; echo " + endMarker + "\n";
-                byte[] bytes = execCmd.getBytes(StandardCharsets.UTF_8);
-                session.write(bytes, 0, bytes.length);
+            if (logger != null) logger.command(command);
 
-                String capturedOutput = null;
-                while (System.currentTimeMillis() - startTime < timeoutMs) {
+            String execCmd = "echo " + startMarker + " ; " + command + " ; echo \"Exit code: $?\" ; echo " + endMarker + "\n";
+            byte[] bytes = execCmd.getBytes(StandardCharsets.UTF_8);
+            session.write(bytes, 0, bytes.length);
+
+            String capturedOutput = null;
+            while (System.currentTimeMillis() - startTime < effectiveTimeout) {
+                synchronized (session) {
                     try {
-                        Thread.sleep(50);
+                        session.wait(50);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;
                     }
-
-                    String fullTranscript = getSessionOutput(session);
-                    if (fullTranscript != null) {
-                        int echoStartIdx = fullTranscript.indexOf(startMarker);
-                        if (echoStartIdx != -1) {
-                            int stdoutStartIdx = fullTranscript.indexOf(startMarker, echoStartIdx + startMarker.length());
-                            int idxStart = (stdoutStartIdx != -1) ? stdoutStartIdx : echoStartIdx;
-
-                            int echoEndIdx = fullTranscript.indexOf(endMarker, idxStart);
-                            if (echoEndIdx != -1) {
-                                int stdoutEndIdx = fullTranscript.indexOf(endMarker, echoEndIdx + endMarker.length());
-                                int idxEnd = (stdoutEndIdx != -1) ? stdoutEndIdx : echoEndIdx;
-
-                                if (idxEnd > idxStart) {
-                                    capturedOutput = fullTranscript.substring(idxStart + startMarker.length(), idxEnd);
-                                    break;
-                                }
-                            }
-                        }
-                    }
                 }
+                String transcript = null;
+                try {
+                    TerminalEmulator emulator = session.getEmulator();
+                    TerminalBuffer buffer = emulator != null ? emulator.getScreen() : null;
+                    if (buffer != null) transcript = buffer.getTranscriptTextWithFullLinesJoined();
+                } catch (Exception ignored) {}
+                capturedOutput = extractBetweenMarkers(transcript, startMarker, endMarker);
+                if (capturedOutput != null) break;
+            }
 
-                return capturedOutput;
-            } catch (Exception e) {
-                LogViewerService.getInstance().e(TAG, "Error executing command on TerminalSession", e);
+            long elapsed = System.currentTimeMillis() - startTime;
+            if (capturedOutput == null) {
+                byte[] ctrlC = new byte[]{3};
+                session.write(ctrlC, 0, ctrlC.length);
+                String message = "Command timed out after " + elapsed + "ms, sent Ctrl+C: " + loggedCommand;
+                if (logger != null) logger.exit(message);
+                LogViewerService.getInstance().w(TAG, message);
+                return new CommandResult(-1, "Command timed out");
+            }
+
+            CommandResult result = parseCapturedOutput(capturedOutput);
+            if (logger != null) logger.exit("exit=" + result.exitCode + " (" + elapsed + "ms)");
+            return result;
+        }
+    }
+
+    /**
+     * Returns the lines printed between the start and end marker lines, or null if the command has not finished.
+     * The echoed command line also contains the markers, so only the line the shell prints for the marker counts.
+     */
+    static String extractBetweenMarkers(String transcript, String startMarker, String endMarker) {
+        if (transcript == null) return null;
+        int firstStart = transcript.indexOf(startMarker);
+        if (firstStart < 0 || transcript.indexOf(endMarker, firstStart) < 0) return null;
+
+        String[] lines = transcript.substring(firstStart).split("\n");
+        int startLineIdx = -1;
+        int endLineIdx = -1;
+        for (int i = 0; i < lines.length; i++) {
+            String cleanLine = SessionLogger.stripAnsi(lines[i]).replaceAll("[\\r\\n]", "").trim();
+            if (startLineIdx == -1) {
+                // The shell may print its prompt on the same line as the marker output.
+                if (cleanLine.endsWith(startMarker) && !cleanLine.contains("echo " + startMarker)) startLineIdx = i;
+            } else if (cleanLine.endsWith(endMarker)) {
+                endLineIdx = i;
+                break;
             }
         }
-        return null;
+        if (startLineIdx == -1 || endLineIdx == -1) return null;
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = startLineIdx + 1; i < endLineIdx; i++) {
+            sb.append(lines[i]);
+            if (i < endLineIdx - 1) sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    static CommandResult parseCapturedOutput(String capturedOutput) {
+        int exitCode = 0;
+        StringBuilder cleanOutput = new StringBuilder();
+        for (String line : capturedOutput.split("\n")) {
+            String clean = SessionLogger.stripAnsi(line.trim()).replaceAll("[\\r\\n]", "").trim();
+            if (clean.startsWith("Exit code:")) {
+                try {
+                    exitCode = Integer.parseInt(clean.substring("Exit code:".length()).trim());
+                } catch (Exception ignored) {}
+            } else {
+                cleanOutput.append(line).append("\n");
+            }
+        }
+        return new CommandResult(exitCode, cleanOutput.toString().trim());
     }
 
     public String getSessionOutput(TerminalSession session) {
@@ -656,108 +838,6 @@ public class TerminalSessionManager {
         } catch (Exception ignored) {}
         if (mActiveSessions.isEmpty() && mAppContext != null) {
             TerminalService.stop(mAppContext);
-        }
-    }
-
-    public String runCommandSync(Context context, String command, File workingDir, int timeoutMs) {
-        if (context == null || command == null || command.isEmpty()) {
-            return null;
-        }
-        try {
-            File filesDir = context.getApplicationContext().getFilesDir();
-            File usrDir = new File(filesDir, "usr");
-            File homeDir = new File(filesDir, "home");
-            if (!homeDir.exists()) homeDir.mkdirs();
-
-            File bashFile = new File(usrDir, "bin/bash");
-            String shellPath = bashFile.exists() ? bashFile.getAbsolutePath() : "/system/bin/sh";
-
-            List<String> envList = new ArrayList<>();
-            envList.add("PREFIX=" + usrDir.getAbsolutePath());
-            envList.add("HOME=" + homeDir.getAbsolutePath());
-            envList.add("PATH=" + new File(usrDir, "bin").getAbsolutePath() + ":" + new File(usrDir, "bin/applets").getAbsolutePath() + ":/system/bin:/system/xbin");
-            envList.add("LD_LIBRARY_PATH=" + new File(usrDir, "lib").getAbsolutePath());
-            envList.add("LD_PRELOAD=" + new File(usrDir, "lib/libtermux-exec.so").getAbsolutePath());
-            envList.add("TMPDIR=" + new File(usrDir, "tmp").getAbsolutePath());
-            envList.add("TERM=xterm-256color");
-            envList.add("LANG=en_US.UTF-8");
-            envList.add("APT_CONFIG=" + new File(usrDir, "etc/apt/apt.conf").getAbsolutePath());
-            envList.add("DPKG_ADMINDIR=" + new File(usrDir, "var/lib/dpkg").getAbsolutePath());
-
-            ProcessBuilder pb = new ProcessBuilder(shellPath, "-c", command);
-            if (workingDir != null && workingDir.isDirectory()) {
-                pb.directory(workingDir);
-            } else {
-                pb.directory(homeDir);
-            }
-            Map<String, String> env = pb.environment();
-            for (String envVar : envList) {
-                int idx = envVar.indexOf('=');
-                if (idx > 0) {
-                    env.put(envVar.substring(0, idx), envVar.substring(idx + 1));
-                }
-            }
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-
-            StringBuilder output = new StringBuilder();
-            Thread readerThread = new Thread(() -> {
-                try (InputStreamReader isr = new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)) {
-                    char[] buffer = new char[1024];
-                    int read;
-                    while ((read = isr.read(buffer)) != -1) {
-                        synchronized (output) {
-                            output.append(buffer, 0, read);
-                        }
-                    }
-                } catch (Exception ignored) {}
-            });
-            readerThread.start();
-
-            boolean exited = false;
-            long effectiveTimeout = timeoutMs > 0 ? timeoutMs : 10000;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                exited = process.waitFor(effectiveTimeout, TimeUnit.MILLISECONDS);
-            } else {
-                long deadline = System.currentTimeMillis() + effectiveTimeout;
-                while (System.currentTimeMillis() < deadline) {
-                    try {
-                        int exitCode = process.exitValue();
-                        exited = true;
-                        break;
-                    } catch (IllegalThreadStateException e) {
-                        try {
-                            Thread.sleep(50);
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!exited) {
-                LogViewerService.getInstance().w(TAG, "Process timed out after " + effectiveTimeout + " ms, killing process for command: " + command);
-                process.destroy();
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    process.destroyForcibly();
-                }
-                readerThread.interrupt();
-                return null;
-            }
-
-            try {
-                readerThread.join(500);
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
-
-            synchronized (output) {
-                return output.toString();
-            }
-        } catch (Exception e) {
-            LogViewerService.getInstance().e(TAG, "Failed to run command synchronously: " + command, e);
-            return null;
         }
     }
 }

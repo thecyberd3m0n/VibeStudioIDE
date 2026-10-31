@@ -54,7 +54,7 @@
             android:layout_marginLeft="4dp"
             android:layout_marginRight="4dp" />
 
-        <!-- Step 2 Item -->
+        <!-- Step 2 Item (Environment Install) -->
         <LinearLayout
             android:layout_width="-2px"
             android:layout_height="-2px"
@@ -76,7 +76,7 @@
                 android:id="@+id/step2_title"
                 android:layout_width="-2px"
                 android:layout_height="-2px"
-                android:text="Features"
+                android:text="Environment"
                 android:textColor="#666666"
                 android:textSize="12sp"
                 android:layout_marginLeft="6dp" />
@@ -91,7 +91,7 @@
             android:layout_marginLeft="4dp"
             android:layout_marginRight="4dp" />
 
-        <!-- Step 3 Item (Environment Install) -->
+        <!-- Step 3 Item (Version Control) -->
         <LinearLayout
             android:layout_width="-2px"
             android:layout_height="-2px"
@@ -111,43 +111,6 @@
 
             <TextView
                 android:id="@+id/step3_title"
-                android:layout_width="-2px"
-                android:layout_height="-2px"
-                android:text="Environment"
-                android:textColor="#666666"
-                android:textSize="12sp"
-                android:layout_marginLeft="6dp" />
-        </LinearLayout>
-
-        <!-- Divider Line 3 -->
-        <View
-            android:id="@+id/step_divider_3"
-            android:layout_width="16dp"
-            android:layout_height="2dp"
-            android:background="#333333"
-            android:layout_marginLeft="4dp"
-            android:layout_marginRight="4dp" />
-
-        <!-- Step 4 Item (Version Control) -->
-        <LinearLayout
-            android:layout_width="-2px"
-            android:layout_height="-2px"
-            android:orientation="horizontal"
-            android:gravity="center">
-
-            <TextView
-                android:id="@+id/step4_indicator"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:background="@drawable/bg_step_circle_inactive"
-                android:textColor="#888888"
-                android:text="4"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:gravity="center" />
-
-            <TextView
-                android:id="@+id/step4_title"
                 android:layout_width="-2px"
                 android:layout_height="-2px"
                 android:text="Git"
@@ -201,44 +164,9 @@
                 android:lineSpacingExtra="3dp" />
         </LinearLayout>
 
-        <!-- Step 2 Content -->
+        <!-- Step 2 Content (Environment Installation) -->
         <LinearLayout
             android:id="@+id/step2_layout"
-            android:layout_width="-1px"
-            android:layout_height="-1px"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:visibility="gone">
-
-            <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
-                android:text="⚡"
-                android:textSize="64sp"
-                android:layout_marginBottom="20dp" />
-
-            <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
-                android:text="Powerful Toolkit"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:layout_marginBottom="10dp" />
-
-            <TextView
-                android:layout_width="-2px"
-                android:layout_height="-2px"
-                android:text="Seamlessly manage AI models, connect MCP tools, run shell commands in built-in terminal and chat with AI."
-                android:textColor="#AAAAAA"
-                android:textSize="14sp"
-                android:gravity="center"
-                android:lineSpacingExtra="3dp" />
-        </LinearLayout>
-
-        <!-- Step 3 Content (Proot Environment Installation) -->
-        <LinearLayout
-            android:id="@+id/step3_layout"
             android:layout_width="-1px"
             android:layout_height="-1px"
             android:orientation="vertical"
@@ -313,9 +241,9 @@
 
         </LinearLayout>
 
-        <!-- Step 4 Content (Configure Version Control) -->
+        <!-- Step 3 Content (Configure Version Control) -->
         <LinearLayout
-            android:id="@+id/step4_layout"
+            android:id="@+id/step3_layout"
             android:layout_width="-1px"
             android:layout_height="-1px"
             android:orientation="vertical"
@@ -348,14 +276,32 @@
                 android:padding="12dp"
                 android:layout_marginBottom="12dp">
 
-                <TextView
-                    android:layout_width="-2px"
+                <LinearLayout
+                    android:layout_width="-1px"
                     android:layout_height="-2px"
-                    android:text="Configure Git User and Email"
-                    android:textColor="#FFFFFF"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:layout_marginBottom="4dp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="-2px"
+                        android:layout_weight="1"
+                        android:text="Configure Git User and Email"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txt_git_user_checkmark"
+                        android:layout_width="-2px"
+                        android:layout_height="-2px"
+                        android:text="✓"
+                        android:textColor="#10B981"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
+                </LinearLayout>
 
                 <TextView
                     android:layout_width="-2px"
@@ -363,7 +309,20 @@
                     android:text="Set global author name and email for Git commits."
                     android:textColor="#888888"
                     android:textSize="12sp"
-                    android:layout_marginBottom="10dp" />
+                    android:layout_marginBottom="8dp" />
+
+                <!-- Display Configured Credentials Above Button -->
+                <TextView
+                    android:id="@+id/txt_git_user_credentials"
+                    android:layout_width="-1px"
+                    android:layout_height="-2px"
+                    android:textColor="#10B981"
+                    android:textSize="12sp"
+                    android:typeface="monospace"
+                    android:background="#121212"
+                    android:padding="8dp"
+                    android:layout_marginBottom="10dp"
+                    android:visibility="gone" />
 
                 <Button
                     android:id="@+id/btn_config_git_user"
@@ -386,14 +345,32 @@
                 android:padding="12dp"
                 android:layout_marginBottom="12dp">
 
-                <TextView
-                    android:layout_width="-2px"
+                <LinearLayout
+                    android:layout_width="-1px"
                     android:layout_height="-2px"
-                    android:text="Configure SSH keys"
-                    android:textColor="#FFFFFF"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:layout_marginBottom="4dp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="-2px"
+                        android:layout_weight="1"
+                        android:text="Configure SSH keys"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txt_ssh_keys_checkmark"
+                        android:layout_width="-2px"
+                        android:layout_height="-2px"
+                        android:text="✓"
+                        android:textColor="#10B981"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
+                </LinearLayout>
 
                 <TextView
                     android:layout_width="-2px"

@@ -13,7 +13,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 
 import com.vibestudio.app.activity.MainActivity;
 import com.vibestudio.app.db.DatabaseHelper;
-import com.vibestudio.app.fragments.EditorFragment;
+import com.vibestudio.app.fragments.DiffEditorFragment;
 import com.vibestudio.app.tab.TabItem;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
@@ -66,7 +66,7 @@ public class DiffEditorInstrumentationTest {
                 Assert.assertNotNull("MainActivity should launch", activity);
 
                 // Open Diff Editor tab using newDiffInstance
-                EditorFragment diffFragment = EditorFragment.newDiffInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
+                DiffEditorFragment diffFragment = DiffEditorFragment.newInstance(file1.getAbsolutePath(), file2.getAbsolutePath());
                 TabManager.getInstance().openTab(TabType.EDITOR, "Diff: worktree_file.txt", "📝", diffFragment);
             });
 
@@ -75,9 +75,9 @@ public class DiffEditorInstrumentationTest {
             scenario.onActivity(activity -> {
                 TabItem activeTab = TabManager.getInstance().getActiveTab();
                 Assert.assertNotNull("Active tab should exist for Diff Editor", activeTab);
-                Assert.assertTrue("Fragment should be EditorFragment", activeTab.getFragment() instanceof EditorFragment);
+                Assert.assertTrue("Fragment should be DiffEditorFragment", activeTab.getFragment() instanceof DiffEditorFragment);
 
-                EditorFragment fragment = (EditorFragment) activeTab.getFragment();
+                DiffEditorFragment fragment = (DiffEditorFragment) activeTab.getFragment();
 
                 // 2. Verify overlay container & overlays
                 FrameLayout container = fragment.getOverlayContainer();
@@ -106,8 +106,8 @@ public class DiffEditorInstrumentationTest {
                 Assert.assertEquals("Right-side overlay undo button should be visible", View.VISIBLE, revertBtn.getVisibility());
 
                 // Verify line text does not have green '+ text' prefix
-                List<EditorFragment.DiffLine> currentLines = fragment.getCurrentDiffLines();
-                for (EditorFragment.DiffLine line : currentLines) {
+                List<DiffEditorFragment.DiffLine> currentLines = fragment.getCurrentDiffLines();
+                for (DiffEditorFragment.DiffLine line : currentLines) {
                     Assert.assertFalse("Diff line text should not start with '+' symbol", line.text.startsWith("+"));
                 }
 

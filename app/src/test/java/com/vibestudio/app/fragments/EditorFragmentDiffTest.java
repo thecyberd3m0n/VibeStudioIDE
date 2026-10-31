@@ -34,10 +34,12 @@ public class EditorFragmentDiffTest {
     public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     private EditorFragment editorFragment;
+    private DiffEditorFragment diffEditor;
 
     @Before
     public void setUp() {
         editorFragment = EditorFragment.newInstance();
+        diffEditor = DiffEditorFragment.newInstance(null, null);
     }
 
     @Test
@@ -45,11 +47,11 @@ public class EditorFragmentDiffTest {
         List<String> lines1 = Arrays.asList("line1", "line2", "line3");
         List<String> lines2 = Arrays.asList("line1", "line2", "line3");
 
-        List<EditorFragment.DiffLine> diff = editorFragment.computeDiff(lines1, lines2);
+        List<DiffEditorFragment.DiffLine> diff = diffEditor.computeDiff(lines1, lines2);
 
         Assert.assertEquals(3, diff.size());
-        for (EditorFragment.DiffLine dl : diff) {
-            Assert.assertEquals(EditorFragment.DiffLine.Type.UNCHANGED, dl.type);
+        for (DiffEditorFragment.DiffLine dl : diff) {
+            Assert.assertEquals(DiffEditorFragment.DiffLine.Type.UNCHANGED, dl.type);
         }
     }
 
@@ -58,7 +60,7 @@ public class EditorFragmentDiffTest {
         List<String> lines1 = Arrays.asList();
         List<String> lines2 = Arrays.asList();
 
-        List<EditorFragment.DiffLine> diff = editorFragment.computeDiff(lines1, lines2);
+        List<DiffEditorFragment.DiffLine> diff = diffEditor.computeDiff(lines1, lines2);
 
         Assert.assertEquals(0, diff.size());
     }
@@ -68,16 +70,16 @@ public class EditorFragmentDiffTest {
         List<String> lines1 = Arrays.asList("line1", "oldLine", "line3");
         List<String> lines2 = Arrays.asList("line1", "newLine", "line3");
 
-        List<EditorFragment.DiffLine> diff = editorFragment.computeDiff(lines1, lines2);
+        List<DiffEditorFragment.DiffLine> diff = diffEditor.computeDiff(lines1, lines2);
 
         int addedCount = 0;
         int deletedCount = 0;
         int unchangedCount = 0;
 
-        for (EditorFragment.DiffLine dl : diff) {
-            if (dl.type == EditorFragment.DiffLine.Type.ADDED) addedCount++;
-            else if (dl.type == EditorFragment.DiffLine.Type.DELETED) deletedCount++;
-            else if (dl.type == EditorFragment.DiffLine.Type.UNCHANGED) unchangedCount++;
+        for (DiffEditorFragment.DiffLine dl : diff) {
+            if (dl.type == DiffEditorFragment.DiffLine.Type.ADDED) addedCount++;
+            else if (dl.type == DiffEditorFragment.DiffLine.Type.DELETED) deletedCount++;
+            else if (dl.type == DiffEditorFragment.DiffLine.Type.UNCHANGED) unchangedCount++;
         }
 
         Assert.assertEquals(2, unchangedCount);
@@ -87,16 +89,16 @@ public class EditorFragmentDiffTest {
 
     @Test
     public void testExtractDiffHunksNoChanges() {
-        List<EditorFragment.DiffLine> diff = Arrays.asList(
-                new EditorFragment.DiffLine(EditorFragment.DiffLine.Type.HEADER, "--- f1"),
-                new EditorFragment.DiffLine(EditorFragment.DiffLine.Type.HEADER, "+++ f2"),
-                new EditorFragment.DiffLine(EditorFragment.DiffLine.Type.UNCHANGED, "  line1"),
-                new EditorFragment.DiffLine(EditorFragment.DiffLine.Type.UNCHANGED, "  line2")
+        List<DiffEditorFragment.DiffLine> diff = Arrays.asList(
+                new DiffEditorFragment.DiffLine(DiffEditorFragment.DiffLine.Type.HEADER, "--- f1"),
+                new DiffEditorFragment.DiffLine(DiffEditorFragment.DiffLine.Type.HEADER, "+++ f2"),
+                new DiffEditorFragment.DiffLine(DiffEditorFragment.DiffLine.Type.UNCHANGED, "  line1"),
+                new DiffEditorFragment.DiffLine(DiffEditorFragment.DiffLine.Type.UNCHANGED, "  line2")
         );
 
-        editorFragment.extractDiffHunks(diff);
+        diffEditor.extractDiffHunks(diff);
 
-        Assert.assertTrue(editorFragment.getDiffHunks().isEmpty());
+        Assert.assertTrue(diffEditor.getDiffHunks().isEmpty());
     }
 
     @Test
@@ -106,7 +108,7 @@ public class EditorFragmentDiffTest {
             w.write("line1\r\nline2\r\n");
         }
 
-        List<String> lines = editorFragment.readLinesFromFile(f.getAbsolutePath());
+        List<String> lines = BaseEditorFragment.readLinesFromFile(f.getAbsolutePath());
 
         Assert.assertEquals(2, lines.size());
         Assert.assertEquals("line1", lines.get(0));
@@ -140,7 +142,7 @@ public class EditorFragmentDiffTest {
         editorFragment.saveFileContent(f.getAbsolutePath(), "line1\nline2\nline3");
 
         Assert.assertTrue(EditorFragment.checkTrailingNewline(f));
-        List<String> lines = editorFragment.readLinesFromFile(f.getAbsolutePath());
+        List<String> lines = BaseEditorFragment.readLinesFromFile(f.getAbsolutePath());
         Assert.assertEquals(3, lines.size());
         Assert.assertEquals("line3", lines.get(2));
     }
@@ -159,17 +161,17 @@ public class EditorFragmentDiffTest {
         FragmentActivity activity = Robolectric.buildActivity(FragmentActivity.class)
                 .create().start().resume().get();
 
-        EditorFragment diffFragment = new EditorFragment() {
+        DiffEditorFragment diffFragment = new DiffEditorFragment() {
             @Override
             public Context getContext() {
                 return activity;
             }
         };
 
-        List<String> lines1 = diffFragment.readLinesFromFile(file1.getAbsolutePath());
-        List<String> lines2 = diffFragment.readLinesFromFile(file2.getAbsolutePath());
+        List<String> lines1 = BaseEditorFragment.readLinesFromFile(file1.getAbsolutePath());
+        List<String> lines2 = BaseEditorFragment.readLinesFromFile(file2.getAbsolutePath());
 
-        List<EditorFragment.DiffLine> diff = diffFragment.computeDiff(lines1, lines2);
+        List<DiffEditorFragment.DiffLine> diff = diffFragment.computeDiff(lines1, lines2);
         diffFragment.extractDiffHunks(diff);
 
         Assert.assertEquals("Should have 1 diff hunk for single line change", 1, diffFragment.getDiffHunks().size());
