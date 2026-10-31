@@ -805,8 +805,34 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         sectionTitle.setTextColor(Color.parseColor("#A0A0B0"));
         sectionTitle.setTextSize(11);
         sectionTitle.setTypeface(null, Typeface.BOLD);
-        sectionTitle.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(4));
-        mLlContainer.addView(sectionTitle);
+        LinearLayout header = new LinearLayout(getContext());
+        header.setOrientation(HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(4));
+        header.addView(sectionTitle, new LayoutParams(0, WRAP_CONTENT, 1.0f));
+
+        TextView btnAll = new TextView(getContext());
+        btnAll.setText(isStaged ? "−" : "+");
+        btnAll.setTextColor(Color.parseColor("#82AAFF"));
+        btnAll.setTextSize(18);
+        btnAll.setTypeface(null, Typeface.BOLD);
+        btnAll.setPadding(16, 0, 16, 0);
+        btnAll.setClickable(true);
+        btnAll.setFocusable(true);
+        btnAll.setContentDescription(isStaged ? "Unstage all changes" : "Stage all changes");
+        TypedValue outValueHeaderBtn = new TypedValue();
+        if (getContext() != null && getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValueHeaderBtn, true)) {
+            btnAll.setBackgroundResource(outValueHeaderBtn.resourceId);
+        }
+        btnAll.setOnClickListener(v -> {
+            if (isStaged) {
+                GitManager.getInstance().unstageAll(getContext(), mRepoDir, (success, output) -> refreshStatus());
+            } else {
+                GitManager.getInstance().stageAll(getContext(), mRepoDir, (success, output) -> refreshStatus());
+            }
+        });
+        header.addView(btnAll);
+        mLlContainer.addView(header);
 
         for (GitFileStatus file : files) {
             LinearLayout row = new LinearLayout(getContext());

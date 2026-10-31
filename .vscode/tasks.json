@@ -1,0 +1,77 @@
+{
+    "version": "2.0.0",
+    "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+            "ANDROID_HOME": "/home/tcd/Android/Sdk",
+            "ANDROID_SDK_ROOT": "/home/tcd/Android/Sdk",
+            "JAVA_HOME": "/home/tcd/.jdks/jbr-21.0.11",
+            "PATH": "/home/tcd/Android/Sdk/platform-tools:${env:PATH}",
+            // Substring of the `adb devices -l` line used to pick the target phone
+            // when several devices are attached (model name, serial, ...).
+            "TARGET_DEVICE": "motorola"
+        }
+    },
+    "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+    },
+    "tasks": [
+        {
+            "label": "Android: assembleDebug",
+            "type": "shell",
+            "command": "./gradlew",
+            "args": ["--console=plain", ":app:assembleDebug"],
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": ["$gradle"]
+        },
+        {
+            "label": "Android: installDebug (to target phone)",
+            "type": "shell",
+            "command": "export ANDROID_SERIAL=$(adb devices -l | awk -v d=\"$TARGET_DEVICE\" 'index($0,d){print $1; exit}'); echo \"Target: ${ANDROID_SERIAL:-<any device>}\"; ./gradlew --console=plain :app:installDebug",
+            "problemMatcher": ["$gradle"]
+        },
+        {
+            "label": "Android: launch app on phone",
+            "type": "shell",
+            "command": "export ANDROID_SERIAL=$(adb devices -l | awk -v d=\"$TARGET_DEVICE\" 'index($0,d){print $1; exit}'); adb shell am start -W -n com.vibestudio.app/.activity.OnboardingActivity",
+            "dependsOn": ["Android: installDebug (to target phone)"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Android: build + install + run",
+            "dependsOrder": "sequence",
+            "dependsOn": ["Android: launch app on phone"],
+            "group": { "kind": "test", "isDefault": true },
+            "problemMatcher": []
+        },
+        {
+            "label": "Android: adb devices",
+            "type": "shell",
+            "command": "adb devices -l",
+            "problemMatcher": []
+        },
+        {
+            "label": "Android: logcat (VibeStudio only)",
+            "type": "shell",
+            "command": "export ANDROID_SERIAL=$(adb devices -l | awk -v d=\"$TARGET_DEVICE\" 'index($0,d){print $1; exit}'); adb logcat -v color --pid=$(adb shell pidof -s com.vibestudio.app)",
+            "isBackground": true,
+            "presentation": { "panel": "dedicated", "clear": false },
+            "problemMatcher": []
+        },
+        {
+            "label": "Android: uninstall from phone",
+            "type": "shell",
+            "command": "export ANDROID_SERIAL=$(adb devices -l | awk -v d=\"$TARGET_DEVICE\" 'index($0,d){print $1; exit}'); adb uninstall com.vibestudio.app",
+            "problemMatcher": []
+        },
+        {
+            "label": "Android: clean",
+            "type": "shell",
+            "command": "./gradlew",
+            "args": ["--console=plain", "clean"],
+            "problemMatcher": ["$gradle"]
+        }
+    ]
+}

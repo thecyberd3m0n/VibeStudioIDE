@@ -213,6 +213,14 @@ public class GitManager {
         runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
+    public void stageAll(Context context, File repoDir, GitCallback callback) {
+        runGitCommandAsync(context, "add -A", repoDir, callback);
+    }
+
+    public void unstageAll(Context context, File repoDir, GitCallback callback) {
+        runGitCommandAsync(context, "reset", repoDir, callback);
+    }
+
     public void commit(Context context, File repoDir, String message, GitCallback callback) {
         String cmd = "commit -m " + quotePath(message);
         runGitCommandAsync(context, cmd, repoDir, callback);
@@ -541,7 +549,7 @@ public class GitManager {
                "  fi ; " +
                "fi ; " +
                "if [ -n \"$UB\" ]; then git rev-list --left-right --count \"HEAD...$UB\" 2>/dev/null || echo \"0 0\" ; else echo \"0 0\" ; fi ; " +
-               "echo \"===STATUS===\" ; git status --porcelain --ignored=no ; " +
+               "echo \"===STATUS===\" ; git status --porcelain --untracked-files=all --ignored=no ; " +
                "echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; " +
                "echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat )";
     }
