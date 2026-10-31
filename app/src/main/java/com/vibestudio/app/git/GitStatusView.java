@@ -805,8 +805,14 @@ public class GitStatusView extends LinearLayout implements GitStateChangeListene
                             if (isCurrent) {
                                 Toast.makeText(getContext(), "Already on " + targetBranch, Toast.LENGTH_SHORT).show();
                             } else {
-                                GitManager.getInstance().checkoutBranch(getContext(), mRepoDir, targetBranch,
-                                        handleGitResult("Switched to branch " + targetBranch, () -> showBranchActionMenu(branchRef, currentBranch)));
+                                String localName = isRemote ? targetBranch.substring(targetBranch.indexOf('/') + 1) : targetBranch;
+                                GitCallback result = handleGitResult("Switched to branch " + localName,
+                                        () -> showBranchActionMenu(branchRef, currentBranch));
+                                if (isRemote) {
+                                    GitManager.getInstance().checkoutRemoteBranch(getContext(), mRepoDir, targetBranch, result);
+                                } else {
+                                    GitManager.getInstance().checkoutBranch(getContext(), mRepoDir, targetBranch, result);
+                                }
                             }
                             break;
 

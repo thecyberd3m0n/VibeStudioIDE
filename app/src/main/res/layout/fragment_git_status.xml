@@ -80,8 +80,9 @@
         android:focusable="true">
 
         <ImageView
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:padding="8dp"
             android:scaleType="fitCenter"
             android:src="@drawable/ic_git_branch"
             android:contentDescription="Branch Icon"

@@ -173,6 +173,22 @@ public class GitManager {
         runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
+    /**
+     * Switches to the local branch behind a remote-tracking ref such as "origin/feature", creating it as a tracking
+     * branch when missing. A plain checkout of the remote ref would leave HEAD detached.
+     */
+    public void checkoutRemoteBranch(Context context, File repoDir, String remoteRef, GitCallback callback) {
+        int slash = remoteRef.indexOf('/');
+        if (slash <= 0 || slash == remoteRef.length() - 1) {
+            runGitCommandAsync(context, "checkout " + quotePath(remoteRef), repoDir, callback);
+            return;
+        }
+        String local = remoteRef.substring(slash + 1);
+        String cmd = "if git show-ref --verify --quiet " + quotePath("refs/heads/" + local) + " ; then git checkout "
+                + quotePath(local) + " ; else git checkout --track " + quotePath(remoteRef) + " ; fi";
+        runGitCommandAsync(context, cmd, repoDir, callback);
+    }
+
     public void createAndCheckoutBranch(Context context, File repoDir, String branchName, GitCallback callback) {
         String cmd = "checkout -b " + quotePath(branchName);
         runGitCommandAsync(context, cmd, repoDir, callback);
