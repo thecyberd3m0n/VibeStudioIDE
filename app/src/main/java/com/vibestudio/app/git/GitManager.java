@@ -221,6 +221,22 @@ public class GitManager {
         runGitCommandAsync(context, "reset", repoDir, callback);
     }
 
+    /** Stashes tracked and untracked changes; a blank name lets git generate the default message. */
+    public void stashPush(Context context, File repoDir, String name, GitCallback callback) {
+        String cmd = "stash push --include-untracked";
+        if (name != null && !name.trim().isEmpty()) cmd += " -m " + quotePath(name.trim());
+        runGitCommandAsync(context, cmd, repoDir, callback);
+    }
+
+    public void stashList(Context context, File repoDir, GitCallback callback) {
+        runGitCommandAsync(context, "stash list", repoDir, callback);
+    }
+
+    /** @param action "pop", "apply" or "drop" */
+    public void stashAction(Context context, File repoDir, String action, String stashRef, GitCallback callback) {
+        runGitCommandAsync(context, "stash " + action + " " + quotePath(stashRef), repoDir, callback);
+    }
+
     public void commit(Context context, File repoDir, String message, GitCallback callback) {
         String cmd = "commit -m " + quotePath(message);
         runGitCommandAsync(context, cmd, repoDir, callback);

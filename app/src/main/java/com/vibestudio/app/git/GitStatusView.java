@@ -205,9 +205,15 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             btnMore.setOnClickListener(v -> {
                 PopupMenu menu = new PopupMenu(
                         new ContextThemeWrapper(getContext(), android.R.style.Theme_DeviceDefault), v);
-                menu.getMenu().add("Cherry-Pick Commit(s)...");
+                menu.getMenu().add(0, 1, 0, "Stash Changes...");
+                menu.getMenu().add(0, 2, 1, "Unstash Changes...");
+                menu.getMenu().add(0, 3, 2, "Cherry-Pick Commit(s)...");
                 menu.setOnMenuItemClickListener(item -> {
-                    showCherryPickDialog();
+                    switch (item.getItemId()) {
+                        case 1: showStashDialog(); break;
+                        case 2: showUnstashDialog(); break;
+                        default: showCherryPickDialog(); break;
+                    }
                     return true;
                 });
                 menu.show();
@@ -533,6 +539,85 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                             confirm("Delete branch " + targetBranch + "?",
                                     "The branch will be removed. Git only allows this if it is fully merged.", "Delete",
                                     () -> deleteBranch(targetBranch, false));
+                            break;
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showStashDialog() {
+        if (mRepoDir == null || getContext() == null || blockedByOperation()) return;
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Stash Changes");
+
+        final EditText input = new EditText(getContext());
+        input.setHint("Stash name (optional)");
+        input.setPadding(32, 24, 32, 24);
+        builder.setView(input);
+
+        builder.setPositiveButton("Stash", (dialog, which) -> {
+            String name = input.getText().toString().trim();
+            GitManager.getInstance().stashPush(getContext(), mRepoDir, name, (success, output) -> {
+                boolean nothingToStash = success && output != null && output.contains("No local changes to save");
+                if (nothingToStash) {
+                    post(() -> Toast.makeText(getContext(), "No local changes to stash", Toast.LENGTH_SHORT).show());
+                } else {
+                    handleGitResult("Changes stashed", this::showStashDialog).onResult(success, output);
+                }
+            });
+        });
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
+    }
+
+    private void showUnstashDialog() {
+        if (mRepoDir == null || getContext() == null || blockedByOperation()) return;
+
+        GitManager.getInstance().stashList(getContext(), mRepoDir, (success, output) -> post(() -> {
+            List<String> refs = new ArrayList<>();
+            List<String> labels = new ArrayList<>();
+            if (success && output != null) {
+                for (String line : output.split("\n")) {
+                    String trimmed = line.trim();
+                    if (trimmed.matches("^stash@\\{\\d+\\}:.*")) {
+                        int colon = trimmed.indexOf(':');
+                        refs.add(trimmed.substring(0, colon));
+                        labels.add(trimmed);
+                    }
+                }
+            }
+            if (refs.isEmpty()) {
+                Toast.makeText(getContext(), success ? "No stashes found" : "Action failed: " + output, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            new AlertDialog.Builder(getContext())
+                    .setTitle("Unstash Changes (" + refs.size() + ")")
+                    .setItems(labels.toArray(new String[0]), (dialog, which) -> showStashActionMenu(refs.get(which), labels.get(which)))
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        }));
+    }
+
+    private void showStashActionMenu(String stashRef, String label) {
+        String[] actions = {"Pop (apply and remove)", "Apply (keep stash)", "Drop (delete stash)"};
+        new AlertDialog.Builder(getContext())
+                .setTitle(label)
+                .setItems(actions, (dialog, which) -> {
+                    switch (which) {
+                        case 0:
+                            GitManager.getInstance().stashAction(getContext(), mRepoDir, "pop", stashRef,
+                                    handleGitResult("Stash applied and removed", this::showUnstashDialog));
+                            break;
+                        case 1:
+                            GitManager.getInstance().stashAction(getContext(), mRepoDir, "apply", stashRef,
+                                    handleGitResult("Stash applied", this::showUnstashDialog));
+                            break;
+                        case 2:
+                            confirm("Drop " + stashRef + "?", "The stashed changes will be deleted.", "Drop",
+                                    () -> GitManager.getInstance().stashAction(getContext(), mRepoDir, "drop", stashRef,
+                                            handleGitResult("Stash dropped", this::showUnstashDialog)));
                             break;
                     }
                 })
