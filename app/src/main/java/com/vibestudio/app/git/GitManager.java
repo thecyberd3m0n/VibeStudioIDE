@@ -1,5 +1,15 @@
 package com.vibestudio.app.git;
 
+import com.vibestudio.app.git.callbacks.CommitFilesCallback;
+import com.vibestudio.app.git.callbacks.CommitLogCallback;
+import com.vibestudio.app.git.callbacks.GitBranchesCallback;
+import com.vibestudio.app.git.callbacks.GitCallback;
+import com.vibestudio.app.git.callbacks.GitCommitCallback;
+import com.vibestudio.app.git.callbacks.GitStateCallback;
+import com.vibestudio.app.git.callbacks.GitStateChangeListener;
+import com.vibestudio.app.git.models.GitCommit;
+import com.vibestudio.app.git.models.GitFileStatus;
+import com.vibestudio.app.git.models.GitRepositoryState;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
@@ -32,22 +42,7 @@ public class GitManager {
     private final List<GitStateChangeListener> mListeners = new CopyOnWriteArrayList<>();
     /** Repo path to the callbacks waiting for a second refresh; null while nobody asked for one. Present = running. */
     private final Map<String, List<GitStateCallback>> mRefreshes = new HashMap<>();
-
-    public interface GitCallback {
-        void onResult(boolean success, String output);
-    }
-
-    public interface GitBranchesCallback {
-        void onResult(boolean success, List<String> branches);
-    }
-
-    public interface GitStateChangeListener {
-        void onGitStateChanged(GitRepositoryState state);
-    }
-
-    public interface GitStateCallback {
-        void onStateUpdated(GitRepositoryState state);
-    }
+    private static final String COMMIT_FORMAT = "LC<|>%H<|>%h<|>%an<|>%ae<|>%ar<|>%s";
 
     private GitManager() {}
 
@@ -211,6 +206,106 @@ public class GitManager {
     public void unstageFile(Context context, File repoDir, String filePath, GitCallback callback) {
         String cmd = "reset HEAD -- " + quotePath(filePath);
         runGitCommandAsync(context, cmd, repoDir, callback);
+    }
+
+    /** Records start with "LC<|>"; a line the terminal wrapped is glued back onto its record. */
+    private static List<GitCommit> parseCommitRecords(String cleanedOutput, String remote) {
+        List<String> records = new ArrayList<>();
+        for (String line : cleanedOutput.split("\n")) {
+            String l = line.replace("\r", "");
+            if (l.startsWith("LC<|>")) {
+                records.add(l);
+            } else if (!records.isEmpty() && !l.startsWith("LCREMOTE<|>")) {
+                records.set(records.size() - 1, records.get(records.size() - 1) + l);
+            }
+        }
+        List<GitCommit> commits = new ArrayList<>();
+        for (String record : records) {
+            String[] f = record.trim().split("<\\|>", 7);
+            if (f.length == 7 && f[1].matches("[0-9a-f]{40}")) {
+                commits.add(new GitCommit(f[1], f[2], f[3], f[4], f[5], f[6], remote));
+            }
+        }
+        return commits;
+    }
+
+    /** Delivers the HEAD commit, or null for an empty repository. Parsed here because a subject may contain "error:". */
+    public void getLastCommit(Context context, File repoDir, GitCommitCallback callback) {
+        String cmd = "git log -1 --format=\"" + COMMIT_FORMAT + "\" 2>/dev/null ; "
+                + "echo \"LCREMOTE<|>$(git remote get-url origin 2>/dev/null)\"";
+        executeAsync(context, cmd, repoDir, 10000, res -> {
+            List<GitCommit> commits = new ArrayList<>();
+            if (res != null && res.isSuccess()) {
+                String output = cleanTerminalOutput(res.output);
+                String remote = "";
+                for (String line : output.split("\n")) {
+                    if (line.startsWith("LCREMOTE<|>")) remote = line.substring("LCREMOTE<|>".length()).trim();
+                }
+                commits = parseCommitRecords(output, remote);
+            }
+            callback.onResult(commits.isEmpty() ? null : commits.get(0));
+        });
+    }
+
+    /** One page of a branch's history, newest first; a null {@code ref} means the current branch. */
+    public void getCommitLog(Context context, File repoDir, String ref, int skip, int count, CommitLogCallback callback) {
+        String cmd = "git log " + (ref != null ? quotePath(ref) + " " : "") + "--skip=" + skip + " -n " + count
+                + " --format=\"" + COMMIT_FORMAT + "\" -- 2>/dev/null";
+        executeAsync(context, cmd, repoDir, 20000, res -> {
+            boolean ok = res != null && res.isSuccess();
+            callback.onResult(ok, ok ? parseCommitRecords(cleanTerminalOutput(res.output), "") : new ArrayList<>());
+        });
+    }
+
+    /** Files a commit changed relative to its first parent (the whole tree for a root commit). */
+    public void getCommitFiles(Context context, File repoDir, String hash, CommitFilesCallback callback) {
+        if (hash == null || !hash.matches("[0-9a-f]{7,40}")) {
+            callback.onResult(false, new ArrayList<>());
+            return;
+        }
+        String show = "git --no-pager -c core.quotepath=off show --first-parent --no-renames --format= ";
+        String cmd = show + "--numstat " + hash + " ; echo \"CFSTATUS<|>\" ; " + show + "--name-status " + hash;
+        executeAsync(context, cmd, repoDir, 20000, res -> {
+            List<GitFileStatus> files = new ArrayList<>();
+            if (res == null || !res.isSuccess()) {
+                callback.onResult(false, files);
+                return;
+            }
+            Map<String, int[]> stats = new HashMap<>();
+            boolean inStatus = false;
+            for (String line : cleanTerminalOutput(res.output).split("\n")) {
+                String l = line.replace("\r", "").trim();
+                if (l.startsWith("CFSTATUS<|>")) {
+                    inStatus = true;
+                } else if (!inStatus) {
+                    String[] f = l.split("\\s+", 3);
+                    if (f.length == 3 && (f[0].matches("\\d+") || f[0].equals("-"))) {
+                        stats.put(f[2], new int[]{f[0].equals("-") ? 0 : Integer.parseInt(f[0]),
+                                f[1].equals("-") ? 0 : Integer.parseInt(f[1])});
+                    }
+                } else {
+                    String[] f = l.split("\\s+", 2);
+                    if (f.length == 2 && f[0].matches("[ACDMRTUXB]\\d*")) {
+                        GitFileStatus file = new GitFileStatus(f[0].substring(0, 1), f[1], false);
+                        int[] stat = stats.get(f[1]);
+                        if (stat != null) {
+                            file.additions = stat[0];
+                            file.deletions = stat[1];
+                        }
+                        files.add(file);
+                    }
+                }
+            }
+            callback.onResult(true, files);
+        });
+    }
+
+    /** File content at a revision; unlike {@link #getFileAtHead} success comes from the exit code, not the text. */
+    public void getFileAtRevision(Context context, File repoDir, String rev, String filePath, GitCallback callback) {
+        executeAsync(context, "show " + quotePath(rev + ":" + filePath), repoDir, 10000, res -> {
+            boolean ok = res != null && res.isSuccess();
+            callback.onResult(ok, ok ? cleanRawFileOutput(res.output) : "");
+        });
     }
 
     public void stageAll(Context context, File repoDir, GitCallback callback) {
@@ -699,16 +794,16 @@ public class GitManager {
 
                 // Porcelain codes git uses for unmerged paths: DD AA AU UA DU UD UU.
                 if ((statusIndex + statusWorktree).matches("DD|AA|[ADU]U|U[ADU]")) {
-                    state.conflictedFiles.add(new GitStatusView.GitFileStatus(statusIndex + statusWorktree, filePath, false));
+                    state.conflictedFiles.add(new GitFileStatus(statusIndex + statusWorktree, filePath, false));
                     continue;
                 }
 
                 if (!" ".equals(statusIndex) && !"?".equals(statusIndex)) {
-                    state.stagedFiles.add(new GitStatusView.GitFileStatus(statusIndex, filePath, true));
+                    state.stagedFiles.add(new GitFileStatus(statusIndex, filePath, true));
                 }
                 if (!" ".equals(statusWorktree)) {
                     String s = "?".equals(statusWorktree) ? "??" : statusWorktree;
-                    state.unstagedFiles.add(new GitStatusView.GitFileStatus(s, filePath, false));
+                    state.unstagedFiles.add(new GitFileStatus(s, filePath, false));
                 }
             }
         }
@@ -716,9 +811,9 @@ public class GitManager {
         Map<String, int[]> stagedMap = parseNumstat(stagedNumstat);
         Map<String, int[]> unstagedMap = parseNumstat(unstagedNumstat);
 
-        Iterator<GitStatusView.GitFileStatus> stagedIter = state.stagedFiles.iterator();
+        Iterator<GitFileStatus> stagedIter = state.stagedFiles.iterator();
         while (stagedIter.hasNext()) {
-            GitStatusView.GitFileStatus file = stagedIter.next();
+            GitFileStatus file = stagedIter.next();
             int[] stat = stagedMap.get(file.filePath);
             if (stat != null) {
                 file.additions = stat[0];
@@ -728,9 +823,9 @@ public class GitManager {
             state.totalDeletions += file.deletions;
         }
 
-        Iterator<GitStatusView.GitFileStatus> unstagedIter = state.unstagedFiles.iterator();
+        Iterator<GitFileStatus> unstagedIter = state.unstagedFiles.iterator();
         while (unstagedIter.hasNext()) {
-            GitStatusView.GitFileStatus file = unstagedIter.next();
+            GitFileStatus file = unstagedIter.next();
             int[] stat = unstagedMap.get(file.filePath);
             if (stat != null) {
                 file.additions = stat[0];

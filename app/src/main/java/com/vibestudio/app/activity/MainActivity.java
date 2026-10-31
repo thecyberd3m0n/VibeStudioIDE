@@ -196,9 +196,14 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
     }
 
     public void openDiffInEditor(String file1Path, String file2Path) {
+        openDiffInEditor(file1Path, file2Path, DiffEditorFragment.Mode.AGENT, null);
+    }
+
+    /** @param title tab and header title; null derives it from the file names */
+    public void openDiffInEditor(String file1Path, String file2Path, DiffEditorFragment.Mode mode, String title) {
         String f1 = new File(file1Path).getName();
         String f2 = new File(file2Path).getName();
-        String tabTitle = "Diff: " + f1 + " ↔ " + f2;
+        String tabTitle = title != null ? title : "Diff: " + f1 + " ↔ " + f2;
 
         for (TabItem tab : mTabManager.getTabs()) {
             if (tab.getType() == TabType.EDITOR && tab.getTitle() != null && tab.getTitle().startsWith("Diff: ")) {
@@ -209,7 +214,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             }
         }
 
-        DiffEditorFragment fragment = DiffEditorFragment.newInstance(file1Path, file2Path);
+        DiffEditorFragment fragment = DiffEditorFragment.newInstance(file1Path, file2Path, mode, title);
         fragment.setOnDiffRevertListener(new DiffEditorFragment.OnDiffRevertListener() {
             @Override
             public boolean onAcceptHunk(DiffEditorFragment frag, DiffEditorFragment.DiffHunk hunk, String file1, String file2) {

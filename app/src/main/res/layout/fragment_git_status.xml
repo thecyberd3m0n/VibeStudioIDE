@@ -14,6 +14,18 @@
         android:background="#1A1A22"
         android:paddingHorizontal="16dp">
 
+        <ImageView
+            android:id="@+id/btn_git_back"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="4dp"
+            android:padding="6dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_chevron_left"
+            android:visibility="gone"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Back to changes" />
+
         <TextView
             android:id="@+id/tv_git_title"
             android:layout_width="0dp"
@@ -101,6 +113,94 @@
         android:layout_height="1dp"
         android:background="#262630" />
 
+    <!-- Commit history bar: last commit, its author and hash -->
+    <LinearLayout
+        android:id="@+id/ll_commit_history_bar"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#1E1E28"
+        android:paddingHorizontal="16dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/iv_commit_avatar"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginEnd="10dp"
+            android:scaleType="centerCrop"
+            android:contentDescription="Author avatar" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_commit_subject"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#E0E0E0"
+                android:textSize="13sp"
+                android:ellipsize="end"
+                android:singleLine="true" />
+
+            <TextView
+                android:id="@+id/tv_commit_meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#808090"
+                android:textSize="11sp"
+                android:ellipsize="end"
+                android:singleLine="true" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/btn_commit_history"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_marginStart="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:src="@drawable/ic_history"
+                android:contentDescription="History" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="History"
+                android:textColor="#E0E0E0"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#262630" />
+
+    <!-- Lower area: the changes pane and the history pane replace each other horizontally -->
+    <FrameLayout
+        android:id="@+id/fl_git_body"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipChildren="true">
+
+        <LinearLayout
+            android:id="@+id/ll_changes_pane"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
     <!-- Commit message input box -->
     <LinearLayout
         android:layout_width="match_parent"
@@ -175,5 +275,29 @@
             android:orientation="vertical"
             android:paddingBottom="16dp" />
     </ScrollView>
+
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/sv_commit_files"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/ll_commit_files"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="16dp" />
+        </ScrollView>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_commit_history"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+    </FrameLayout>
 
 </LinearLayout>

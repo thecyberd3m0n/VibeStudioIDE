@@ -1,5 +1,6 @@
 package com.vibestudio.app.git;
 
+import com.vibestudio.app.git.models.ConflictRegion;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -8,49 +9,6 @@ import java.util.List;
 public final class ConflictParser {
 
     private ConflictParser() {}
-
-    public static final class Region {
-        /** 0-based line indexes of the marker lines. {@code baseLine} is -1 unless diff3 style is used. */
-        public final int startLine;
-        public final int baseLine;
-        public final int separatorLine;
-        public final int endLine;
-        public final String oursLabel;
-        public final String theirsLabel;
-        public final List<String> oursLines;
-        public final List<String> baseLines;
-        public final List<String> theirsLines;
-
-        /** Which sides are accepted. A region counts as resolved once at least one side is. */
-        public boolean acceptOurs;
-        public boolean acceptTheirs;
-
-        Region(int startLine, int baseLine, int separatorLine, int endLine, String oursLabel, String theirsLabel,
-               List<String> oursLines, List<String> baseLines, List<String> theirsLines) {
-            this.startLine = startLine;
-            this.baseLine = baseLine;
-            this.separatorLine = separatorLine;
-            this.endLine = endLine;
-            this.oursLabel = oursLabel;
-            this.theirsLabel = theirsLabel;
-            this.oursLines = oursLines;
-            this.baseLines = baseLines;
-            this.theirsLines = theirsLines;
-        }
-
-        public boolean isResolved() {
-            return acceptOurs || acceptTheirs;
-        }
-
-        /** Last line (exclusive) of the "ours" block, which includes its start marker. */
-        public int oursEndExclusive() {
-            return baseLine >= 0 ? baseLine : separatorLine;
-        }
-
-        String signature() {
-            return String.join("\n", oursLines) + "\u0000" + String.join("\n", theirsLines);
-        }
-    }
 
     public static List<String> splitLines(String text) {
         List<String> lines = new ArrayList<>();
@@ -95,8 +53,8 @@ public final class ConflictParser {
     }
 
     /** Well-formed regions only; a start marker without its separator and end marker is ignored. */
-    public static List<Region> parse(List<String> lines) {
-        List<Region> regions = new ArrayList<>();
+    public static List<ConflictRegion> parse(List<String> lines) {
+        List<ConflictRegion> regions = new ArrayList<>();
         int i = 0;
         while (i < lines.size()) {
             if (!isStart(lines.get(i))) {
@@ -133,7 +91,7 @@ public final class ConflictParser {
             List<String> ours = new ArrayList<>(lines.subList(start + 1, oursEnd));
             List<String> baseLines = base >= 0 ? new ArrayList<>(lines.subList(base + 1, separator)) : new ArrayList<>();
             List<String> theirs = new ArrayList<>(lines.subList(separator + 1, end));
-            regions.add(new Region(start, base, separator, end, labelOf(lines.get(start)), labelOf(lines.get(end)),
+            regions.add(new ConflictRegion(start, base, separator, end, labelOf(lines.get(start)), labelOf(lines.get(end)),
                     ours, baseLines, theirs));
             i = end + 1;
         }
@@ -144,7 +102,7 @@ public final class ConflictParser {
      * Carries accepted sides over from the previous parse after the user edited the text. Regions with the same
      * content keep their choice; when the count is unchanged the choice follows the position.
      */
-    public static void carryOverChoices(List<Region> previous, List<Region> current) {
+    public static void carryOverChoices(List<ConflictRegion> previous, List<ConflictRegion> current) {
         if (previous == null || previous.isEmpty() || current.isEmpty()) return;
         if (previous.size() == current.size()) {
             for (int i = 0; i < current.size(); i++) {
@@ -154,7 +112,7 @@ public final class ConflictParser {
             return;
         }
         boolean[] used = new boolean[previous.size()];
-        for (Region region : current) {
+        for (ConflictRegion region : current) {
             for (int p = 0; p < previous.size(); p++) {
                 if (!used[p] && previous.get(p).signature().equals(region.signature())) {
                     region.acceptOurs = previous.get(p).acceptOurs;
@@ -176,8 +134,8 @@ public final class ConflictParser {
         return sb.toString();
     }
 
-    public static boolean allResolved(List<Region> regions) {
-        for (Region r : regions) {
+    public static boolean allResolved(List<ConflictRegion> regions) {
+        for (ConflictRegion r : regions) {
             if (!r.isResolved()) return false;
         }
         return true;
@@ -187,12 +145,12 @@ public final class ConflictParser {
      * Replaces every region by the accepted side(s), ours first, and keeps everything else (including manual edits
      * made outside the markers) untouched. Returns the lines of the resolved file.
      */
-    public static List<String> resolve(List<String> lines, List<Region> regions) {
-        List<Region> ordered = new ArrayList<>(regions);
+    public static List<String> resolve(List<String> lines, List<ConflictRegion> regions) {
+        List<ConflictRegion> ordered = new ArrayList<>(regions);
         Collections.sort(ordered, (a, b) -> Integer.compare(a.startLine, b.startLine));
         List<String> out = new ArrayList<>();
         int cursor = 0;
-        for (Region r : ordered) {
+        for (ConflictRegion r : ordered) {
             out.addAll(lines.subList(cursor, r.startLine));
             if (r.acceptOurs) out.addAll(r.oursLines);
             if (r.acceptTheirs) out.addAll(r.theirsLines);

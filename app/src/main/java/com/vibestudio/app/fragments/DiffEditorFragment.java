@@ -29,12 +29,27 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/** Read-only inline diff of two files with accept/revert overlays on every changed hunk. */
+/** Read-only inline diff of two files; which accept/revert overlays it offers depends on the {@link Mode}. */
 public class DiffEditorFragment extends BaseEditorFragment {
 
     private static final String TAG = "DiffEditorFragment";
     private static final String ARG_FILE1_PATH = "file1_path";
     private static final String ARG_FILE2_PATH = "file2_path";
+    private static final String ARG_MODE = "mode";
+    private static final String ARG_TITLE = "title";
+
+    /** What the user may do with the shown changes. */
+    public enum Mode {
+        /** Changes made by the agent: accept or revert them. */
+        AGENT,
+        /** Uncommitted git changes: they already are in the working tree, so only revert makes sense. */
+        GIT_CURRENT,
+        /** Older commits: a record of what happened, nothing to accept or revert. */
+        HISTORICAL
+    }
+
+    private Mode mMode = Mode.AGENT;
+    private String mTitle;
 
     private String mFile1Path;
     private String mFile2Path;
@@ -100,7 +115,10 @@ public class DiffEditorFragment extends BaseEditorFragment {
             return mCustomHunkOptions;
         }
         List<HunkOption> defaults = new ArrayList<>();
-        defaults.add(new HunkOption(HunkOption.OPTION_ACCEPT, "Accept Hunk", R.drawable.ic_check, Color.parseColor("#A6E3A1"), null));
+        if (mMode == Mode.HISTORICAL) return defaults;
+        if (mMode == Mode.AGENT) {
+            defaults.add(new HunkOption(HunkOption.OPTION_ACCEPT, "Accept Hunk", R.drawable.ic_check, Color.parseColor("#A6E3A1"), null));
+        }
         defaults.add(new HunkOption(HunkOption.OPTION_REVERT, "Revert Hunk", R.drawable.ic_undo, Color.parseColor("#CF6679"), null));
         return defaults;
     }
@@ -138,12 +156,21 @@ public class DiffEditorFragment extends BaseEditorFragment {
     }
 
     public static DiffEditorFragment newInstance(String file1Path, String file2Path) {
+        return newInstance(file1Path, file2Path, Mode.AGENT, null);
+    }
+
+    /** @param title shown instead of the file names when the files are temporary copies; may be null */
+    public static DiffEditorFragment newInstance(String file1Path, String file2Path, Mode mode, String title) {
         DiffEditorFragment fragment = new DiffEditorFragment();
         fragment.mFile1Path = file1Path;
         fragment.mFile2Path = file2Path;
+        fragment.mMode = mode != null ? mode : Mode.AGENT;
+        fragment.mTitle = title;
         Bundle args = new Bundle();
         args.putString(ARG_FILE1_PATH, file1Path);
         args.putString(ARG_FILE2_PATH, file2Path);
+        args.putString(ARG_MODE, fragment.mMode.name());
+        args.putString(ARG_TITLE, title);
         fragment.setArguments(args);
         return fragment;
     }
@@ -154,6 +181,9 @@ public class DiffEditorFragment extends BaseEditorFragment {
         if (getArguments() != null) {
             mFile1Path = getArguments().getString(ARG_FILE1_PATH);
             mFile2Path = getArguments().getString(ARG_FILE2_PATH);
+            mTitle = getArguments().getString(ARG_TITLE);
+            String mode = getArguments().getString(ARG_MODE);
+            if (mode != null) mMode = Mode.valueOf(mode);
         }
     }
 
@@ -162,7 +192,7 @@ public class DiffEditorFragment extends BaseEditorFragment {
         updateFilePathUI();
         if (mBtnSave != null) mBtnSave.setVisibility(View.GONE);
         if (mBtnUndo != null) {
-            mBtnUndo.setVisibility(View.VISIBLE);
+            mBtnUndo.setVisibility(mMode == Mode.HISTORICAL ? View.GONE : View.VISIBLE);
             mBtnUndo.setOnClickListener(v -> showRevertAllDialog());
         }
         if (mCodeEditor != null) {
@@ -178,7 +208,7 @@ public class DiffEditorFragment extends BaseEditorFragment {
         if (getContext() == null) return;
         android.content.Context themedContext = new android.view.ContextThemeWrapper(getContext(), android.R.style.Theme_DeviceDefault_Settings);
         android.widget.PopupMenu popup = new android.widget.PopupMenu(themedContext, anchor);
-        popup.getMenu().add("Revert All Changes");
+        if (mMode != Mode.HISTORICAL) popup.getMenu().add("Revert All Changes");
         android.view.MenuItem wordWrapItem = popup.getMenu().add(0, 101, 0, "Word Wrap");
         wordWrapItem.setCheckable(true);
         wordWrapItem.setChecked(mCodeEditor != null && mCodeEditor.isWordwrap());
@@ -204,7 +234,9 @@ public class DiffEditorFragment extends BaseEditorFragment {
     }
 
     private void updateFilePathUI() {
-        if (mTvFilePath != null) {
+        if (mTvFilePath != null && mTitle != null) {
+            mTvFilePath.setText(mTitle);
+        } else if (mTvFilePath != null) {
             String name1 = mFile1Path != null ? new File(mFile1Path).getName() : "HEAD";
             String name2 = mFile2Path != null ? new File(mFile2Path).getName() : "Worktree";
             mTvFilePath.setText("Diff: " + name1 + " ↔ " + name2);

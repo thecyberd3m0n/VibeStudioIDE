@@ -1,4 +1,4 @@
-package com.vibestudio.app.git;
+package com.vibestudio.app.git.models;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -9,9 +9,9 @@ public class GitRepositoryState {
     public String branchName = "";
     public int ahead = 0;
     public int behind = 0;
-    public List<GitStatusView.GitFileStatus> stagedFiles = new ArrayList<>();
-    public List<GitStatusView.GitFileStatus> unstagedFiles = new ArrayList<>();
-    public List<GitStatusView.GitFileStatus> conflictedFiles = new ArrayList<>();
+    public List<GitFileStatus> stagedFiles = new ArrayList<>();
+    public List<GitFileStatus> unstagedFiles = new ArrayList<>();
+    public List<GitFileStatus> conflictedFiles = new ArrayList<>();
     /** "merge", "rebase", "cherry-pick" or "revert" while such an operation is stopped midway; otherwise null. */
     public String operationInProgress;
     public int totalAdditions = 0;
