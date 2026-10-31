@@ -6,6 +6,5 @@
     android:textColor="#CDD6F4"
     android:textSize="12sp"
     android:typeface="monospace"
-    android:textIsSelectable="true"
     android:paddingVertical="1dp"
     android:paddingHorizontal="4dp" />

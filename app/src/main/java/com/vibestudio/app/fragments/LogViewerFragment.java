@@ -32,6 +32,8 @@ import com.vibestudio.app.git.GitManager;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.logging.SessionLogger;
 import com.vibestudio.app.util.FontUtils;
+import com.vibestudio.app.view.LogLineAdapter;
+import com.vibestudio.app.view.LogSelectionController;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -53,7 +55,8 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
 
     private TextView mTvLogDetailTitle;
     private RecyclerView mRvLogContent;
-    private LogAdapter mLogAdapter;
+    private LogLineAdapter mLogAdapter;
+    private LogSelectionController mSelectionController;
     private LinearLayoutManager mLayoutManager;
     private Button mBtnBack;
     private Button mBtnCopy;
@@ -78,8 +81,9 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         if (mRvLogContent != null) {
             mLayoutManager = new LinearLayoutManager(getContext());
             mRvLogContent.setLayoutManager(mLayoutManager);
-            mLogAdapter = new LogAdapter(getContext());
+            mLogAdapter = new LogLineAdapter(getContext());
             mRvLogContent.setAdapter(mLogAdapter);
+            mSelectionController = new LogSelectionController(requireContext(), mRvLogContent, mLogAdapter);
         }
 
         mBtnBack = view.findViewById(R.id.btn_back_to_processes);
@@ -134,10 +138,12 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     @Override
     public void onStop() {
         super.onStop();
+        if (mSelectionController != null) mSelectionController.finish();
         detachListeners();
     }
 
     private void showProcessList() {
+        if (mSelectionController != null) mSelectionController.finish();
         mCurrentMode = Mode.PROCESS_LIST;
         detachListeners();
         mCurrentChannel = null;
@@ -303,7 +309,7 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         mHandler.post(() -> {
             if (mLogAdapter != null) {
                 mLogAdapter.appendLine(logEntry);
-                scrollToBottom();
+                if (!mLogAdapter.hasSelection()) scrollToBottom();
             }
         });
     }
@@ -320,72 +326,6 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     private void scrollToBottom() {
         if (mRvLogContent != null && mLogAdapter != null && mLogAdapter.getItemCount() > 0) {
             mRvLogContent.post(() -> mRvLogContent.smoothScrollToPosition(mLogAdapter.getItemCount() - 1));
-        }
-    }
-
-    private static class LogAdapter extends RecyclerView.Adapter<LogAdapter.LogViewHolder> {
-
-        private final List<String> mLogLines = new ArrayList<>();
-        private final Context mContext;
-
-        public LogAdapter(Context context) {
-            mContext = context;
-        }
-
-        public void setLines(List<String> lines) {
-            mLogLines.clear();
-            if (lines != null) {
-                mLogLines.addAll(lines);
-            }
-            notifyDataSetChanged();
-        }
-
-        public void appendLine(String line) {
-            mLogLines.add(line);
-            notifyItemInserted(mLogLines.size() - 1);
-        }
-
-        public void clear() {
-            mLogLines.clear();
-            notifyDataSetChanged();
-        }
-
-        public String getAllText() {
-            StringBuilder sb = new StringBuilder();
-            for (String line : mLogLines) {
-                sb.append(line).append("\n");
-            }
-            return sb.toString();
-        }
-
-        @NonNull
-        @Override
-        public LogViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_log_line, parent, false);
-            return new LogViewHolder(view);
-        }
-
-        @Override
-        public void onBindViewHolder(@NonNull LogViewHolder holder, int position) {
-            String text = mLogLines.get(position);
-            holder.mTvLine.setText(text);
-            if (mContext != null) {
-                holder.mTvLine.setTypeface(FontUtils.getMonospaceTypeface(mContext));
-            }
-        }
-
-        @Override
-        public int getItemCount() {
-            return mLogLines.size();
-        }
-
-        static class LogViewHolder extends RecyclerView.ViewHolder {
-            TextView mTvLine;
-
-            public LogViewHolder(@NonNull View itemView) {
-                super(itemView);
-                mTvLine = itemView.findViewById(R.id.tv_log_line);
-            }
         }
     }
 }
