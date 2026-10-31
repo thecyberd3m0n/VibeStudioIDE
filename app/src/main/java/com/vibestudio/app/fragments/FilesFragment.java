@@ -76,6 +76,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
     private View mLayoutGitChangesBar;
     private TextView mTvGitChangesLabel;
+    private TextView mTvGitChangesSyncIndicator;
     private TextView mTvGitChangesChevron;
     private FrameLayout mFlGitViewContainer;
     private GitStatusView mGitStatusView;
@@ -197,6 +198,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
 
         mLayoutGitChangesBar = view.findViewById(R.id.layout_git_changes_bar);
         mTvGitChangesLabel = view.findViewById(R.id.tv_git_changes_label);
+        mTvGitChangesSyncIndicator = view.findViewById(R.id.tv_git_changes_indicator);
         mTvGitChangesChevron = view.findViewById(R.id.tv_git_changes_chevron);
         mFlGitViewContainer = view.findViewById(R.id.fl_git_view_container);
 
@@ -633,10 +635,16 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 if (mTvGitChangesLabel != null) {
                     mTvGitChangesLabel.setText("Changes | +0, -0");
                 }
+                if (mTvGitChangesSyncIndicator != null) {
+                    mTvGitChangesSyncIndicator.setText("↑0 ↓0");
+                }
                 return;
             }
             if (mTvGitChangesLabel != null) {
                 mTvGitChangesLabel.setText("Changes | +" + state.totalAdditions + ", -" + state.totalDeletions);
+            }
+            if (mTvGitChangesSyncIndicator != null) {
+                mTvGitChangesSyncIndicator.setText("↑" + state.ahead + " ↓" + state.behind);
             }
         });
     }
@@ -752,9 +760,6 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         }
 
         preloadGitView();
-
-        mCurrentGitState = null;
-        updateGitChangesBar(null);
 
         GitManager.getInstance().refreshRepositoryState(getContext(), repoRoot, this::updateGitChangesBar);
     }

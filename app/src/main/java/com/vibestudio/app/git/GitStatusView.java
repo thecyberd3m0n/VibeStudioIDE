@@ -18,6 +18,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -35,6 +36,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 
 import com.vibestudio.app.activity.MainActivity;
+import com.vibestudio.app.fragments.ConflictEditorFragment;
+import com.vibestudio.app.fragments.DiffEditorFragment;
 import com.vibestudio.app.fragments.EditorFragment;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
@@ -53,7 +56,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
     private View mLlBranchSelector;
     private EditText mEtCommitMessage;
     private Button mBtnAction;
-    private ImageButton mBtnRefresh;
+    private View mBtnGitStatus;
     private View mBtnClose;
     private LinearLayout mLlContainer;
 
@@ -103,7 +106,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         mTvBranchName = findViewById(R.id.tv_current_branch);
         mEtCommitMessage = findViewById(R.id.et_commit_message);
         mBtnAction = findViewById(R.id.btn_git_action);
-        mBtnRefresh = findViewById(R.id.btn_git_refresh);
+        mBtnGitStatus = findViewById(R.id.btn_git_refresh);
         mBtnClose = findViewById(R.id.btn_git_close);
         mLlContainer = findViewById(R.id.ll_git_items_container);
 
@@ -111,8 +114,14 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             mLlBranchSelector.setOnClickListener(v -> showBranchSelectionDialog());
         }
 
-        if (mBtnRefresh != null) {
-            mBtnRefresh.setOnClickListener(v -> refreshStatus());
+        if (mBtnGitStatus != null) {
+            mBtnGitStatus.setOnClickListener(v -> {
+                if (mLastState != null && mLastState.needsSync()) {
+                    syncChanges();
+                } else {
+                    refreshStatus();
+                }
+            });
         }
 
         if (mBtnClose != null) {
@@ -223,11 +232,12 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
     }
 
     public void setRepoDir(File repoDir) {
-        if (this.mRepoDir == null || !this.mRepoDir.equals(repoDir)) {
+        if (repoDir == null) return;
+        if (this.mRepoDir == null || !this.mRepoDir.getAbsolutePath().equals(repoDir.getAbsolutePath())) {
             this.mRepoDir = repoDir;
             renderState(null);
+            refreshStatus();
         }
-        refreshStatus();
     }
 
     public void setOnCloseListener(OnCloseListener listener) {
@@ -250,6 +260,14 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 mTvBranchName.setText(bName);
             }
 
+            int ahead = (state != null) ? state.ahead : 0;
+            int behind = (state != null) ? state.behind : 0;
+            String syncCountText = "↑" + ahead + " ↓" + behind;
+
+            if (mBtnGitStatus instanceof TextView) {
+                ((TextView) mBtnGitStatus).setText(syncCountText);
+            }
+
             updateButtonStates();
 
             if (state == null) {
@@ -261,6 +279,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 return;
             }
 
+            renderOperationBanner(state);
+            renderConflictSection(state);
             renderSection("STAGED CHANGES", state.stagedFiles, true);
             renderSection("CHANGES", state.unstagedFiles, false);
 
@@ -474,6 +494,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         return (success, output) -> post(() -> {
             if (success) {
                 Toast.makeText(getContext(), successMsg, Toast.LENGTH_SHORT).show();
+            } else if (GitManager.isMergeConflictOutput(output)) {
+                Toast.makeText(getContext(), "Conflicts found. Resolve them, then continue or abort.", Toast.LENGTH_LONG).show();
             } else if (GitManager.isAuthorIdentityError(output)) {
                 showGitCredentialsDialog(retryAction);
             } else {
@@ -483,15 +505,162 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         });
     }
 
+    private void renderOperationBanner(GitRepositoryState state) {
+        if (!state.hasOperationInProgress()) return;
+        String operation = state.operationInProgress;
+        boolean conflicts = state.hasConflicts();
+
+        LinearLayout banner = new LinearLayout(getContext());
+        banner.setOrientation(VERTICAL);
+        banner.setBackgroundColor(Color.parseColor(conflicts ? "#3B2326" : "#2B2A1E"));
+        banner.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(12));
+
+        TextView title = new TextView(getContext());
+        title.setText((conflicts ? "⚠ " : "") + capitalize(operation) + " in progress"
+                + (conflicts ? " - " + state.conflictedFiles.size() + " conflicted file(s)" : " - no conflicts left"));
+        title.setTextColor(Color.parseColor(conflicts ? "#F14C4C" : "#E2C08D"));
+        title.setTextSize(13);
+        title.setTypeface(null, Typeface.BOLD);
+        banner.addView(title);
+
+        TextView hint = new TextView(getContext());
+        hint.setText(conflicts
+                ? "Tap a file to choose ours or theirs for each conflict, then press Resolve."
+                : "All conflicts are staged. Continue to finish the " + operation + ".");
+        hint.setTextColor(Color.parseColor("#C0C0D0"));
+        hint.setTextSize(12);
+        hint.setPadding(0, dpToPx(4), 0, dpToPx(8));
+        banner.addView(hint);
+
+        LinearLayout buttons = new LinearLayout(getContext());
+        buttons.setOrientation(HORIZONTAL);
+
+        Button btnAbort = new Button(getContext());
+        btnAbort.setText("Abort " + operation);
+        btnAbort.setTextSize(12);
+        btnAbort.setOnClickListener(v -> confirmAbortOperation(operation));
+        buttons.addView(btnAbort, new LayoutParams(0, dpToPx(40), 1f));
+
+        Button btnContinue = new Button(getContext());
+        btnContinue.setText("Continue");
+        btnContinue.setTextSize(12);
+        btnContinue.setEnabled(!conflicts);
+        btnContinue.setOnClickListener(v -> continueOperation(operation));
+        LayoutParams continueParams = new LayoutParams(0, dpToPx(40), 1f);
+        continueParams.setMarginStart(dpToPx(8));
+        buttons.addView(btnContinue, continueParams);
+
+        banner.addView(buttons);
+        mLlContainer.addView(banner);
+    }
+
+    private void renderConflictSection(GitRepositoryState state) {
+        if (!state.hasConflicts()) return;
+
+        TextView sectionTitle = new TextView(getContext());
+        sectionTitle.setText("MERGE CONFLICTS (" + state.conflictedFiles.size() + ")");
+        sectionTitle.setTextColor(Color.parseColor("#F14C4C"));
+        sectionTitle.setTextSize(11);
+        sectionTitle.setTypeface(null, Typeface.BOLD);
+        sectionTitle.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(4));
+        mLlContainer.addView(sectionTitle);
+
+        for (GitFileStatus file : state.conflictedFiles) {
+            LinearLayout row = new LinearLayout(getContext());
+            row.setOrientation(HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
+
+            TextView tvStatus = new TextView(getContext());
+            tvStatus.setText(file.status);
+            tvStatus.setTextSize(12);
+            tvStatus.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            tvStatus.setTextColor(Color.parseColor("#F14C4C"));
+            row.addView(tvStatus, new LayoutParams(dpToPx(28), WRAP_CONTENT));
+
+            TextView tvPath = new TextView(getContext());
+            tvPath.setText(file.filePath);
+            tvPath.setTextColor(Color.parseColor("#E0E0E0"));
+            tvPath.setTextSize(13);
+            tvPath.setSingleLine(true);
+            tvPath.setEllipsize(TextUtils.TruncateAt.END);
+            LayoutParams pathParams = new LayoutParams(0, WRAP_CONTENT, 1.0f);
+            pathParams.setMarginStart(dpToPx(12));
+            row.addView(tvPath, pathParams);
+
+            TextView btnResolve = new TextView(getContext());
+            btnResolve.setText("Resolve ›");
+            btnResolve.setTextColor(Color.parseColor("#82AAFF"));
+            btnResolve.setTextSize(12);
+            btnResolve.setTypeface(null, Typeface.BOLD);
+            btnResolve.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
+            row.addView(btnResolve);
+
+            row.setOnClickListener(v -> openConflictFile(file));
+            mLlContainer.addView(row);
+        }
+    }
+
+    private void openConflictFile(GitFileStatus file) {
+        if (mRepoDir == null || file == null || file.filePath == null) return;
+        File full = new File(mRepoDir, file.filePath);
+        // Delete/modify conflicts have no markers to resolve; those open as a plain file.
+        boolean hasMarkers = false;
+        if (full.isFile() && full.length() < 2L * 1024 * 1024) {
+            try {
+                hasMarkers = ConflictParser.hasConflictMarkers(
+                        new String(java.nio.file.Files.readAllBytes(full.toPath()), java.nio.charset.StandardCharsets.UTF_8));
+            } catch (IOException ignored) {}
+        }
+        if (!hasMarkers) {
+            openFileInEditor(full.getAbsolutePath());
+            return;
+        }
+        if (getContext() instanceof MainActivity) {
+            ((MainActivity) getContext()).openConflictInEditor(mRepoDir, file.filePath);
+        } else {
+            TabManager.getInstance().openTab(TabType.EDITOR, "Conflict: " + full.getName(),
+                    ConflictEditorFragment.newInstance(mRepoDir, file.filePath));
+        }
+    }
+
+    private void confirmAbortOperation(String operation) {
+        if (mRepoDir == null || getContext() == null) return;
+        new AlertDialog.Builder(getContext())
+                .setTitle("Abort " + operation)
+                .setMessage("This discards the " + operation + " and restores the state from before it started.")
+                .setPositiveButton("Abort", (dialog, which) ->
+                        GitManager.getInstance().abortOperation(getContext(), mRepoDir, operation,
+                                handleGitResult(capitalize(operation) + " aborted", null)))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void continueOperation(String operation) {
+        if (mRepoDir == null || getContext() == null) return;
+        GitManager.getInstance().continueOperation(getContext(), mRepoDir, operation,
+                handleGitResult(capitalize(operation) + " completed", () -> continueOperation(operation)));
+    }
+
+    private static String capitalize(String s) {
+        return s == null || s.isEmpty() ? "" : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
     private void updateButtonStates() {
+        boolean hasStaged = mLastState != null && mLastState.hasStagedChanges();
         boolean hasChanges = mLastState != null && mLastState.hasChanges();
-        boolean hasCommitMessage = mEtCommitMessage != null && mEtCommitMessage.getText().toString().trim().length() > 0;
+        boolean hasCommitMessage = mEtCommitMessage != null && !mEtCommitMessage.getText().toString().trim().isEmpty();
         boolean needsSync = mLastState != null && mLastState.needsSync();
 
-        if (mBtnAction != null) {
-            if (needsSync) {
+        if (mBtnAction != null && mLastState != null && mLastState.hasConflicts()) {
+            mBtnAction.setText("Resolve " + mLastState.conflictedFiles.size() + " conflict(s) first");
+            mBtnAction.setBackgroundColor(Color.parseColor("#3A3A4A"));
+            mBtnAction.setEnabled(false);
+            mBtnAction.setAlpha(0.5f);
+        } else if (mBtnAction != null) {
+            if (!hasChanges) {
                 String syncText = "Sync Changes";
-                if (mLastState.ahead > 0 || mLastState.behind > 0) {
+                if (mLastState != null && (mLastState.ahead > 0 || mLastState.behind > 0)) {
                     StringBuilder sb = new StringBuilder("Sync Changes (");
                     if (mLastState.ahead > 0) sb.append("↑").append(mLastState.ahead);
                     if (mLastState.behind > 0) {
@@ -502,31 +671,39 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                     syncText = sb.toString();
                 }
                 mBtnAction.setText(syncText);
-                mBtnAction.setBackgroundColor(Color.parseColor("#2D2D3A"));
-                mBtnAction.setEnabled(true);
-                mBtnAction.setAlpha(1.0f);
-            } else if (hasChanges || hasCommitMessage) {
-                mBtnAction.setText("Commit");
-                mBtnAction.setBackgroundColor(Color.parseColor("#0E639C"));
-                mBtnAction.setEnabled(true);
-                mBtnAction.setAlpha(1.0f);
+                if (needsSync) {
+                    mBtnAction.setBackgroundColor(Color.parseColor("#0E639C"));
+                    mBtnAction.setEnabled(true);
+                    mBtnAction.setAlpha(1.0f);
+                } else {
+                    mBtnAction.setBackgroundColor(Color.parseColor("#3A3A4A"));
+                    mBtnAction.setEnabled(false);
+                    mBtnAction.setAlpha(0.5f);
+                }
             } else {
-                mBtnAction.setText("Sync Changes");
-                mBtnAction.setBackgroundColor(Color.parseColor("#2D2D3A"));
-                mBtnAction.setEnabled(true);
-                mBtnAction.setAlpha(1.0f);
+                mBtnAction.setText("Commit");
+                boolean canCommit = hasStaged && hasCommitMessage;
+                if (canCommit) {
+                    mBtnAction.setBackgroundColor(Color.parseColor("#0E639C"));
+                    mBtnAction.setEnabled(true);
+                    mBtnAction.setAlpha(1.0f);
+                } else {
+                    mBtnAction.setBackgroundColor(Color.parseColor("#3A3A4A"));
+                    mBtnAction.setEnabled(false);
+                    mBtnAction.setAlpha(0.5f);
+                }
             }
         }
     }
 
     private void handleActionButtonClick() {
-        boolean hasChanges = mLastState != null && mLastState.hasChanges();
-        boolean hasCommitMessage = mEtCommitMessage != null && mEtCommitMessage.getText().toString().trim().length() > 0;
+        boolean hasStaged = mLastState != null && mLastState.hasStagedChanges();
+        boolean hasCommitMessage = mEtCommitMessage != null && !mEtCommitMessage.getText().toString().trim().isEmpty();
         boolean needsSync = mLastState != null && mLastState.needsSync();
 
-        if (hasChanges || hasCommitMessage) {
+        if (hasStaged && hasCommitMessage) {
             executeCommit();
-        } else if (needsSync || !hasChanges) {
+        } else if (needsSync) {
             syncChanges();
         }
     }
@@ -683,10 +860,10 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         if (getContext() instanceof MainActivity) {
             ((MainActivity) getContext()).openDiffInEditor(file1, file2);
         } else {
-            EditorFragment frag = EditorFragment.newDiffInstance(file1, file2);
-            frag.setOnDiffRevertListener(new EditorFragment.OnDiffRevertListener() {
+            DiffEditorFragment frag = DiffEditorFragment.newInstance(file1, file2);
+            frag.setOnDiffRevertListener(new DiffEditorFragment.OnDiffRevertListener() {
                 @Override
-                public boolean onAcceptHunk(EditorFragment fragment, EditorFragment.DiffHunk hunk, String f1, String f2) {
+                public boolean onAcceptHunk(DiffEditorFragment fragment, DiffEditorFragment.DiffHunk hunk, String f1, String f2) {
                     boolean ok = fragment.defaultApplyHunkAccept(hunk);
                     if (mRepoDir != null && getContext() != null) {
                         GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), mRepoDir, null);
@@ -695,7 +872,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 }
 
                 @Override
-                public boolean onRevertHunk(EditorFragment fragment, EditorFragment.DiffHunk hunk, String f1, String f2) {
+                public boolean onRevertHunk(DiffEditorFragment fragment, DiffEditorFragment.DiffHunk hunk, String f1, String f2) {
                     boolean ok = fragment.defaultApplyHunkRevert(hunk);
                     if (mRepoDir != null && getContext() != null) {
                         GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), mRepoDir, null);
@@ -704,7 +881,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 }
 
                 @Override
-                public boolean onRevertAll(EditorFragment fragment, String f1, String f2) {
+                public boolean onRevertAll(DiffEditorFragment fragment, String f1, String f2) {
                     boolean ok = fragment.defaultApplyRevertAll();
                     if (mRepoDir != null && getContext() != null) {
                         GitManager.getInstance().refreshRepositoryState(getContext().getApplicationContext(), mRepoDir, null);
@@ -734,22 +911,63 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             return;
         }
 
-        GitManager.getInstance().commit(getContext(), mRepoDir, msg, handleGitResult("Commit successful", this::executeCommit));
+        GitManager.getInstance().commit(getContext(), mRepoDir, msg, (success, output) -> post(() -> {
+            if (success) {
+                Toast.makeText(getContext(), "Commit successful", Toast.LENGTH_SHORT).show();
+                if (mEtCommitMessage != null) {
+                    mEtCommitMessage.setText("");
+                }
+            } else if (GitManager.isAuthorIdentityError(output)) {
+                showGitCredentialsDialog(this::executeCommit);
+            } else {
+                Toast.makeText(getContext(), "Action failed: " + output, Toast.LENGTH_LONG).show();
+            }
+            refreshStatus();
+        }));
     }
 
     private void syncChanges() {
         if (mRepoDir == null || getContext() == null) return;
         Toast.makeText(getContext(), "Syncing changes...", Toast.LENGTH_SHORT).show();
+        String currentBranch = (mLastState != null && mLastState.branchName != null) ? mLastState.branchName : "HEAD";
+
         GitManager.getInstance().syncRepository(getContext(), mRepoDir, (success, output) -> {
             post(() -> {
                 if (success) {
                     Toast.makeText(getContext(), "Sync successful", Toast.LENGTH_SHORT).show();
+                    refreshStatus();
+                } else if (GitManager.isNoUpstreamError(output)) {
+                    showSetUpstreamDialog(currentBranch);
+                } else if (GitManager.isAuthorIdentityError(output)) {
+                    showGitCredentialsDialog(this::syncChanges);
                 } else {
-                    Toast.makeText(getContext(), "Sync output: " + output, Toast.LENGTH_LONG).show();
+                    Toast.makeText(getContext(), "Sync failed: " + (output != null ? output : "Unknown error"), Toast.LENGTH_LONG).show();
+                    refreshStatus();
                 }
-                refreshStatus();
             });
         });
+    }
+
+    private void showSetUpstreamDialog(String branchName) {
+        if (getContext() == null) return;
+        new AlertDialog.Builder(getContext())
+                .setTitle("Branch is Local Only")
+                .setMessage("The branch '" + branchName + "' has no remote upstream configured. Do you want to push it to remote ('origin') and set upstream?")
+                .setPositiveButton("Push & Set Upstream", (dialog, which) -> {
+                    Toast.makeText(getContext(), "Publishing branch to remote...", Toast.LENGTH_SHORT).show();
+                    GitManager.getInstance().pushSetUpstream(getContext(), mRepoDir, branchName, (success, output) -> post(() -> {
+                        if (success) {
+                            Toast.makeText(getContext(), "Branch published successfully!", Toast.LENGTH_SHORT).show();
+                        } else if (GitManager.isAuthorIdentityError(output)) {
+                            showGitCredentialsDialog(() -> showSetUpstreamDialog(branchName));
+                        } else {
+                            Toast.makeText(getContext(), "Failed to set upstream: " + (output != null ? output : "Unknown error"), Toast.LENGTH_LONG).show();
+                        }
+                        refreshStatus();
+                    }));
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> refreshStatus())
+                .show();
     }
 
     private void showGitCredentialsDialog(Runnable onCredentialsConfigured) {

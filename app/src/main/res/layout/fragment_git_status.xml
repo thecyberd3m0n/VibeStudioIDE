@@ -25,13 +25,18 @@
             android:textStyle="bold"
             android:letterSpacing="0.05" />
 
-        <ImageButton
+        <TextView
             android:id="@+id/btn_git_refresh"
-            android:layout_width="36dp"
+            android:layout_width="wrap_content"
             android:layout_height="36dp"
+            android:paddingHorizontal="10dp"
+            android:gravity="center"
+            android:text="↑0 ↓0"
+            android:textColor="#03DAC6"
+            android:textSize="13sp"
+            android:textStyle="bold"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_refresh"
-            android:contentDescription="Refresh Git status" />
+            android:contentDescription="Sync and refresh Git status" />
 
         <TextView
             android:id="@+id/btn_git_close"

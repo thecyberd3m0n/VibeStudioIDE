@@ -31,6 +31,8 @@ import com.vibestudio.app.fragments.BrowserFragment;
 import com.vibestudio.app.chat.session.ChatSession;
 import com.vibestudio.app.chat.session.ChatSessionManager;
 import com.vibestudio.app.fragments.ChatFragment;
+import com.vibestudio.app.fragments.ConflictEditorFragment;
+import com.vibestudio.app.fragments.DiffEditorFragment;
 import com.vibestudio.app.fragments.EditorFragment;
 import com.vibestudio.app.fragments.FilesFragment;
 import com.vibestudio.app.fragments.ImageViewerFragment;
@@ -180,6 +182,19 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         mTabManager.openTab(TabType.EDITOR, fileName, fragment);
     }
 
+    public void openConflictInEditor(File repoDir, String relativePath) {
+        File target = new File(repoDir, relativePath);
+        for (TabItem tab : mTabManager.getTabs()) {
+            if (tab.getFragment() instanceof ConflictEditorFragment
+                    && target.equals(((ConflictEditorFragment) tab.getFragment()).getFile())) {
+                mTabManager.selectTab(tab);
+                return;
+            }
+        }
+        mTabManager.openTab(TabType.EDITOR, "Conflict: " + target.getName(),
+                ConflictEditorFragment.newInstance(repoDir, relativePath));
+    }
+
     public void openDiffInEditor(String file1Path, String file2Path) {
         String f1 = new File(file1Path).getName();
         String f2 = new File(file2Path).getName();
@@ -194,10 +209,10 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             }
         }
 
-        EditorFragment fragment = EditorFragment.newDiffInstance(file1Path, file2Path);
-        fragment.setOnDiffRevertListener(new EditorFragment.OnDiffRevertListener() {
+        DiffEditorFragment fragment = DiffEditorFragment.newInstance(file1Path, file2Path);
+        fragment.setOnDiffRevertListener(new DiffEditorFragment.OnDiffRevertListener() {
             @Override
-            public boolean onAcceptHunk(EditorFragment frag, EditorFragment.DiffHunk hunk, String file1, String file2) {
+            public boolean onAcceptHunk(DiffEditorFragment frag, DiffEditorFragment.DiffHunk hunk, String file1, String file2) {
                 boolean ok = frag.defaultApplyHunkAccept(hunk);
                 notifyGitRefresh(file2);
                 refreshActiveChatChangeset();
@@ -205,7 +220,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             }
 
             @Override
-            public boolean onRevertHunk(EditorFragment frag, EditorFragment.DiffHunk hunk, String file1, String file2) {
+            public boolean onRevertHunk(DiffEditorFragment frag, DiffEditorFragment.DiffHunk hunk, String file1, String file2) {
                 boolean ok = frag.defaultApplyHunkRevert(hunk);
                 notifyGitRefresh(file2);
                 refreshActiveChatChangeset();
@@ -213,7 +228,7 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             }
 
             @Override
-            public boolean onRevertAll(EditorFragment frag, String file1, String file2) {
+            public boolean onRevertAll(DiffEditorFragment frag, String file1, String file2) {
                 boolean ok = frag.defaultApplyRevertAll();
                 notifyGitRefresh(file2);
                 refreshActiveChatChangeset();

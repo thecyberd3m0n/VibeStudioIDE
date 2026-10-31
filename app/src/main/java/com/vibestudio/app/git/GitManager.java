@@ -6,6 +6,7 @@ import android.os.Looper;
 
 import com.termux.terminal.TerminalSession;
 import com.vibestudio.app.logging.CrashHandler;
+import com.vibestudio.app.logging.SessionLogger;
 import com.vibestudio.app.service.LogViewerService;
 import com.vibestudio.app.terminal.TerminalSessionManager;
 
@@ -22,18 +23,19 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class GitManager {
 
     private static final String TAG = "GitManager";
+    public static final String GIT_SESSION_LABEL = "Git Session PTY Manager";
     private static GitManager sInstance;
 
-    private TerminalSession mGitSession;
-        private final List<GitStateChangeListener> mListeners = new CopyOnWriteArrayList<>();
-    private final ExecutorService mGitExecutor = Executors.newSingleThreadExecutor();
+    private volatile TerminalSession mGitSession;
+    private final List<GitStateChangeListener> mListeners = new CopyOnWriteArrayList<>();
+    private final Object mRefreshLock = new Object();
     private final Set<String> mPendingRefreshes = ConcurrentHashMap.newKeySet();
+    private final Set<String> mRerunRequested = new java.util.HashSet<>();
+    private final Map<String, List<GitStateCallback>> mQueuedCallbacks = new HashMap<>();
 
     public interface GitCallback {
         void onResult(boolean success, String output);
@@ -76,12 +78,61 @@ public class GitManager {
         if (context == null) return;
         if (mGitSession == null || !mGitSession.isRunning()) {
             LogViewerService.getInstance().i(TAG, "Initializing dedicated background Git PTY session...");
-            mGitSession = TerminalSessionManager.getInstance().createSession(context.getApplicationContext());
+            try {
+                mGitSession = TerminalSessionManager.getInstance().createSession(
+                        context.getApplicationContext(), null, GIT_SESSION_LABEL);
+            } catch (RuntimeException e) {
+                mGitSession = null;
+                getGitLogger().event("Cannot create Git PTY session", e);
+                LogViewerService.getInstance().e(TAG, "Cannot create Git PTY session", e);
+            }
+            if (mGitSession == null) {
+                getGitLogger().event("Git PTY session is unavailable");
+            }
         }
     }
 
-    public TerminalSession getGitSession() {
+    public synchronized TerminalSession getGitSession() {
         return mGitSession;
+    }
+
+    /** The log channel (visible in the Log Viewer) that records every Git PTY command. */
+    public SessionLogger getGitLogger() {
+        return LogViewerService.getInstance().getOrCreateChannel(GIT_SESSION_LABEL);
+    }
+
+    private static int effectiveTimeout(int timeoutMs) {
+        return timeoutMs > 0 ? timeoutMs : 10000;
+    }
+
+    /**
+     * Single entry point for every Git command: runs it on the Git PTY session and blocks until it finishes.
+     * Returns null when the session could not be created.
+     */
+    private TerminalSessionManager.CommandResult execute(Context context, String gitArgs, File repoDir, int timeoutMs) {
+        ensureGitSession(context);
+        String fullCommand = formatFullCommand(gitArgs, repoDir);
+        TerminalSession session = getGitSession();
+        if (session == null) {
+            LogViewerService.getInstance().e(TAG, "Git command skipped, no PTY session: " + sanitizeForLogging(fullCommand));
+            return null;
+        }
+        return TerminalSessionManager.getInstance().runCommandBlocking(session, fullCommand, effectiveTimeout(timeoutMs));
+    }
+
+    /** Asynchronous variant of {@link #execute}; the callback runs on the main thread. */
+    private void executeAsync(Context context, String gitArgs, File repoDir, int timeoutMs,
+                              TerminalSessionManager.CommandCallback callback) {
+        ensureGitSession(context);
+        String fullCommand = formatFullCommand(gitArgs, repoDir);
+        TerminalSession session = getGitSession();
+        if (session == null) {
+            LogViewerService.getInstance().e(TAG, "Git command skipped, no PTY session: " + sanitizeForLogging(fullCommand));
+            new Handler(Looper.getMainLooper()).post(() ->
+                    callback.onResult(new TerminalSessionManager.CommandResult(-1, "Git PTY session is unavailable")));
+            return;
+        }
+        TerminalSessionManager.getInstance().runCommand(session, fullCommand, effectiveTimeout(timeoutMs), callback);
     }
 
     public String runGitCommandSync(Context context, String gitArgs, File repoDir) {
@@ -89,13 +140,8 @@ public class GitManager {
     }
 
     public String runGitCommandSync(Context context, String gitArgs, File repoDir, int timeoutMs) {
-        String raw = executeCommandInternal(context, gitArgs, repoDir, timeoutMs);
-        if (raw != null) {
-            String cleaned = cleanTerminalOutput(raw);
-            LogViewerService.getInstance().i(TAG, "Git command output:\n" + cleaned);
-            return cleaned;
-        }
-        return null;
+        TerminalSessionManager.CommandResult res = execute(context, gitArgs, repoDir, timeoutMs);
+        return res != null && res.output != null ? cleanTerminalOutput(res.output) : null;
     }
 
     public String runGitRawCommandSync(Context context, String gitArgs, File repoDir) {
@@ -103,8 +149,8 @@ public class GitManager {
     }
 
     public String runGitRawCommandSync(Context context, String gitArgs, File repoDir, int timeoutMs) {
-        String raw = executeCommandInternal(context, gitArgs, repoDir, timeoutMs);
-        return raw != null ? cleanRawFileOutput(raw) : null;
+        TerminalSessionManager.CommandResult res = execute(context, gitArgs, repoDir, timeoutMs);
+        return res != null && res.output != null ? cleanRawFileOutput(res.output) : null;
     }
 
     public void runGitRawCommandAsync(Context context, String gitArgs, File repoDir, GitCallback callback) {
@@ -112,27 +158,7 @@ public class GitManager {
     }
 
     public void runGitRawCommandAsync(Context context, String gitArgs, File repoDir, int timeoutMs, GitCallback callback) {
-        mGitExecutor.execute(() -> {
-            try {
-                LogViewerService.getInstance().i(TAG, "Executing Git raw async command: git " + sanitizeForLogging(gitArgs));
-                String output = runGitRawCommandSync(context, gitArgs, repoDir, timeoutMs);
-                boolean success = output != null && !output.contains("fatal:") && !output.contains("error:");
-                if (!success) {
-                    LogViewerService.getInstance().w(TAG, "Git raw async command failed or returned error output:\n" + (output != null ? output : "null output"));
-                } else {
-                    LogViewerService.getInstance().i(TAG, "Git raw async command completed successfully");
-                }
-                if (callback != null) {
-                    callback.onResult(success, output);
-                }
-            } catch (Exception e) {
-                LogViewerService.getInstance().e(TAG, "Failed running git raw async command: git " + sanitizeForLogging(gitArgs), e);
-                CrashHandler.getInstance().handleException(TAG, "Git command error", e);
-                if (callback != null) {
-                    callback.onResult(false, e.getMessage());
-                }
-            }
-        });
+        executeAsync(context, gitArgs, repoDir, timeoutMs, res -> deliver(res, true, callback));
     }
 
     public void runGitCommandAsync(Context context, String gitArgs, File repoDir, GitCallback callback) {
@@ -140,29 +166,20 @@ public class GitManager {
     }
 
     public void runGitCommandAsync(Context context, String gitArgs, File repoDir, int timeoutMs, GitCallback callback) {
-        mGitExecutor.execute(() -> {
-            try {
-                LogViewerService.getInstance().i(TAG, "Executing Git async command: git " + sanitizeForLogging(gitArgs));
-                String output = runGitCommandSync(context, gitArgs, repoDir, timeoutMs);
-                boolean success = output != null && !output.contains("fatal:") && !output.contains("error:");
-                if (!success) {
-                    LogViewerService.getInstance().w(TAG, "Git async command failed or returned error output:\n" + (output != null ? output : "null output"));
-                }
-                if (callback != null) {
-                    callback.onResult(success, output);
-                }
-            } catch (Exception e) {
-                LogViewerService.getInstance().e(TAG, "Failed running git async command: git " + sanitizeForLogging(gitArgs), e);
-                CrashHandler.getInstance().handleException(TAG, "Git command error", e);
-                if (callback != null) {
-                    callback.onResult(false, e.getMessage());
-                }
-            }
-        });
+        executeAsync(context, gitArgs, repoDir, timeoutMs, res -> deliver(res, false, callback));
     }
 
-    public void runGitDirectCommandAsync(Context context, String gitArgs, File repoDir, int timeoutMs, GitCallback callback) {
-        runGitCommandAsync(context, gitArgs, repoDir, timeoutMs, callback);
+    private void deliver(TerminalSessionManager.CommandResult res, boolean raw, GitCallback callback) {
+        String rawOutput = res != null ? res.output : null;
+        String output = rawOutput != null ? (raw ? cleanRawFileOutput(rawOutput) : cleanTerminalOutput(rawOutput)) : null;
+        boolean success = res != null && res.isSuccess() && output != null && !output.contains("fatal:") && !output.contains("error:");
+        if (!success) {
+            LogViewerService.getInstance().w(TAG, "Git command failed or returned error output (exitCode="
+                    + (res != null ? res.exitCode : -1) + "):\n" + sanitizeForLogging(output != null ? output : "null output"));
+        }
+        if (callback != null) {
+            callback.onResult(success, output != null && !output.isEmpty() ? output : (rawOutput != null ? rawOutput : ""));
+        }
     }
 
     // --- Domain Git API ---
@@ -198,7 +215,7 @@ public class GitManager {
     }
 
     public void mergeBranch(Context context, File repoDir, String branchName, GitCallback callback) {
-        String cmd = "merge " + quotePath(branchName);
+        String cmd = "merge --no-edit " + quotePath(branchName);
         runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
@@ -208,7 +225,7 @@ public class GitManager {
     }
 
     public void cherryPickCommit(Context context, File repoDir, String commitHash, GitCallback callback) {
-        String cmd = "cherry-pick " + quotePath(commitHash);
+        String cmd = "cherry-pick --no-edit " + quotePath(commitHash);
         runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
@@ -259,31 +276,58 @@ public class GitManager {
 
         String repoPath = root.getAbsolutePath();
 
-        if (mPendingRefreshes.contains(repoPath)) {
-            LogViewerService.getInstance().d(TAG, "Git refresh already pending for: " + repoPath + ", skipping duplicate request.");
-            return;
+        synchronized (mRefreshLock) {
+            if (mPendingRefreshes.contains(repoPath)) {
+                // The running refresh may have been queued before the change that triggered this request,
+                // so run once more afterwards and give the result to every waiting caller.
+                mRerunRequested.add(repoPath);
+                if (callback != null) {
+                    mQueuedCallbacks.computeIfAbsent(repoPath, k -> new ArrayList<>()).add(callback);
+                }
+                LogViewerService.getInstance().d(TAG, "Git refresh already pending for: " + repoPath + ", queued a follow-up refresh.");
+                return;
+            }
+            mPendingRefreshes.add(repoPath);
         }
 
-        mPendingRefreshes.add(repoPath);
-        String gitCmd = getRefreshRepositoryStateCommand();
+        List<GitStateCallback> callbacks = new ArrayList<>();
+        if (callback != null) callbacks.add(callback);
+        startRefresh(context, root, repoPath, callbacks);
+    }
 
-        runGitCommandAsync(context, gitCmd, root, (success, output) -> {
-            mPendingRefreshes.remove(repoPath);
+    private void startRefresh(Context context, File root, String repoPath, List<GitStateCallback> callbacks) {
+        runGitCommandAsync(context, getRefreshRepositoryStateCommand(), root, (success, output) -> {
             GitRepositoryState state = parseRepositoryState(root, success ? output : "");
 
-            Handler mainHandler = new Handler(Looper.getMainLooper());
-            mainHandler.post(() -> {
-                if (callback != null) {
-                    callback.onStateUpdated(state);
+            List<GitStateCallback> followUp = null;
+            synchronized (mRefreshLock) {
+                if (mRerunRequested.remove(repoPath)) {
+                    followUp = mQueuedCallbacks.remove(repoPath);
+                    if (followUp == null) followUp = new ArrayList<>();
+                } else {
+                    mPendingRefreshes.remove(repoPath);
+                    mQueuedCallbacks.remove(repoPath);
                 }
-                for (GitStateChangeListener listener : mListeners) {
-                    try {
-                        listener.onGitStateChanged(state);
-                    } catch (Exception e) {
-                        LogViewerService.getInstance().e(TAG, "Error notifying git listener", e);
-                    }
+            }
+
+            for (GitStateCallback cb : callbacks) {
+                try {
+                    cb.onStateUpdated(state);
+                } catch (Exception e) {
+                    LogViewerService.getInstance().e(TAG, "Error in git state callback", e);
                 }
-            });
+            }
+            for (GitStateChangeListener listener : mListeners) {
+                try {
+                    listener.onGitStateChanged(state);
+                } catch (Exception e) {
+                    LogViewerService.getInstance().e(TAG, "Error notifying git listener", e);
+                }
+            }
+
+            if (followUp != null) {
+                startRefresh(context, root, repoPath, followUp);
+            }
         });
     }
 
@@ -297,7 +341,13 @@ public class GitManager {
     }
 
     public void syncRepository(Context context, File repoDir, GitCallback callback) {
-        String cmd = "git pull && git --no-pager push";
+        String cmd = "git pull --no-edit && git --no-pager push";
+        runGitCommandAsync(context, cmd, repoDir, callback);
+    }
+
+    public void pushSetUpstream(Context context, File repoDir, String branchName, GitCallback callback) {
+        String bName = (branchName != null && !branchName.isEmpty()) ? branchName : "HEAD";
+        String cmd = "push --set-upstream origin " + quotePath(bName);
         runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
@@ -495,80 +545,117 @@ public class GitManager {
             || lower.contains("auth failed");
     }
 
+    public static boolean isNoUpstreamError(String output) {
+        if (output == null) return false;
+        String lower = output.toLowerCase();
+        return lower.contains("no upstream branch")
+            || lower.contains("has no upstream branch")
+            || lower.contains("no upstream configured")
+            || lower.contains("set-upstream")
+            || lower.contains("set the remote as upstream");
+    }
+
     public static String sanitizeForLogging(String text) {
-        if (text == null) return "";
-        return text.replaceAll("https?://[^:@\\s]+:[^@\\s]+@", "https://***:***@");
+        return SessionLogger.redact(text);
     }
 
     // --- Private Helper Methods (Implementation Details) ---
 
-    private String executeCommandInternal(Context context, String gitArgs, File repoDir, int timeoutMs) {
-        if (context == null || gitArgs == null) {
-            return null;
-        }
-
-        ensureGitSession(context);
-
+    public String formatFullCommand(String gitArgs, File repoDir) {
+        if (gitArgs == null) return "";
         String trimmed = gitArgs.trim();
-        String gitEnvFlags = "GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=\"ssh -o StrictHostKeyChecking=no\"";
         String gitCmd;
         if (trimmed.startsWith("git --no-pager ")) {
-            gitCmd = gitEnvFlags + " " + trimmed;
+            gitCmd = trimmed;
         } else if (trimmed.startsWith("git ")) {
-            gitCmd = gitEnvFlags + " git --no-pager " + trimmed.substring(4);
-        } else if (trimmed.startsWith("GIT_")) {
-            if (!trimmed.contains("GIT_SSH_COMMAND")) {
-                gitCmd = gitEnvFlags + " " + trimmed;
-            } else {
-                gitCmd = trimmed;
-            }
+            gitCmd = "git --no-pager " + trimmed.substring(4);
         } else if (trimmed.startsWith("(") || trimmed.startsWith("mkdir") || trimmed.startsWith("chmod") 
                 || trimmed.startsWith("rm") || trimmed.startsWith("ssh-keygen") || trimmed.startsWith("echo")
                 || trimmed.contains("||") || trimmed.contains("&&") || trimmed.contains(";")) {
-            gitCmd = gitEnvFlags + " " + trimmed;
+            gitCmd = trimmed;
         } else {
-            gitCmd = gitEnvFlags + " git --no-pager " + trimmed;
+            gitCmd = "git --no-pager " + trimmed;
         }
 
-        String fullCommand = gitCmd;
         if (repoDir != null && repoDir.isDirectory()) {
-            fullCommand = "cd " + quotePath(repoDir.getAbsolutePath()) + " && " + fullCommand;
+            return "cd " + quotePath(repoDir.getAbsolutePath()) + " && " + gitCmd;
+        } else {
+            return gitCmd;
         }
+    }
 
-        String sanitized = sanitizeForLogging(fullCommand);
-        LogViewerService.getInstance().i(TAG, "Executing Git command: " + sanitized);
-
-        int effectiveTimeout = timeoutMs > 0 ? timeoutMs : 10000;
-
-        if (mGitSession != null && mGitSession.isRunning()) {
-            String output = TerminalSessionManager.getInstance().runCommandOnSessionSync(mGitSession, fullCommand, effectiveTimeout);
-            if (output != null) {
-                return output;
-            }
-            LogViewerService.getInstance().w(TAG, "Git PTY session command timed out or returned null for: " + sanitized);
-            return null;
-        }
-
-        ensureGitSession(context);
-        LogViewerService.getInstance().w(TAG, "PTY session not active before dispatch, executing direct runCommandSync: " + sanitized);
-        return TerminalSessionManager.getInstance().runCommandSync(context, fullCommand, repoDir, effectiveTimeout);
+    private String executeCommandInternal(Context context, String gitArgs, File repoDir, int timeoutMs) {
+        return runGitCommandSync(context, gitArgs, repoDir, timeoutMs);
     }
 
     private static String getRefreshRepositoryStateCommand() {
-        return "(git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; echo \"===STATUS===\" ; git status --porcelain --ignored=no ; echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat";
+        return "(git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; " +
+               "echo \"===AHEAD_BEHIND===\" ; " +
+               "UB=\"$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo \"\")\" ; " +
+               "if [ -z \"$UB\" ]; then " +
+               "  CURB=\"$(git branch --show-current 2>/dev/null)\" ; " +
+               "  if git rev-parse --verify \"origin/$CURB\" >/dev/null 2>&1; then UB=\"origin/$CURB\" ; " +
+               "  elif [ \"$CURB\" != \"main\" ] && git rev-parse --verify \"main\" >/dev/null 2>&1; then UB=\"main\" ; " +
+               "  elif [ \"$CURB\" != \"master\" ] && git rev-parse --verify \"master\" >/dev/null 2>&1; then UB=\"master\" ; " +
+               "  elif git rev-parse --verify \"origin/main\" >/dev/null 2>&1; then UB=\"origin/main\" ; " +
+               "  elif git rev-parse --verify \"origin/master\" >/dev/null 2>&1; then UB=\"origin/master\" ; " +
+               "  fi ; " +
+               "fi ; " +
+               "if [ -n \"$UB\" ]; then git rev-list --left-right --count \"HEAD...$UB\" 2>/dev/null || echo \"0 0\" ; else echo \"0 0\" ; fi ; " +
+               "echo \"===STATUS===\" ; git status --porcelain --ignored=no ; " +
+               "echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; " +
+               "echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat";
+    }
+
+    /** Porcelain XY codes git uses for unmerged paths. */
+    static boolean isConflictStatus(String index, String worktree) {
+        if ("U".equals(index) || "U".equals(worktree)) return true;
+        return ("A".equals(index) && "A".equals(worktree)) || ("D".equals(index) && "D".equals(worktree));
+    }
+
+    /** Returns the git operation that is stopped midway in the repository, or null. */
+    static String detectOperationInProgress(File repoDir) {
+        if (repoDir == null) return null;
+        File gitDir = new File(repoDir, ".git");
+        if (!gitDir.isDirectory()) return null;
+        if (new File(gitDir, "MERGE_HEAD").exists()) return "merge";
+        if (new File(gitDir, "rebase-merge").isDirectory() || new File(gitDir, "rebase-apply").isDirectory()) return "rebase";
+        if (new File(gitDir, "CHERRY_PICK_HEAD").exists()) return "cherry-pick";
+        if (new File(gitDir, "REVERT_HEAD").exists()) return "revert";
+        return null;
+    }
+
+    public static boolean isMergeConflictOutput(String output) {
+        if (output == null) return false;
+        String lower = output.toLowerCase();
+        return lower.contains("conflict (") || lower.contains("automatic merge failed")
+                || lower.contains("fix conflicts") || lower.contains("could not apply")
+                || lower.contains("resolve all conflicts");
+    }
+
+    public void abortOperation(Context context, File repoDir, String operation, GitCallback callback) {
+        runGitCommandAsync(context, operation + " --abort", repoDir, callback);
+    }
+
+    public void continueOperation(Context context, File repoDir, String operation, GitCallback callback) {
+        String cmd = "merge".equals(operation) ? "commit --no-edit" : operation + " --continue";
+        runGitCommandAsync(context, cmd, repoDir, callback);
     }
 
     public static GitRepositoryState parseRepositoryState(File repoDir, String output) {
         GitRepositoryState state = new GitRepositoryState(repoDir);
+        state.operationInProgress = detectOperationInProgress(repoDir);
         if (output == null || output.trim().isEmpty()) {
             return state;
         }
 
         String cleaned = cleanTerminalOutput(output);
 
-        int idxBranch = cleaned.indexOf("===STATUS===");
-        if (idxBranch != -1) {
-            String branchRaw = cleaned.substring(0, idxBranch).trim();
+        int idxAheadBehind = cleaned.indexOf("===AHEAD_BEHIND===");
+        int idxStatus = cleaned.indexOf("===STATUS===");
+
+        if (idxAheadBehind != -1 && idxStatus != -1 && idxStatus > idxAheadBehind) {
+            String branchRaw = cleaned.substring(0, idxAheadBehind).trim();
             if (!branchRaw.isEmpty()) {
                 String[] branchLines = branchRaw.split("\n");
                 for (String line : branchLines) {
@@ -581,7 +668,34 @@ public class GitManager {
                     break;
                 }
             }
-            cleaned = cleaned.substring(idxBranch + "===STATUS===".length());
+
+            String abRaw = cleaned.substring(idxAheadBehind + "===AHEAD_BEHIND===".length(), idxStatus).trim();
+            if (!abRaw.isEmpty()) {
+                String[] abParts = abRaw.split("\\s+");
+                if (abParts.length >= 2) {
+                    try {
+                        state.ahead = Integer.parseInt(abParts[0]);
+                        state.behind = Integer.parseInt(abParts[1]);
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            cleaned = cleaned.substring(idxStatus + "===STATUS===".length());
+        } else if (idxStatus != -1) {
+            String branchRaw = cleaned.substring(0, idxStatus).trim();
+            if (!branchRaw.isEmpty()) {
+                String[] branchLines = branchRaw.split("\n");
+                for (String line : branchLines) {
+                    String lineTrimmed = line.trim();
+                    if (lineTrimmed.isEmpty()) continue;
+                    if (lineTrimmed.contains("___CMD_") || lineTrimmed.contains("git --no-pager") || lineTrimmed.startsWith("cd ")) {
+                        continue;
+                    }
+                    state.branchName = lineTrimmed;
+                    break;
+                }
+            }
+            cleaned = cleaned.substring(idxStatus + "===STATUS===".length());
         }
 
         String statusOutput = cleaned;
@@ -627,6 +741,11 @@ public class GitManager {
 
                 if (filePath.startsWith("\"") && filePath.endsWith("\"") && filePath.length() > 2) {
                     filePath = filePath.substring(1, filePath.length() - 1);
+                }
+
+                if (isConflictStatus(statusIndex, statusWorktree)) {
+                    state.conflictedFiles.add(new GitStatusView.GitFileStatus(statusIndex + statusWorktree, filePath, false));
+                    continue;
                 }
 
                 if (!" ".equals(statusIndex) && !"?".equals(statusIndex)) {
@@ -726,7 +845,7 @@ public class GitManager {
             if (trimmed.contains("echo \"===STATUS===\"") || trimmed.contains("echo \"===NUMSTAT_")) {
                 continue;
             }
-            if (trimmed.startsWith("git --no-pager") || trimmed.startsWith("(git branch") || trimmed.startsWith("GIT_TERMINAL_PROMPT") || trimmed.startsWith("GIT_SSH_COMMAND")) {
+            if (trimmed.startsWith("git --no-pager") || trimmed.startsWith("(git branch") || trimmed.startsWith("GIT_TERMINAL_PROMPT") || trimmed.startsWith("GIT_SSH_COMMAND") || trimmed.startsWith("export GIT_")) {
                 continue;
             }
             sb.append(line).append("\n");
