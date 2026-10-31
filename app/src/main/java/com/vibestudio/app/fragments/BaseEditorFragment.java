@@ -81,29 +81,25 @@ public abstract class BaseEditorFragment extends Fragment {
     /** Called once the views are bound and the editor is themed; subclasses load their content here. */
     protected abstract void onEditorViewCreated();
 
-    /** The button in the top bar that used to be "Save" ("Save" in the file editor, "Resolve" for conflicts). */
-    protected abstract void onPrimaryActionClicked();
+    /** The top bar button that is "Save" in the file editor and "Resolve" in the conflict editor; hidden for diffs. */
+    protected void onPrimaryActionClicked() {}
 
     protected abstract void onMoreClicked(View anchor);
 
-    /** Called whenever overlay views must be re-aligned with the editor rows (scrolling, layout, text changes). */
-    protected abstract void onOverlayPositionsInvalidated();
+    /** Re-aligns overlay views with the editor rows (called on scroll, layout and text changes). */
+    protected void updateOverlayPositions() {}
 
     protected void setupOverlaySync() {
         if (mCodeEditor == null) return;
 
-        mCodeEditor.subscribeEvent(ScrollEvent.class, (event, unsubscribe) -> onOverlayPositionsInvalidated());
-        mCodeEditor.getViewTreeObserver().addOnScrollChangedListener(this::onOverlayPositionsInvalidated);
+        mCodeEditor.subscribeEvent(ScrollEvent.class, (event, unsubscribe) -> updateOverlayPositions());
+        mCodeEditor.getViewTreeObserver().addOnScrollChangedListener(this::updateOverlayPositions);
         mCodeEditor.getViewTreeObserver().addOnPreDrawListener(() -> {
             if (mCodeEditor != null) {
-                onOverlayPositionsInvalidated();
+                updateOverlayPositions();
             }
             return true;
         });
-    }
-
-    public CodeEditor getCodeEditor() {
-        return mCodeEditor;
     }
 
     public FrameLayout getOverlayContainer() {

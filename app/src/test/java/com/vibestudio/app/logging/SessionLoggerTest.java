@@ -81,8 +81,8 @@ public class SessionLoggerTest {
         List<String> seen = new ArrayList<>();
         final boolean[] cleared = {false};
         logger.addListener(new SessionLogger.Listener() {
-            @Override public void onEntry(String entry) { seen.add(entry); }
-            @Override public void onCleared() { cleared[0] = true; }
+            @Override public void onLogAdded(String entry) { seen.add(entry); }
+            @Override public void onLogsCleared() { cleared[0] = true; }
         });
         logger.command("git status");
         logger.exit("exit=0");

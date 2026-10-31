@@ -28,10 +28,11 @@ public class SessionLogger {
             "(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_\\-]{16,})");
     private static final Pattern SSH_PASSPHRASE = Pattern.compile("(ssh-keygen\\b[^\\n;&|]*?\\s-N\\s+)('[^']*'|\"[^\"]*\"|\\S+)");
 
+    /** Same method names as {@code LogViewerService.OnLogListener}, so one class can listen to both. */
     public interface Listener {
-        void onEntry(String entry);
+        void onLogAdded(String entry);
 
-        void onCleared();
+        void onLogsCleared();
     }
 
     private final String mLabel;
@@ -116,7 +117,7 @@ public class SessionLogger {
             mEntries.clear();
             mCurrentBytes = 0;
         }
-        for (Listener l : mListeners) l.onCleared();
+        for (Listener l : mListeners) l.onLogsCleared();
     }
 
     // --- Helpers ---
@@ -139,7 +140,7 @@ public class SessionLogger {
     }
 
     private void add(String kind, String text) {
-        String entry = formatEntry(kind, text);
+        String entry = "[" + new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date()) + "] " + kind + " " + text;
         synchronized (this) {
             int bytes = entry.getBytes(StandardCharsets.UTF_8).length + 1;
             while (!mEntries.isEmpty() && mCurrentBytes + bytes > mMaxBytes) {
@@ -148,12 +149,7 @@ public class SessionLogger {
             mEntries.addLast(entry);
             mCurrentBytes += bytes;
         }
-        for (Listener l : mListeners) l.onEntry(entry);
-    }
-
-    private static String formatEntry(String kind, String text) {
-        String ts = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date());
-        return "[" + ts + "] " + kind + " " + text;
+        for (Listener l : mListeners) l.onLogAdded(entry);
     }
 
     /** Turns a raw byte stream into clean, redacted text lines. */

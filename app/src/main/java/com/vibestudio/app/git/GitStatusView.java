@@ -3,12 +3,14 @@ package com.vibestudio.app.git;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.os.FileObserver;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.app.AlertDialog;
+import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -21,6 +23,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 import android.widget.Toast;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -42,6 +45,7 @@ import com.vibestudio.app.fragments.EditorFragment;
 import com.vibestudio.app.tab.TabManager;
 import com.vibestudio.app.tab.TabType;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class GitStatusView extends LinearLayout implements GitManager.GitStateChangeListener {
@@ -51,6 +55,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
     private File mRepoDir;
     private OnCloseListener mCloseListener;
     private GitRepositoryState mLastState;
+    private FileObserver mGitDirObserver;
+    private final Runnable mRefreshRunnable = this::refreshStatus;
 
     private TextView mTvBranchName;
     private View mLlBranchSelector;
@@ -194,6 +200,20 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             mBtnAction.setOnClickListener(v -> handleActionButtonClick());
         }
 
+        View btnMore = findViewById(R.id.btn_git_more);
+        if (btnMore != null) {
+            btnMore.setOnClickListener(v -> {
+                PopupMenu menu = new PopupMenu(
+                        new ContextThemeWrapper(getContext(), android.R.style.Theme_DeviceDefault), v);
+                menu.getMenu().add("Cherry-Pick Commit(s)...");
+                menu.setOnMenuItemClickListener(item -> {
+                    showCherryPickDialog();
+                    return true;
+                });
+                menu.show();
+            });
+        }
+
         if (mEtCommitMessage != null) {
             mEtCommitMessage.addTextChangedListener(new TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -219,12 +239,31 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         GitManager.getInstance().addStateChangeListener(this);
+        watchGitDir();
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         GitManager.getInstance().removeStateChangeListener(this);
+        if (mGitDirObserver != null) mGitDirObserver.stopWatching();
+        removeCallbacks(mRefreshRunnable);
+    }
+
+    /** Refreshes when HEAD, the index or a merge/rebase/cherry-pick marker changes, whoever ran the git command. */
+    private void watchGitDir() {
+        if (mGitDirObserver != null) mGitDirObserver.stopWatching();
+        if (mRepoDir == null || !isAttachedToWindow()) return;
+        mGitDirObserver = new FileObserver(new File(mRepoDir, ".git").getAbsolutePath(),
+                FileObserver.CREATE | FileObserver.DELETE | FileObserver.MOVED_TO | FileObserver.MOVED_FROM | FileObserver.CLOSE_WRITE) {
+            @Override
+            public void onEvent(int event, String path) {
+                if (path == null) return;
+                removeCallbacks(mRefreshRunnable);
+                postDelayed(mRefreshRunnable, 300);
+            }
+        };
+        mGitDirObserver.startWatching();
     }
 
         public GitRepositoryState getLastState() {
@@ -235,6 +274,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         if (repoDir == null) return;
         if (this.mRepoDir == null || !this.mRepoDir.getAbsolutePath().equals(repoDir.getAbsolutePath())) {
             this.mRepoDir = repoDir;
+            watchGitDir();
             renderState(null);
             refreshStatus();
         }
@@ -258,6 +298,9 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             if (mTvBranchName != null) {
                 String bName = (state != null && state.branchName != null && !state.branchName.isEmpty()) ? state.branchName : "HEAD";
                 mTvBranchName.setText(bName);
+            }
+            if (mLlBranchSelector != null) {
+                mLlBranchSelector.setAlpha(state != null && state.hasOperationInProgress() ? 0.4f : 1f);
             }
 
             int ahead = (state != null) ? state.ahead : 0;
@@ -290,8 +333,16 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         });
     }
 
+    /** Branch switching and cherry-picking make no sense while a merge, rebase or cherry-pick is stopped midway. */
+    private boolean blockedByOperation() {
+        if (mLastState == null || !mLastState.hasOperationInProgress()) return false;
+        Toast.makeText(getContext(), "Finish or abort the " + mLastState.operationInProgress + " first", Toast.LENGTH_SHORT).show();
+        return true;
+    }
+
     private void showBranchSelectionDialog() {
         if (mRepoDir == null || getContext() == null) return;
+        if (blockedByOperation()) return;
 
         Toast.makeText(getContext(), "Fetching branches...", Toast.LENGTH_SHORT).show();
 
@@ -394,6 +445,23 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         });
     }
 
+    private void deleteBranch(String name, boolean force) {
+        GitManager.getInstance().deleteBranch(getContext(), mRepoDir, name, force, (success, output) -> post(() -> {
+            if (success) {
+                Toast.makeText(getContext(), "Deleted branch " + name, Toast.LENGTH_SHORT).show();
+            } else if (!force && output != null && output.contains("not fully merged")) {
+                new AlertDialog.Builder(getContext())
+                        .setTitle("Force delete " + name + "?")
+                        .setMessage("This branch has commits that are not merged anywhere. They will be hard to recover.")
+                        .setPositiveButton("Force delete", (dialog, which) -> deleteBranch(name, true))
+                        .setNegativeButton("Cancel", null)
+                        .show();
+            } else {
+                Toast.makeText(getContext(), "Action failed: " + output, Toast.LENGTH_LONG).show();
+            }
+        }));
+    }
+
     private void showCreateBranchDialog() {
         if (mRepoDir == null || getContext() == null) return;
 
@@ -416,28 +484,30 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         builder.show();
     }
 
-    private void showBranchActionMenu(String targetBranch, String currentBranch) {
+    /** @param branchRef a local branch name, or "remote/<remote>/<branch>" for a remote-tracking branch */
+    private void showBranchActionMenu(String branchRef, String currentBranch) {
         if (mRepoDir == null || getContext() == null) return;
 
+        boolean isRemote = branchRef.startsWith("remote/");
+        String targetBranch = isRemote ? branchRef.substring("remote/".length()) : branchRef;
         boolean isCurrent = targetBranch.equals(currentBranch);
 
-        String[] actions = new String[] {
-            "Checkout",
-            "Merge to Current (" + currentBranch + ")",
-            "Rebase Current onto " + targetBranch,
-            "Cherry-Pick Commit"
-        };
+        List<String> actions = new ArrayList<>(Arrays.asList(
+                "Checkout",
+                "Merge to Current (" + currentBranch + ")",
+                "Rebase Current onto " + targetBranch));
+        if (!isRemote && !isCurrent) actions.add("Delete Branch");
 
         new AlertDialog.Builder(getContext())
                 .setTitle("Branch: " + targetBranch)
-                .setItems(actions, (dialog, which) -> {
+                .setItems(actions.toArray(new String[0]), (dialog, which) -> {
                     switch (which) {
                         case 0: // Checkout
                             if (isCurrent) {
                                 Toast.makeText(getContext(), "Already on " + targetBranch, Toast.LENGTH_SHORT).show();
                             } else {
                                 GitManager.getInstance().checkoutBranch(getContext(), mRepoDir, targetBranch,
-                                        handleGitResult("Switched to branch " + targetBranch, () -> showBranchActionMenu(targetBranch, currentBranch)));
+                                        handleGitResult("Switched to branch " + targetBranch, () -> showBranchActionMenu(branchRef, currentBranch)));
                             }
                             break;
 
@@ -446,7 +516,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                                 Toast.makeText(getContext(), "Cannot merge branch into itself", Toast.LENGTH_SHORT).show();
                             } else {
                                 GitManager.getInstance().mergeBranch(getContext(), mRepoDir, targetBranch,
-                                        handleGitResult("Merged " + targetBranch + " into " + currentBranch, () -> showBranchActionMenu(targetBranch, currentBranch)));
+                                        handleGitResult("Merged " + targetBranch + " into " + currentBranch, () -> showBranchActionMenu(branchRef, currentBranch)));
                             }
                             break;
 
@@ -455,12 +525,14 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                                 Toast.makeText(getContext(), "Cannot rebase branch onto itself", Toast.LENGTH_SHORT).show();
                             } else {
                                 GitManager.getInstance().rebaseBranch(getContext(), mRepoDir, targetBranch,
-                                        handleGitResult("Rebased onto " + targetBranch, () -> showBranchActionMenu(targetBranch, currentBranch)));
+                                        handleGitResult("Rebased onto " + targetBranch, () -> showBranchActionMenu(branchRef, currentBranch)));
                             }
                             break;
 
-                        case 3: // Cherry-Pick
-                            showCherryPickDialog();
+                        case 3: // Delete (only offered for a local branch that is not checked out)
+                            confirm("Delete branch " + targetBranch + "?",
+                                    "The branch will be removed. Git only allows this if it is fully merged.", "Delete",
+                                    () -> deleteBranch(targetBranch, false));
                             break;
                     }
                 })
@@ -469,13 +541,13 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
     }
 
     private void showCherryPickDialog() {
-        if (mRepoDir == null || getContext() == null) return;
+        if (mRepoDir == null || getContext() == null || blockedByOperation()) return;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
         builder.setTitle("Cherry-Pick Commit");
 
         final EditText input = new EditText(getContext());
-        input.setHint("Commit SHA / Hash");
+        input.setHint("Commit SHA or range (A..B)");
         input.setPadding(32, 24, 32, 24);
         builder.setView(input);
 
@@ -538,8 +610,25 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         Button btnAbort = new Button(getContext());
         btnAbort.setText("Abort " + operation);
         btnAbort.setTextSize(12);
-        btnAbort.setOnClickListener(v -> confirmAbortOperation(operation));
+        btnAbort.setOnClickListener(v -> confirm("Abort " + operation,
+                "This discards the " + operation + " and restores the state from before it started.", "Abort",
+                () -> GitManager.getInstance().abortOperation(getContext(), mRepoDir, operation,
+                        handleGitResult(capitalize(operation) + " aborted", null))));
         buttons.addView(btnAbort, new LayoutParams(0, dpToPx(40), 1f));
+
+        // Skipping is what resolves a commit that became empty or that you no longer want; merges have no such step.
+        if (!"merge".equals(operation)) {
+            Button btnSkip = new Button(getContext());
+            btnSkip.setText("Skip");
+            btnSkip.setTextSize(12);
+            btnSkip.setOnClickListener(v -> confirm("Skip this commit?",
+                    "The commit being applied is dropped from the " + operation + ", along with any conflict fixes made for it.", "Skip",
+                    () -> GitManager.getInstance().skipOperation(getContext(), mRepoDir, operation,
+                            handleGitResult("Skipped commit", null))));
+            LayoutParams skipParams = new LayoutParams(0, dpToPx(40), 1f);
+            skipParams.setMarginStart(dpToPx(8));
+            buttons.addView(btnSkip, skipParams);
+        }
 
         Button btnContinue = new Button(getContext());
         btnContinue.setText("Continue");
@@ -596,42 +685,34 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             btnResolve.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
             row.addView(btnResolve);
 
-            row.setOnClickListener(v -> openConflictFile(file));
+            row.setOnClickListener(v -> {
+                File full = new File(mRepoDir, file.filePath);
+                // Delete/modify conflicts have no markers to resolve; those open as a plain file.
+                boolean hasMarkers = false;
+                if (full.isFile() && full.length() < 2L * 1024 * 1024) {
+                    try {
+                        hasMarkers = ConflictParser.hasConflictMarkers(
+                                new String(java.nio.file.Files.readAllBytes(full.toPath()), java.nio.charset.StandardCharsets.UTF_8));
+                    } catch (IOException ignored) {}
+                }
+                if (!hasMarkers) {
+                    openFileInEditor(full.getAbsolutePath());
+                } else if (getContext() instanceof MainActivity) {
+                    ((MainActivity) getContext()).openConflictInEditor(mRepoDir, file.filePath);
+                } else {
+                    TabManager.getInstance().openTab(TabType.EDITOR, "Conflict: " + full.getName(),
+                            ConflictEditorFragment.newInstance(mRepoDir, file.filePath));
+                }
+            });
             mLlContainer.addView(row);
         }
     }
 
-    private void openConflictFile(GitFileStatus file) {
-        if (mRepoDir == null || file == null || file.filePath == null) return;
-        File full = new File(mRepoDir, file.filePath);
-        // Delete/modify conflicts have no markers to resolve; those open as a plain file.
-        boolean hasMarkers = false;
-        if (full.isFile() && full.length() < 2L * 1024 * 1024) {
-            try {
-                hasMarkers = ConflictParser.hasConflictMarkers(
-                        new String(java.nio.file.Files.readAllBytes(full.toPath()), java.nio.charset.StandardCharsets.UTF_8));
-            } catch (IOException ignored) {}
-        }
-        if (!hasMarkers) {
-            openFileInEditor(full.getAbsolutePath());
-            return;
-        }
-        if (getContext() instanceof MainActivity) {
-            ((MainActivity) getContext()).openConflictInEditor(mRepoDir, file.filePath);
-        } else {
-            TabManager.getInstance().openTab(TabType.EDITOR, "Conflict: " + full.getName(),
-                    ConflictEditorFragment.newInstance(mRepoDir, file.filePath));
-        }
-    }
-
-    private void confirmAbortOperation(String operation) {
-        if (mRepoDir == null || getContext() == null) return;
+    private void confirm(String title, String message, String positiveLabel, Runnable action) {
         new AlertDialog.Builder(getContext())
-                .setTitle("Abort " + operation)
-                .setMessage("This discards the " + operation + " and restores the state from before it started.")
-                .setPositiveButton("Abort", (dialog, which) ->
-                        GitManager.getInstance().abortOperation(getContext(), mRepoDir, operation,
-                                handleGitResult(capitalize(operation) + " aborted", null)))
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton(positiveLabel, (dialog, which) -> action.run())
                 .setNegativeButton("Cancel", null)
                 .show();
     }
@@ -652,8 +733,16 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         boolean hasCommitMessage = mEtCommitMessage != null && !mEtCommitMessage.getText().toString().trim().isEmpty();
         boolean needsSync = mLastState != null && mLastState.needsSync();
 
-        if (mBtnAction != null && mLastState != null && mLastState.hasConflicts()) {
-            mBtnAction.setText("Resolve " + mLastState.conflictedFiles.size() + " conflict(s) first");
+        // Sync makes no sense while an operation is stopped midway, even when nothing is left to resolve.
+        String blockedText = null;
+        if (mLastState != null && mLastState.hasConflicts()) {
+            blockedText = "Resolve " + mLastState.conflictedFiles.size() + " conflict(s) first";
+        } else if (mLastState != null && mLastState.hasOperationInProgress() && !hasChanges) {
+            blockedText = capitalize(mLastState.operationInProgress) + " in progress";
+        }
+
+        if (mBtnAction != null && blockedText != null) {
+            mBtnAction.setText(blockedText);
             mBtnAction.setBackgroundColor(Color.parseColor("#3A3A4A"));
             mBtnAction.setEnabled(false);
             mBtnAction.setAlpha(0.5f);

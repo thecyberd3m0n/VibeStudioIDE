@@ -1,6 +1,6 @@
 package com.vibestudio.app.git;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -39,26 +39,26 @@ public class GitConflictParsingTest {
         File repo = temporaryFolder.newFolder("repo2");
         File gitDir = new File(repo, ".git");
         assertTrue(gitDir.mkdir());
-        assertNull(GitManager.detectOperationInProgress(repo));
+        assertNull(GitManager.parseRepositoryState(repo, "").operationInProgress);
 
         assertTrue(new File(gitDir, "MERGE_HEAD").createNewFile());
-        assertEquals("merge", GitManager.detectOperationInProgress(repo));
+        assertEquals("merge", GitManager.parseRepositoryState(repo, "").operationInProgress);
         assertTrue(new File(gitDir, "MERGE_HEAD").delete());
 
         assertTrue(new File(gitDir, "rebase-merge").mkdir());
-        assertEquals("rebase", GitManager.detectOperationInProgress(repo));
-
-        GitRepositoryState state = GitManager.parseRepositoryState(repo, "");
-        assertEquals("rebase", state.operationInProgress);
+        assertEquals("rebase", GitManager.parseRepositoryState(repo, "").operationInProgress);
     }
 
     @Test
-    public void conflictStatusCodes() {
+    public void onlyUnmergedStatusCodesAreConflicts() throws IOException {
+        File repo = temporaryFolder.newFolder("repo3");
         for (String xy : new String[]{"DD", "AU", "UD", "UA", "DU", "AA", "UU"}) {
-            assertTrue(xy, GitManager.isConflictStatus(xy.substring(0, 1), xy.substring(1)));
+            GitRepositoryState state = GitManager.parseRepositoryState(repo, "main\n===AHEAD_BEHIND===\n0 0\n===STATUS===\n" + xy + " f.txt\n");
+            assertEquals(xy, 1, state.conflictedFiles.size());
         }
         for (String xy : new String[]{" M", "M ", "A ", "??", "D ", " D", "R "}) {
-            assertFalse(xy, GitManager.isConflictStatus(xy.substring(0, 1), xy.substring(1)));
+            GitRepositoryState state = GitManager.parseRepositoryState(repo, "main\n===AHEAD_BEHIND===\n0 0\n===STATUS===\n" + xy + " f.txt\n");
+            assertEquals(xy, 0, state.conflictedFiles.size());
         }
     }
 

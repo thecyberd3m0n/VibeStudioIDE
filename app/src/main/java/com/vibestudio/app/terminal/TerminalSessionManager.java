@@ -680,10 +680,6 @@ public class TerminalSessionManager {
         }
     }
 
-    public SessionLogger getLogger(TerminalSession session) {
-        return session != null ? mLoggers.get(session) : null;
-    }
-
     /** Runs the command on a background thread and delivers the result to the callback on the main thread. */
     public void runCommand(TerminalSession session, String command, int timeoutMs, CommandCallback callback) {
         mCommandExecutor.execute(() -> {
@@ -699,7 +695,7 @@ public class TerminalSessionManager {
      * session are serialized. Never call this from a thread that the session output depends on.
      */
     public CommandResult runCommandBlocking(TerminalSession session, String command, int timeoutMs) {
-        SessionLogger logger = getLogger(session);
+        SessionLogger logger = session != null ? mLoggers.get(session) : null;
         String loggedCommand = SessionLogger.redact(command);
 
         if (session == null || !session.isRunning() || command == null || command.isEmpty()) {
@@ -734,7 +730,13 @@ public class TerminalSessionManager {
                         break;
                     }
                 }
-                capturedOutput = extractBetweenMarkers(readTranscript(session), startMarker, endMarker);
+                String transcript = null;
+                try {
+                    TerminalEmulator emulator = session.getEmulator();
+                    TerminalBuffer buffer = emulator != null ? emulator.getScreen() : null;
+                    if (buffer != null) transcript = buffer.getTranscriptTextWithFullLinesJoined();
+                } catch (Exception ignored) {}
+                capturedOutput = extractBetweenMarkers(transcript, startMarker, endMarker);
                 if (capturedOutput != null) break;
             }
 
@@ -754,22 +756,6 @@ public class TerminalSessionManager {
         }
     }
 
-    private static String readTranscript(TerminalSession session) {
-        try {
-            TerminalEmulator emulator = session.getEmulator();
-            if (emulator != null) {
-                TerminalBuffer buffer = emulator.getScreen();
-                if (buffer != null) {
-                    String text = buffer.getTranscriptTextWithFullLinesJoined();
-                    if (text != null && !text.trim().isEmpty()) {
-                        return text.trim();
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-        return null;
-    }
-
     /**
      * Returns the lines printed between the start and end marker lines, or null if the command has not finished.
      * The echoed command line also contains the markers, so only the line the shell prints for the marker counts.
@@ -783,7 +769,7 @@ public class TerminalSessionManager {
         int startLineIdx = -1;
         int endLineIdx = -1;
         for (int i = 0; i < lines.length; i++) {
-            String cleanLine = stripAnsiEscapeCodes(lines[i]).replaceAll("[\\r\\n]", "").trim();
+            String cleanLine = SessionLogger.stripAnsi(lines[i]).replaceAll("[\\r\\n]", "").trim();
             if (startLineIdx == -1) {
                 // The shell may print its prompt on the same line as the marker output.
                 if (cleanLine.endsWith(startMarker) && !cleanLine.contains("echo " + startMarker)) startLineIdx = i;
@@ -806,7 +792,7 @@ public class TerminalSessionManager {
         int exitCode = 0;
         StringBuilder cleanOutput = new StringBuilder();
         for (String line : capturedOutput.split("\n")) {
-            String clean = stripAnsiEscapeCodes(line.trim()).replaceAll("[\\r\\n]", "").trim();
+            String clean = SessionLogger.stripAnsi(line.trim()).replaceAll("[\\r\\n]", "").trim();
             if (clean.startsWith("Exit code:")) {
                 try {
                     exitCode = Integer.parseInt(clean.substring("Exit code:".length()).trim());
@@ -816,10 +802,6 @@ public class TerminalSessionManager {
             }
         }
         return new CommandResult(exitCode, cleanOutput.toString().trim());
-    }
-
-    private static String stripAnsiEscapeCodes(String text) {
-        return SessionLogger.stripAnsi(text);
     }
 
     public String getSessionOutput(TerminalSession session) {

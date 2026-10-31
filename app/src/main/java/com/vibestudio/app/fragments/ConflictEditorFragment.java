@@ -249,14 +249,6 @@ public class ConflictEditorFragment extends BaseEditorFragment {
         if (rv.baseBg != null) rv.baseBg.setBackgroundColor(withAlpha(COLOR_BASE, ALPHA_IDLE));
     }
 
-    private int resolvedCount() {
-        int n = 0;
-        for (ConflictParser.Region r : mRegions) {
-            if (r.isResolved()) n++;
-        }
-        return n;
-    }
-
     private void updateResolveState() {
         boolean ready = !mResolving && ConflictParser.allResolved(mRegions);
         if (mBtnSave != null) {
@@ -264,19 +256,19 @@ public class ConflictEditorFragment extends BaseEditorFragment {
             mBtnSave.setAlpha(ready ? 1.0f : 0.4f);
         }
         if (mTvFilePath != null) {
+            int resolved = 0;
+            for (ConflictParser.Region r : mRegions) {
+                if (r.isResolved()) resolved++;
+            }
             String name = mFile != null ? mFile.getName() : "";
             mTvFilePath.setText(mRegions.isEmpty()
                     ? "Conflict: " + name + " (no markers left)"
-                    : "Conflict: " + name + " (" + resolvedCount() + "/" + mRegions.size() + " resolved)");
+                    : "Conflict: " + name + " (" + resolved + "/" + mRegions.size() + " resolved)");
         }
     }
 
     @Override
-    protected void onOverlayPositionsInvalidated() {
-        updateOverlayPositions();
-    }
-
-    private void updateOverlayPositions() {
+    protected void updateOverlayPositions() {
         if (mFlOverlayContainer == null || mCodeEditor == null || getContext() == null) return;
 
         int lineHeight = mCodeEditor.getRowHeight();
@@ -333,10 +325,6 @@ public class ConflictEditorFragment extends BaseEditorFragment {
 
     @Override
     protected void onPrimaryActionClicked() {
-        resolveFile();
-    }
-
-    private void resolveFile() {
         if (mCodeEditor == null || mFile == null || mRepoDir == null || mRelPath == null || mResolving) return;
 
         List<String> lines = currentLines();
@@ -364,17 +352,13 @@ public class ConflictEditorFragment extends BaseEditorFragment {
             if (success) {
                 toast("Resolved " + mFile.getName());
                 GitManager.getInstance().refreshRepositoryState(appContext, mRepoDir, null);
-                closeTab();
+                TabItem tab = TabManager.getInstance().findTabByFragment(this);
+                if (tab != null) TabManager.getInstance().closeTab(tab);
             } else {
                 toast("Saved, but staging failed: " + output);
                 updateResolveState();
             }
         });
-    }
-
-    private void closeTab() {
-        TabItem tab = TabManager.getInstance().findTabByFragment(this);
-        if (tab != null) TabManager.getInstance().closeTab(tab);
     }
 
     private void acceptAll(boolean ours, boolean theirs) {
@@ -392,7 +376,7 @@ public class ConflictEditorFragment extends BaseEditorFragment {
     @Override
     protected void onMoreClicked(View anchor) {
         if (getContext() == null) return;
-        Context themed = new android.view.ContextThemeWrapper(getContext(), android.R.style.Theme_DeviceDefault_Settings);
+        Context themed = new android.view.ContextThemeWrapper(getContext(), android.R.style.Theme_DeviceDefault);
         PopupMenu popup = new PopupMenu(themed, anchor);
         popup.getMenu().add(0, 1, 0, "Accept all ours");
         popup.getMenu().add(0, 2, 1, "Accept all theirs");

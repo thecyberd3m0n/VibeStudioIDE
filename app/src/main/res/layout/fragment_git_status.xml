@@ -124,17 +124,36 @@
             android:inputType="textMultiLine"
             android:maxLines="3" />
 
-        <Button
-            android:id="@+id/btn_git_action"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="36dp"
             android:layout_marginTop="8dp"
-            android:text="✓ Commit"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:background="#0E639C"
-            android:paddingHorizontal="8dp" />
+            android:orientation="horizontal"
+            android:weightSum="5">
+
+            <Button
+                android:id="@+id/btn_git_action"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="4"
+                android:text="✓ Commit"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:background="#0E639C"
+                android:paddingHorizontal="8dp" />
+
+            <ImageButton
+                android:id="@+id/btn_git_more"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:background="#2A2D3E"
+                android:src="@drawable/ic_more_horiz"
+                android:scaleType="centerInside"
+                android:contentDescription="Git actions" />
+        </LinearLayout>
     </LinearLayout>
 
     <View

@@ -168,7 +168,10 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
             int pid = running ? session.getPid() : -1;
             String cwd = session != null && session.getCwd() != null ? session.getCwd() : "N/A";
             addProcessCard(context, channel.getLabel(), "PTY stdin/stdout and command log",
-                    pid, cwd, running, () -> openChannelDetail(channel));
+                    pid, cwd, running, () -> {
+                        mCurrentChannel = channel;
+                        openLogDetail(Mode.SESSION_CHANNEL);
+                    });
         }
     }
 
@@ -255,19 +258,10 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
 
     private void openLogDetail(Mode mode) {
         mCurrentMode = mode;
-        showDetailContainer();
-        reloadCurrentLogDetail();
-        attachListeners();
-    }
-
-    private void openChannelDetail(SessionLogger channel) {
-        mCurrentChannel = channel;
-        openLogDetail(Mode.SESSION_CHANNEL);
-    }
-
-    private void showDetailContainer() {
         if (mContainerProcessList != null) mContainerProcessList.setVisibility(View.GONE);
         if (mContainerLogDetail != null) mContainerLogDetail.setVisibility(View.VISIBLE);
+        reloadCurrentLogDetail();
+        attachListeners();
     }
 
     private void attachListeners() {
@@ -306,18 +300,9 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
 
     @Override
     public void onLogAdded(String logEntry) {
-        appendEntry(logEntry);
-    }
-
-    @Override
-    public void onEntry(String entry) {
-        appendEntry(entry);
-    }
-
-    private void appendEntry(String entry) {
         mHandler.post(() -> {
             if (mLogAdapter != null) {
-                mLogAdapter.appendLine(entry);
+                mLogAdapter.appendLine(logEntry);
                 scrollToBottom();
             }
         });
@@ -330,11 +315,6 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
                 mLogAdapter.clear();
             }
         });
-    }
-
-    @Override
-    public void onCleared() {
-        onLogsCleared();
     }
 
     private void scrollToBottom() {

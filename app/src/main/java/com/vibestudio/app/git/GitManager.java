@@ -20,8 +20,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class GitManager {
@@ -32,10 +30,8 @@ public class GitManager {
 
     private volatile TerminalSession mGitSession;
     private final List<GitStateChangeListener> mListeners = new CopyOnWriteArrayList<>();
-    private final Object mRefreshLock = new Object();
-    private final Set<String> mPendingRefreshes = ConcurrentHashMap.newKeySet();
-    private final Set<String> mRerunRequested = new java.util.HashSet<>();
-    private final Map<String, List<GitStateCallback>> mQueuedCallbacks = new HashMap<>();
+    /** Repo path to the callbacks waiting for a second refresh; null while nobody asked for one. Present = running. */
+    private final Map<String, List<GitStateCallback>> mRefreshes = new HashMap<>();
 
     public interface GitCallback {
         void onResult(boolean success, String output);
@@ -184,17 +180,18 @@ public class GitManager {
 
     // --- Domain Git API ---
 
+    /** Local branches first, then remote-tracking ones as "remote/<remote>/<branch>" (remote HEAD aliases are skipped). */
     public void fetchBranches(Context context, File repoDir, GitBranchesCallback callback) {
-        String cmd = "branch -a --format=\"%(refname:short)\"";
+        String cmd = "for-each-ref --format=\"%(refname)\" refs/heads refs/remotes";
         runGitCommandAsync(context, cmd, repoDir, (success, output) -> {
             List<String> branches = new ArrayList<>();
             if (success && output != null) {
-                String[] lines = output.split("\n");
-                for (String line : lines) {
-                    String b = line.trim();
-                    if (b.startsWith("origin/HEAD")) continue;
-                    if (!b.isEmpty() && !branches.contains(b)) {
-                        branches.add(b);
+                for (String line : output.split("\n")) {
+                    String ref = line.trim();
+                    if (ref.startsWith("refs/heads/")) {
+                        branches.add(ref.substring("refs/heads/".length()));
+                    } else if (ref.startsWith("refs/remotes/") && !ref.endsWith("/HEAD")) {
+                        branches.add("remote/" + ref.substring("refs/remotes/".length()));
                     }
                 }
             }
@@ -202,6 +199,11 @@ public class GitManager {
                 callback.onResult(success, branches);
             }
         });
+    }
+
+    /** Deletes a local branch; without {@code force} git refuses branches that are not fully merged. */
+    public void deleteBranch(Context context, File repoDir, String branchName, boolean force, GitCallback callback) {
+        runGitCommandAsync(context, "branch " + (force ? "-D " : "-d ") + quotePath(branchName), repoDir, callback);
     }
 
     public void checkoutBranch(Context context, File repoDir, String branchName, GitCallback callback) {
@@ -276,47 +278,24 @@ public class GitManager {
 
         String repoPath = root.getAbsolutePath();
 
-        synchronized (mRefreshLock) {
-            if (mPendingRefreshes.contains(repoPath)) {
-                // The running refresh may have been queued before the change that triggered this request,
-                // so run once more afterwards and give the result to every waiting caller.
-                mRerunRequested.add(repoPath);
-                if (callback != null) {
-                    mQueuedCallbacks.computeIfAbsent(repoPath, k -> new ArrayList<>()).add(callback);
-                }
-                LogViewerService.getInstance().d(TAG, "Git refresh already pending for: " + repoPath + ", queued a follow-up refresh.");
+        synchronized (mRefreshes) {
+            if (mRefreshes.containsKey(repoPath)) {
+                // The running refresh may predate the change that triggered this request: run again once it ends.
+                List<GitStateCallback> waiting = mRefreshes.computeIfAbsent(repoPath, k -> new ArrayList<>());
+                if (callback != null) waiting.add(callback);
                 return;
             }
-            mPendingRefreshes.add(repoPath);
+            mRefreshes.put(repoPath, null);
         }
 
-        List<GitStateCallback> callbacks = new ArrayList<>();
-        if (callback != null) callbacks.add(callback);
-        startRefresh(context, root, repoPath, callbacks);
-    }
-
-    private void startRefresh(Context context, File root, String repoPath, List<GitStateCallback> callbacks) {
         runGitCommandAsync(context, getRefreshRepositoryStateCommand(), root, (success, output) -> {
             GitRepositoryState state = parseRepositoryState(root, success ? output : "");
-
-            List<GitStateCallback> followUp = null;
-            synchronized (mRefreshLock) {
-                if (mRerunRequested.remove(repoPath)) {
-                    followUp = mQueuedCallbacks.remove(repoPath);
-                    if (followUp == null) followUp = new ArrayList<>();
-                } else {
-                    mPendingRefreshes.remove(repoPath);
-                    mQueuedCallbacks.remove(repoPath);
-                }
+            List<GitStateCallback> waiting;
+            synchronized (mRefreshes) {
+                waiting = mRefreshes.remove(repoPath);
             }
 
-            for (GitStateCallback cb : callbacks) {
-                try {
-                    cb.onStateUpdated(state);
-                } catch (Exception e) {
-                    LogViewerService.getInstance().e(TAG, "Error in git state callback", e);
-                }
-            }
+            if (callback != null) callback.onStateUpdated(state);
             for (GitStateChangeListener listener : mListeners) {
                 try {
                     listener.onGitStateChanged(state);
@@ -324,9 +303,10 @@ public class GitManager {
                     LogViewerService.getInstance().e(TAG, "Error notifying git listener", e);
                 }
             }
-
-            if (followUp != null) {
-                startRefresh(context, root, repoPath, followUp);
+            if (waiting != null) {
+                refreshRepositoryState(context, root, fresh -> {
+                    for (GitStateCallback waiter : waiting) waiter.onStateUpdated(fresh);
+                });
             }
         });
     }
@@ -589,7 +569,8 @@ public class GitManager {
     }
 
     private static String getRefreshRepositoryStateCommand() {
-        return "(git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; " +
+        // Read-only: without this, git status rewrites .git/index, which the Source Control view watches for changes.
+        return "( export GIT_OPTIONAL_LOCKS=0 ; (git branch --show-current 2>/dev/null || git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --short -q HEAD 2>/dev/null || echo \"main\") ; " +
                "echo \"===AHEAD_BEHIND===\" ; " +
                "UB=\"$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo \"\")\" ; " +
                "if [ -z \"$UB\" ]; then " +
@@ -604,25 +585,7 @@ public class GitManager {
                "if [ -n \"$UB\" ]; then git rev-list --left-right --count \"HEAD...$UB\" 2>/dev/null || echo \"0 0\" ; else echo \"0 0\" ; fi ; " +
                "echo \"===STATUS===\" ; git status --porcelain --ignored=no ; " +
                "echo \"===NUMSTAT_STAGED===\" ; git --no-pager diff --cached --numstat ; " +
-               "echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat";
-    }
-
-    /** Porcelain XY codes git uses for unmerged paths. */
-    static boolean isConflictStatus(String index, String worktree) {
-        if ("U".equals(index) || "U".equals(worktree)) return true;
-        return ("A".equals(index) && "A".equals(worktree)) || ("D".equals(index) && "D".equals(worktree));
-    }
-
-    /** Returns the git operation that is stopped midway in the repository, or null. */
-    static String detectOperationInProgress(File repoDir) {
-        if (repoDir == null) return null;
-        File gitDir = new File(repoDir, ".git");
-        if (!gitDir.isDirectory()) return null;
-        if (new File(gitDir, "MERGE_HEAD").exists()) return "merge";
-        if (new File(gitDir, "rebase-merge").isDirectory() || new File(gitDir, "rebase-apply").isDirectory()) return "rebase";
-        if (new File(gitDir, "CHERRY_PICK_HEAD").exists()) return "cherry-pick";
-        if (new File(gitDir, "REVERT_HEAD").exists()) return "revert";
-        return null;
+               "echo \"===NUMSTAT_UNSTAGED===\" ; git --no-pager diff --numstat )";
     }
 
     public static boolean isMergeConflictOutput(String output) {
@@ -637,6 +600,11 @@ public class GitManager {
         runGitCommandAsync(context, operation + " --abort", repoDir, callback);
     }
 
+    /** Drops the commit the operation is stuck on. Merges have nothing to skip. */
+    public void skipOperation(Context context, File repoDir, String operation, GitCallback callback) {
+        runGitCommandAsync(context, operation + " --skip", repoDir, callback);
+    }
+
     public void continueOperation(Context context, File repoDir, String operation, GitCallback callback) {
         String cmd = "merge".equals(operation) ? "commit --no-edit" : operation + " --continue";
         runGitCommandAsync(context, cmd, repoDir, callback);
@@ -644,7 +612,11 @@ public class GitManager {
 
     public static GitRepositoryState parseRepositoryState(File repoDir, String output) {
         GitRepositoryState state = new GitRepositoryState(repoDir);
-        state.operationInProgress = detectOperationInProgress(repoDir);
+        File gitDir = new File(repoDir, ".git");
+        if (new File(gitDir, "MERGE_HEAD").exists()) state.operationInProgress = "merge";
+        else if (new File(gitDir, "rebase-merge").isDirectory() || new File(gitDir, "rebase-apply").isDirectory()) state.operationInProgress = "rebase";
+        else if (new File(gitDir, "CHERRY_PICK_HEAD").exists()) state.operationInProgress = "cherry-pick";
+        else if (new File(gitDir, "REVERT_HEAD").exists()) state.operationInProgress = "revert";
         if (output == null || output.trim().isEmpty()) {
             return state;
         }
@@ -743,7 +715,8 @@ public class GitManager {
                     filePath = filePath.substring(1, filePath.length() - 1);
                 }
 
-                if (isConflictStatus(statusIndex, statusWorktree)) {
+                // Porcelain codes git uses for unmerged paths: DD AA AU UA DU UD UU.
+                if ((statusIndex + statusWorktree).matches("DD|AA|[ADU]U|U[ADU]")) {
                     state.conflictedFiles.add(new GitStatusView.GitFileStatus(statusIndex + statusWorktree, filePath, false));
                     continue;
                 }

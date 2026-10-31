@@ -90,11 +90,6 @@ public class EditorFragment extends BaseEditorFragment {
         performSave();
     }
 
-    @Override
-    protected void onOverlayPositionsInvalidated() {
-        // No overlays in the plain editor.
-    }
-
     private void updateFilePathUI() {
         if (mTvFilePath != null) {
             if (mFilePath != null && !mFilePath.isEmpty()) {

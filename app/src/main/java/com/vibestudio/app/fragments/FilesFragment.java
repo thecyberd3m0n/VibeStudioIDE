@@ -725,6 +725,10 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         cancelFilePickerMode();
         super.onDestroyView();
         GitManager.getInstance().removeStateChangeListener(this);
+        // The git panel lives in this view hierarchy; the next onCreateView starts with it closed and empty.
+        mGitStatusView = null;
+        mFlGitViewContainer = null;
+        mIsGitViewOpen = false;
     }
 
     private void preloadGitView() {
@@ -789,6 +793,7 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
         if (mFlGitViewContainer == null || mCurrentDir == null) return;
         mIsGitViewOpen = true;
         preloadGitView();
+        if (mGitStatusView != null) mGitStatusView.refreshStatus();
         mFlGitViewContainer.setVisibility(View.VISIBLE);
 
         mFlGitViewContainer.animate().cancel();

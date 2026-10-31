@@ -174,11 +174,6 @@ public class DiffEditorFragment extends BaseEditorFragment {
     }
 
     @Override
-    protected void onPrimaryActionClicked() {
-        // The save button is hidden in diff mode.
-    }
-
-    @Override
     protected void onMoreClicked(View anchor) {
         if (getContext() == null) return;
         android.content.Context themedContext = new android.view.ContextThemeWrapper(getContext(), android.R.style.Theme_DeviceDefault_Settings);
@@ -204,7 +199,7 @@ public class DiffEditorFragment extends BaseEditorFragment {
     }
 
     @Override
-    protected void onOverlayPositionsInvalidated() {
+    protected void updateOverlayPositions() {
         updateHunkOverlayPositions();
     }
 
