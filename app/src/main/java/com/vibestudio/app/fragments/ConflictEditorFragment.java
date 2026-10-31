@@ -1,5 +1,6 @@
 package com.vibestudio.app.fragments;
 
+import com.vibestudio.app.git.models.ConflictRegion;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -62,12 +63,12 @@ public class ConflictEditorFragment extends BaseEditorFragment {
     private boolean mHadTrailingNewline = true;
     private String mEol = "\n";
 
-    private List<ConflictParser.Region> mRegions = new ArrayList<>();
+    private List<ConflictRegion> mRegions = new ArrayList<>();
     private final List<RegionViews> mRegionViews = new ArrayList<>();
 
     /** Overlay views that belong to a single conflict region. */
     private static final class RegionViews {
-        ConflictParser.Region region;
+        ConflictRegion region;
         View oursBg;
         View baseBg;
         View theirsBg;
@@ -153,7 +154,7 @@ public class ConflictEditorFragment extends BaseEditorFragment {
     /** Re-reads the regions from the current text, keeping the sides the user already ticked. */
     private void reparse() {
         if (mCodeEditor == null) return;
-        List<ConflictParser.Region> parsed = ConflictParser.parse(currentLines());
+        List<ConflictRegion> parsed = ConflictParser.parse(currentLines());
         ConflictParser.carryOverChoices(mRegions, parsed);
         mRegions = parsed;
         rebuildOverlayViews();
@@ -165,7 +166,7 @@ public class ConflictEditorFragment extends BaseEditorFragment {
         mFlOverlayContainer.removeAllViews();
         mRegionViews.clear();
 
-        for (ConflictParser.Region region : mRegions) {
+        for (ConflictRegion region : mRegions) {
             RegionViews rv = new RegionViews();
             rv.region = region;
             rv.oursBg = createBlockBackground();
@@ -257,7 +258,7 @@ public class ConflictEditorFragment extends BaseEditorFragment {
         }
         if (mTvFilePath != null) {
             int resolved = 0;
-            for (ConflictParser.Region r : mRegions) {
+            for (ConflictRegion r : mRegions) {
                 if (r.isResolved()) resolved++;
             }
             String name = mFile != null ? mFile.getName() : "";
@@ -278,7 +279,7 @@ public class ConflictEditorFragment extends BaseEditorFragment {
         if (containerHeight <= 0) containerHeight = mCodeEditor.getHeight();
 
         for (RegionViews rv : mRegionViews) {
-            ConflictParser.Region r = rv.region;
+            ConflictRegion r = rv.region;
             // "ours" block: its start marker plus its lines; "theirs": separator, its lines and end marker.
             placeBlock(rv.oursBg, r.startLine, r.oursEndExclusive() - r.startLine, lineHeight, offsetY, containerHeight);
             if (rv.baseBg != null) {
@@ -328,7 +329,7 @@ public class ConflictEditorFragment extends BaseEditorFragment {
         if (mCodeEditor == null || mFile == null || mRepoDir == null || mRelPath == null || mResolving) return;
 
         List<String> lines = currentLines();
-        List<ConflictParser.Region> regions = ConflictParser.parse(lines);
+        List<ConflictRegion> regions = ConflictParser.parse(lines);
         ConflictParser.carryOverChoices(mRegions, regions);
         if (!ConflictParser.allResolved(regions)) {
             toast("Accept ours or theirs for every conflict first");
@@ -362,7 +363,7 @@ public class ConflictEditorFragment extends BaseEditorFragment {
     }
 
     private void acceptAll(boolean ours, boolean theirs) {
-        for (ConflictParser.Region r : mRegions) {
+        for (ConflictRegion r : mRegions) {
             r.acceptOurs = ours;
             r.acceptTheirs = theirs;
         }

@@ -1,8 +1,10 @@
 package com.vibestudio.app.fragments;
 
+import com.vibestudio.app.git.callbacks.GitStateChangeListener;
+import com.vibestudio.app.git.models.GitFileStatus;
+import com.vibestudio.app.git.models.GitRepositoryState;
 import com.vibestudio.app.git.GitStatusView;
 import com.vibestudio.app.git.GitManager;
-import com.vibestudio.app.git.GitRepositoryState;
 
 import android.app.AlertDialog;
 import android.content.Context;
@@ -52,7 +54,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-public class FilesFragment extends Fragment implements FileAction.FileActionListener, GitManager.GitStateChangeListener {
+public class FilesFragment extends Fragment implements FileAction.FileActionListener, GitStateChangeListener {
 
     private static final String ARG_CURRENT_PATH = "current_path";
     private static final String TERMUX_FILES_ROOT = "/data/data/com.termux/files";
@@ -679,12 +681,12 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
             if (relPath.isEmpty()) return null;
 
             if (itemFile.isFile()) {
-                for (GitStatusView.GitFileStatus f : state.stagedFiles) {
+                for (GitFileStatus f : state.stagedFiles) {
                     if (relPath.equals(f.filePath)) {
                         return "Staged (+" + f.additions + ", -" + f.deletions + ")";
                     }
                 }
-                for (GitStatusView.GitFileStatus f : state.unstagedFiles) {
+                for (GitFileStatus f : state.unstagedFiles) {
                     if (relPath.equals(f.filePath)) {
                         if ("??".equals(f.status)) {
                             return "Untracked (+" + f.additions + ")";
@@ -698,14 +700,14 @@ public class FilesFragment extends Fragment implements FileAction.FileActionList
                 int totalDel = 0;
                 boolean hasChanges = false;
 
-                for (GitStatusView.GitFileStatus f : state.stagedFiles) {
+                for (GitFileStatus f : state.stagedFiles) {
                     if (f.filePath != null && f.filePath.startsWith(dirPrefix)) {
                         totalAdd += f.additions;
                         totalDel += f.deletions;
                         hasChanges = true;
                     }
                 }
-                for (GitStatusView.GitFileStatus f : state.unstagedFiles) {
+                for (GitFileStatus f : state.unstagedFiles) {
                     if (f.filePath != null && f.filePath.startsWith(dirPrefix)) {
                         totalAdd += f.additions;
                         totalDel += f.deletions;

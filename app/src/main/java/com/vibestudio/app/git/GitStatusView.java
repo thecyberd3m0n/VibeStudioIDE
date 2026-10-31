@@ -1,7 +1,16 @@
 package com.vibestudio.app.git;
 
+import com.vibestudio.app.git.callbacks.GitCallback;
+import com.vibestudio.app.git.callbacks.GitStateChangeListener;
+import com.vibestudio.app.git.callbacks.OnCloseListener;
+import com.vibestudio.app.git.callbacks.OnStatusUpdatedListener;
+import com.vibestudio.app.git.models.GitFileStatus;
+import com.vibestudio.app.git.models.GitRepositoryState;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.os.FileObserver;
 import android.text.Editable;
@@ -30,6 +39,10 @@ import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.core.graphics.drawable.RoundedBitmapDrawable;
+import androidx.core.graphics.drawable.RoundedBitmapDrawableFactory;
 
 import com.vibestudio.app.R;
 
@@ -48,7 +61,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class GitStatusView extends LinearLayout implements GitManager.GitStateChangeListener {
+public class GitStatusView extends LinearLayout implements GitStateChangeListener {
 
     private static final String TAG = "GitStatusView";
 
@@ -65,33 +78,52 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
     private View mBtnGitStatus;
     private View mBtnClose;
     private LinearLayout mLlContainer;
+    private View mCommitHistoryBar;
+    private ImageView mIvCommitAvatar;
+    private TextView mTvCommitSubject;
+    private TextView mTvCommitMeta;
+    private int mLastCommitRequest;
+    private View mBtnBack;
+    private TextView mTvTitle;
+    private View mChangesPane;
+    private RecyclerView mRvHistory;
+    private View mBtnCommitHistory;
+    private final CommitHistoryAdapter mHistoryAdapter = new CommitHistoryAdapter();
+    private View mCommitPane;
+    private LinearLayout mLlCommitFiles;
+    private String mHistoryRef;
+    private int mCommitGeneration;
+    private final List<Page> mPages = new ArrayList<>(Arrays.asList(new Page(PAGE_CHANGES, null, null, null)));
+    private boolean mHistoryLoading;
+    private boolean mHistoryHasMore;
+    private int mHistoryGeneration;
+    private String mHistoryHead;
+    private static final int HISTORY_PAGE_SIZE = 50;
+    private static final int PAGE_CHANGES = 0;
+    private static final int PAGE_HISTORY = 1;
+    private static final int PAGE_COMMIT = 2;
 
-    public interface OnCloseListener {
-        void onClose();
-    }
+    /** One entry of the navigation stack: the changes list, a branch's history, or one commit's changes. */
+    private static final class Page {
+        final int type;
+        /** Git ref of the history; null for the current branch. */
+        final String ref;
+        /** Upper-case branch name for history titles. */
+        final String label;
+        final String hash;
 
-    public interface OnStatusUpdatedListener {
-        void onStatusUpdated();
+        Page(int type, String ref, String label, String hash) {
+            this.type = type;
+            this.ref = ref;
+            this.label = label;
+            this.hash = hash;
+        }
     }
 
     private OnStatusUpdatedListener mStatusUpdatedListener;
 
     public void setOnStatusUpdatedListener(OnStatusUpdatedListener listener) {
         this.mStatusUpdatedListener = listener;
-    }
-
-    public static class GitFileStatus {
-        public String status;
-        public String filePath;
-        public boolean isStaged;
-        public int additions;
-        public int deletions;
-
-        public GitFileStatus(String status, String filePath, boolean isStaged) {
-            this.status = status;
-            this.filePath = filePath;
-            this.isStaged = isStaged;
-        }
     }
 
     public GitStatusView(@NonNull Context context) {
@@ -115,6 +147,36 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         mBtnGitStatus = findViewById(R.id.btn_git_refresh);
         mBtnClose = findViewById(R.id.btn_git_close);
         mLlContainer = findViewById(R.id.ll_git_items_container);
+        mCommitHistoryBar = findViewById(R.id.ll_commit_history_bar);
+        mIvCommitAvatar = findViewById(R.id.iv_commit_avatar);
+        mTvCommitSubject = findViewById(R.id.tv_commit_subject);
+        mTvCommitMeta = findViewById(R.id.tv_commit_meta);
+        mBtnBack = findViewById(R.id.btn_git_back);
+        mTvTitle = findViewById(R.id.tv_git_title);
+        mChangesPane = findViewById(R.id.ll_changes_pane);
+        mRvHistory = findViewById(R.id.rv_commit_history);
+        mBtnCommitHistory = findViewById(R.id.btn_commit_history);
+
+        if (mRvHistory != null) {
+            LinearLayoutManager layoutManager = new LinearLayoutManager(context);
+            mRvHistory.setLayoutManager(layoutManager);
+            mRvHistory.setAdapter(mHistoryAdapter);
+            mRvHistory.addOnScrollListener(new RecyclerView.OnScrollListener() {
+                @Override
+                public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+                    if (dy > 0 && layoutManager.findLastVisibleItemPosition() >= mHistoryAdapter.getItemCount() - 5) {
+                        loadHistoryPage(false);
+                    }
+                }
+            });
+        }
+        mCommitPane = findViewById(R.id.sv_commit_files);
+        mLlCommitFiles = findViewById(R.id.ll_commit_files);
+        mHistoryAdapter.setOnCommitClickListener(commit ->
+                navigateTo(new Page(PAGE_COMMIT, null, null, commit.hash), false));
+        if (mBtnCommitHistory != null) mBtnCommitHistory.setOnClickListener(v -> openHistory(null, null));
+        if (mBtnBack != null) mBtnBack.setOnClickListener(v -> goBack());
+        applyPage(currentPage(), false);
 
         if (mLlBranchSelector != null) {
             mLlBranchSelector.setOnClickListener(v -> showBranchSelectionDialog());
@@ -205,9 +267,15 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             btnMore.setOnClickListener(v -> {
                 PopupMenu menu = new PopupMenu(
                         new ContextThemeWrapper(getContext(), android.R.style.Theme_DeviceDefault), v);
-                menu.getMenu().add("Cherry-Pick Commit(s)...");
+                menu.getMenu().add(0, 1, 0, "Stash Changes...");
+                menu.getMenu().add(0, 2, 1, "Unstash Changes...");
+                menu.getMenu().add(0, 3, 2, "Cherry-Pick Commit(s)...");
                 menu.setOnMenuItemClickListener(item -> {
-                    showCherryPickDialog();
+                    switch (item.getItemId()) {
+                        case 1: showStashDialog(); break;
+                        case 2: showUnstashDialog(); break;
+                        default: showCherryPickDialog(); break;
+                    }
                     return true;
                 });
                 menu.show();
@@ -312,6 +380,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
             }
 
             updateButtonStates();
+            refreshCommitHistoryBar();
 
             if (state == null) {
                 TextView tvErr = new TextView(getContext());
@@ -331,6 +400,231 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 mStatusUpdatedListener.onStatusUpdated();
             }
         });
+    }
+
+    private void refreshCommitHistoryBar() {
+        if (mCommitHistoryBar == null || mRepoDir == null || getContext() == null) return;
+        final int request = ++mLastCommitRequest;
+        GitManager.getInstance().getLastCommit(getContext(), mRepoDir, commit -> {
+            if (request != mLastCommitRequest || mCommitHistoryBar == null) return;
+            if (commit == null) {
+                mCommitHistoryBar.setVisibility(View.GONE);
+                resetToChanges();
+                return;
+            }
+            mCommitHistoryBar.setVisibility(View.VISIBLE);
+            mHistoryAdapter.setRemoteUrl(commit.remoteUrl);
+            Page page = currentPage();
+            if (page.type == PAGE_HISTORY && page.ref == null && !commit.hash.equals(mHistoryHead)) loadHistoryPage(true);
+            mTvCommitSubject.setText(commit.subject);
+            mTvCommitMeta.setText(commit.author + " · " + commit.shortHash + " · " + commit.relativeTime);
+            setInitialsAvatar(commit.author);
+            AvatarLoader.load(commit.email, commit.remoteUrl, commit.hash, bitmap -> {
+                if (request != mLastCommitRequest || bitmap == null) return;
+                RoundedBitmapDrawable avatar = RoundedBitmapDrawableFactory.create(getResources(), bitmap);
+                avatar.setCircular(true);
+                mIvCommitAvatar.setImageDrawable(avatar);
+            });
+        });
+    }
+
+    private void setInitialsAvatar(String author) {
+        mIvCommitAvatar.setImageBitmap(AvatarLoader.initialsBitmap(author, dpToPx(28)));
+    }
+
+    private Page currentPage() {
+        return mPages.get(mPages.size() - 1);
+    }
+
+    private View paneFor(Page page) {
+        switch (page.type) {
+            case PAGE_HISTORY: return mRvHistory;
+            case PAGE_COMMIT: return mCommitPane;
+            default: return mChangesPane;
+        }
+    }
+
+    private String titleFor(Page page) {
+        switch (page.type) {
+            case PAGE_HISTORY: return (page.ref == null ? "CURRENT" : page.label) + " / HISTORY";
+            case PAGE_COMMIT: return "CHANGES / " + page.hash.substring(0, Math.min(7, page.hash.length())).toUpperCase();
+            default: return "CHANGES / CURRENT";
+        }
+    }
+
+    /** Opens a branch's history on top of the changes view; a null ref is the current branch. */
+    private void openHistory(String ref, String label) {
+        if (mRvHistory == null || mChangesPane == null) return;
+        Page top = currentPage();
+        boolean sameHistory = top.type == PAGE_HISTORY && java.util.Objects.equals(top.ref, ref);
+        if (sameHistory) return;
+        navigateTo(new Page(PAGE_HISTORY, ref, label, null), true);
+    }
+
+    /** @param fromRoot true to drop everything above the changes view first, instead of stacking on the current page */
+    private void navigateTo(Page page, boolean fromRoot) {
+        View from = paneFor(currentPage());
+        if (fromRoot) {
+            while (mPages.size() > 1) mPages.remove(mPages.size() - 1);
+        }
+        mPages.add(page);
+        applyPage(page, true);
+        View to = paneFor(page);
+        if (from != to) slidePanes(from, to, true);
+    }
+
+    private void goBack() {
+        if (mPages.size() <= 1) return;
+        View from = paneFor(currentPage());
+        mPages.remove(mPages.size() - 1);
+        Page page = currentPage();
+        applyPage(page, false);
+        slidePanes(from, paneFor(page), false);
+    }
+
+    private void resetToChanges() {
+        if (mPages.size() <= 1) return;
+        View from = paneFor(currentPage());
+        while (mPages.size() > 1) mPages.remove(mPages.size() - 1);
+        applyPage(currentPage(), false);
+        slidePanes(from, mChangesPane, false);
+    }
+
+    /** Updates the header for a page; {@code load} fetches its data (going back keeps what was already loaded). */
+    private void applyPage(Page page, boolean load) {
+        if (mTvTitle != null) mTvTitle.setText(titleFor(page));
+        if (mBtnBack != null) mBtnBack.setVisibility(mPages.size() > 1 ? View.VISIBLE : View.GONE);
+        if (!load) return;
+        if (page.type == PAGE_HISTORY) {
+            mHistoryRef = page.ref;
+            loadHistoryPage(true);
+        } else if (page.type == PAGE_COMMIT) {
+            loadCommitFiles(page.hash);
+        }
+    }
+
+    /** Moves {@code outgoing} off screen and {@code incoming} in; forward navigation pushes from the right. */
+    private void slidePanes(View outgoing, View incoming, boolean forward) {
+        if (outgoing == null || incoming == null || outgoing == incoming) return;
+        int width = ((View) outgoing.getParent()).getWidth();
+        if (width == 0) {
+            outgoing.setVisibility(View.GONE);
+            incoming.setVisibility(View.VISIBLE);
+            return;
+        }
+        float sign = forward ? 1f : -1f;
+        incoming.animate().cancel();
+        outgoing.animate().cancel();
+        incoming.setTranslationX(sign * width);
+        incoming.setVisibility(View.VISIBLE);
+        incoming.animate().translationX(0).setDuration(220).start();
+        outgoing.animate().translationX(-sign * width).setDuration(220).withEndAction(() -> {
+            outgoing.setVisibility(View.GONE);
+            outgoing.setTranslationX(0);
+        }).start();
+    }
+
+    private void loadHistoryPage(boolean reset) {
+        if (mRepoDir == null || getContext() == null) return;
+        if (reset) {
+            mHistoryGeneration++;
+            mHistoryLoading = false;
+            mHistoryHasMore = true;
+            mHistoryAdapter.clear();
+        } else if (mHistoryLoading || !mHistoryHasMore) {
+            return;
+        }
+        mHistoryLoading = true;
+        final int generation = mHistoryGeneration;
+        GitManager.getInstance().getCommitLog(getContext(), mRepoDir, mHistoryRef, mHistoryAdapter.getItemCount(), HISTORY_PAGE_SIZE,
+                (success, commits) -> {
+                    if (generation != mHistoryGeneration) return;
+                    mHistoryLoading = false;
+                    if (!success) {
+                        mHistoryHasMore = false;
+                        Toast.makeText(getContext(), "Failed to load history", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (reset && !commits.isEmpty()) mHistoryHead = commits.get(0).hash;
+                    mHistoryHasMore = commits.size() >= HISTORY_PAGE_SIZE;
+                    mHistoryAdapter.append(commits);
+                });
+    }
+
+    private void loadCommitFiles(String hash) {
+        if (mRepoDir == null || getContext() == null || mLlCommitFiles == null) return;
+        final int generation = ++mCommitGeneration;
+        mLlCommitFiles.removeAllViews();
+        GitManager.getInstance().getCommitFiles(getContext(), mRepoDir, hash, (success, files) -> {
+            if (generation != mCommitGeneration) return;
+            if (!success) {
+                Toast.makeText(getContext(), "Failed to load commit changes", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            renderCommitFiles(hash, files);
+        });
+    }
+
+    private void renderCommitFiles(String hash, List<GitFileStatus> files) {
+        mLlCommitFiles.removeAllViews();
+        TextView sectionTitle = new TextView(getContext());
+        sectionTitle.setText("CHANGES (" + files.size() + ")");
+        sectionTitle.setTextColor(Color.parseColor("#A0A0B0"));
+        sectionTitle.setTextSize(11);
+        sectionTitle.setTypeface(null, Typeface.BOLD);
+        sectionTitle.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(4));
+        mLlCommitFiles.addView(sectionTitle);
+
+        for (GitFileStatus file : files) {
+            LinearLayout row = createFileRow(file);
+            row.setOnClickListener(v -> openCommitFileDiff(hash, file));
+            mLlCommitFiles.addView(row);
+        }
+    }
+
+    /** Diffs a file between the commit's first parent and the commit itself. */
+    private void openCommitFileDiff(String hash, GitFileStatus file) {
+        if (mRepoDir == null || getContext() == null || file.filePath == null) return;
+        String name = new File(file.filePath).getName();
+        File before;
+        File after;
+        try {
+            before = File.createTempFile("git_parent_", "_" + name, getContext().getCacheDir());
+            after = File.createTempFile("git_commit_", "_" + name, getContext().getCacheDir());
+        } catch (IOException e) {
+            Toast.makeText(getContext(), "Cannot open diff: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        before.deleteOnExit();
+        after.deleteOnExit();
+        boolean added = "A".equals(file.status);
+        boolean deleted = "D".equals(file.status);
+        fetchRevision(hash + "^", file.filePath, added, beforeText -> writeText(before, beforeText,
+                () -> fetchRevision(hash, file.filePath, deleted, afterText -> writeText(after, afterText,
+                        () -> openDiffView(before.getAbsolutePath(), after.getAbsolutePath(),
+                        DiffEditorFragment.Mode.HISTORICAL,
+                        "Diff: " + name + " @ " + hash.substring(0, Math.min(7, hash.length())))))));
+    }
+
+    private interface TextConsumer {
+        void accept(String text);
+    }
+
+    /** Delivers the file content at a revision on the main thread; empty when skipped or missing there. */
+    private void fetchRevision(String rev, String path, boolean skip, TextConsumer consumer) {
+        if (skip) {
+            consumer.accept("");
+            return;
+        }
+        GitManager.getInstance().getFileAtRevision(getContext(), mRepoDir, rev, path,
+                (success, output) -> post(() -> consumer.accept(success && output != null ? output : "")));
+    }
+
+    private void writeText(File file, String text, Runnable next) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
+            writer.write(text);
+        } catch (IOException ignored) {}
+        next.run();
     }
 
     /** Branch switching and cherry-picking make no sense while a merge, rebase or cherry-pick is stopped midway. */
@@ -493,6 +787,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         boolean isCurrent = targetBranch.equals(currentBranch);
 
         List<String> actions = new ArrayList<>(Arrays.asList(
+                "View History",
                 "Checkout",
                 "Merge to Current (" + currentBranch + ")",
                 "Rebase Current onto " + targetBranch));
@@ -502,16 +797,26 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                 .setTitle("Branch: " + targetBranch)
                 .setItems(actions.toArray(new String[0]), (dialog, which) -> {
                     switch (which) {
-                        case 0: // Checkout
+                        case 0: // View History
+                            openHistory(isCurrent ? null : targetBranch, targetBranch.toUpperCase());
+                            break;
+
+                        case 1: // Checkout
                             if (isCurrent) {
                                 Toast.makeText(getContext(), "Already on " + targetBranch, Toast.LENGTH_SHORT).show();
                             } else {
-                                GitManager.getInstance().checkoutBranch(getContext(), mRepoDir, targetBranch,
-                                        handleGitResult("Switched to branch " + targetBranch, () -> showBranchActionMenu(branchRef, currentBranch)));
+                                String localName = isRemote ? targetBranch.substring(targetBranch.indexOf('/') + 1) : targetBranch;
+                                GitCallback result = handleGitResult("Switched to branch " + localName,
+                                        () -> showBranchActionMenu(branchRef, currentBranch));
+                                if (isRemote) {
+                                    GitManager.getInstance().checkoutRemoteBranch(getContext(), mRepoDir, targetBranch, result);
+                                } else {
+                                    GitManager.getInstance().checkoutBranch(getContext(), mRepoDir, targetBranch, result);
+                                }
                             }
                             break;
 
-                        case 1: // Merge
+                        case 2: // Merge
                             if (isCurrent) {
                                 Toast.makeText(getContext(), "Cannot merge branch into itself", Toast.LENGTH_SHORT).show();
                             } else {
@@ -520,7 +825,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                             }
                             break;
 
-                        case 2: // Rebase
+                        case 3: // Rebase
                             if (isCurrent) {
                                 Toast.makeText(getContext(), "Cannot rebase branch onto itself", Toast.LENGTH_SHORT).show();
                             } else {
@@ -529,10 +834,89 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                             }
                             break;
 
-                        case 3: // Delete (only offered for a local branch that is not checked out)
+                        case 4: // Delete (only offered for a local branch that is not checked out)
                             confirm("Delete branch " + targetBranch + "?",
                                     "The branch will be removed. Git only allows this if it is fully merged.", "Delete",
                                     () -> deleteBranch(targetBranch, false));
+                            break;
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showStashDialog() {
+        if (mRepoDir == null || getContext() == null || blockedByOperation()) return;
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+        builder.setTitle("Stash Changes");
+
+        final EditText input = new EditText(getContext());
+        input.setHint("Stash name (optional)");
+        input.setPadding(32, 24, 32, 24);
+        builder.setView(input);
+
+        builder.setPositiveButton("Stash", (dialog, which) -> {
+            String name = input.getText().toString().trim();
+            GitManager.getInstance().stashPush(getContext(), mRepoDir, name, (success, output) -> {
+                boolean nothingToStash = success && output != null && output.contains("No local changes to save");
+                if (nothingToStash) {
+                    post(() -> Toast.makeText(getContext(), "No local changes to stash", Toast.LENGTH_SHORT).show());
+                } else {
+                    handleGitResult("Changes stashed", this::showStashDialog).onResult(success, output);
+                }
+            });
+        });
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
+    }
+
+    private void showUnstashDialog() {
+        if (mRepoDir == null || getContext() == null || blockedByOperation()) return;
+
+        GitManager.getInstance().stashList(getContext(), mRepoDir, (success, output) -> post(() -> {
+            List<String> refs = new ArrayList<>();
+            List<String> labels = new ArrayList<>();
+            if (success && output != null) {
+                for (String line : output.split("\n")) {
+                    String trimmed = line.trim();
+                    if (trimmed.matches("^stash@\\{\\d+\\}:.*")) {
+                        int colon = trimmed.indexOf(':');
+                        refs.add(trimmed.substring(0, colon));
+                        labels.add(trimmed);
+                    }
+                }
+            }
+            if (refs.isEmpty()) {
+                Toast.makeText(getContext(), success ? "No stashes found" : "Action failed: " + output, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            new AlertDialog.Builder(getContext())
+                    .setTitle("Unstash Changes (" + refs.size() + ")")
+                    .setItems(labels.toArray(new String[0]), (dialog, which) -> showStashActionMenu(refs.get(which), labels.get(which)))
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        }));
+    }
+
+    private void showStashActionMenu(String stashRef, String label) {
+        String[] actions = {"Pop (apply and remove)", "Apply (keep stash)", "Drop (delete stash)"};
+        new AlertDialog.Builder(getContext())
+                .setTitle(label)
+                .setItems(actions, (dialog, which) -> {
+                    switch (which) {
+                        case 0:
+                            GitManager.getInstance().stashAction(getContext(), mRepoDir, "pop", stashRef,
+                                    handleGitResult("Stash applied and removed", this::showUnstashDialog));
+                            break;
+                        case 1:
+                            GitManager.getInstance().stashAction(getContext(), mRepoDir, "apply", stashRef,
+                                    handleGitResult("Stash applied", this::showUnstashDialog));
+                            break;
+                        case 2:
+                            confirm("Drop " + stashRef + "?", "The stashed changes will be deleted.", "Drop",
+                                    () -> GitManager.getInstance().stashAction(getContext(), mRepoDir, "drop", stashRef,
+                                            handleGitResult("Stash dropped", this::showUnstashDialog)));
                             break;
                     }
                 })
@@ -562,7 +946,7 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         builder.show();
     }
 
-    private GitManager.GitCallback handleGitResult(String successMsg, Runnable retryAction) {
+    private GitCallback handleGitResult(String successMsg, Runnable retryAction) {
         return (success, output) -> post(() -> {
             if (success) {
                 Toast.makeText(getContext(), successMsg, Toast.LENGTH_SHORT).show();
@@ -797,6 +1181,56 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         }
     }
 
+    /** A changed-file row (status, path, +/- counts) without click handling or buttons. */
+    private LinearLayout createFileRow(GitFileStatus file) {
+        LinearLayout row = new LinearLayout(getContext());
+        row.setOrientation(HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
+
+        TypedValue outValueRow = new TypedValue();
+        if (getContext() != null && getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValueRow, true)) {
+            row.setBackgroundResource(outValueRow.resourceId);
+        }
+
+        TextView tvStatus = new TextView(getContext());
+        tvStatus.setText(file.status);
+        tvStatus.setTextSize(12);
+        tvStatus.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tvStatus.setGravity(Gravity.CENTER);
+
+        int statusColor = Color.parseColor("#CCCCCC");
+        if (file.status.contains("M")) statusColor = Color.parseColor("#E2C08D");
+        else if (file.status.contains("A") || file.status.contains("?")) statusColor = Color.parseColor("#73C991");
+        else if (file.status.contains("D")) statusColor = Color.parseColor("#F14C4C");
+        tvStatus.setTextColor(statusColor);
+
+        LayoutParams statusParams = new LayoutParams(dpToPx(24), WRAP_CONTENT);
+        row.addView(tvStatus, statusParams);
+
+        TextView tvPath = new TextView(getContext());
+        tvPath.setText(file.filePath);
+        tvPath.setTextColor(Color.parseColor("#E0E0E0"));
+        tvPath.setTextSize(13);
+        tvPath.setSingleLine(true);
+        tvPath.setEllipsize(TextUtils.TruncateAt.END);
+        LayoutParams pathParams = new LayoutParams(0, WRAP_CONTENT, 1.0f);
+        pathParams.setMarginStart(dpToPx(12));
+        row.addView(tvPath, pathParams);
+
+        if (file.additions > 0 || file.deletions > 0) {
+            TextView tvDiff = new TextView(getContext());
+            String diffStr = "+" + file.additions + " -" + file.deletions;
+            tvDiff.setText(diffStr);
+            tvDiff.setTextSize(11);
+            tvDiff.setTextColor(Color.parseColor("#808090"));
+            tvDiff.setPadding(0, 0, dpToPx(8), 0);
+            row.addView(tvDiff);
+        }
+
+        return row;
+    }
+
     private void renderSection(String title, List<GitFileStatus> files, boolean isStaged) {
         if (files == null || files.isEmpty()) return;
 
@@ -805,54 +1239,37 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         sectionTitle.setTextColor(Color.parseColor("#A0A0B0"));
         sectionTitle.setTextSize(11);
         sectionTitle.setTypeface(null, Typeface.BOLD);
-        sectionTitle.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(4));
-        mLlContainer.addView(sectionTitle);
+        LinearLayout header = new LinearLayout(getContext());
+        header.setOrientation(HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(4));
+        header.addView(sectionTitle, new LayoutParams(0, WRAP_CONTENT, 1.0f));
+
+        TextView btnAll = new TextView(getContext());
+        btnAll.setText(isStaged ? "−" : "+");
+        btnAll.setTextColor(Color.parseColor("#82AAFF"));
+        btnAll.setTextSize(18);
+        btnAll.setTypeface(null, Typeface.BOLD);
+        btnAll.setPadding(16, 0, 16, 0);
+        btnAll.setClickable(true);
+        btnAll.setFocusable(true);
+        btnAll.setContentDescription(isStaged ? "Unstage all changes" : "Stage all changes");
+        TypedValue outValueHeaderBtn = new TypedValue();
+        if (getContext() != null && getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValueHeaderBtn, true)) {
+            btnAll.setBackgroundResource(outValueHeaderBtn.resourceId);
+        }
+        btnAll.setOnClickListener(v -> {
+            if (isStaged) {
+                GitManager.getInstance().unstageAll(getContext(), mRepoDir, (success, output) -> refreshStatus());
+            } else {
+                GitManager.getInstance().stageAll(getContext(), mRepoDir, (success, output) -> refreshStatus());
+            }
+        });
+        header.addView(btnAll);
+        mLlContainer.addView(header);
 
         for (GitFileStatus file : files) {
-            LinearLayout row = new LinearLayout(getContext());
-            row.setOrientation(HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
-
-            TypedValue outValueRow = new TypedValue();
-            if (getContext() != null && getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValueRow, true)) {
-                row.setBackgroundResource(outValueRow.resourceId);
-            }
-
-            TextView tvStatus = new TextView(getContext());
-            tvStatus.setText(file.status);
-            tvStatus.setTextSize(12);
-            tvStatus.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-            tvStatus.setGravity(Gravity.CENTER);
-
-            int statusColor = Color.parseColor("#CCCCCC");
-            if (file.status.contains("M")) statusColor = Color.parseColor("#E2C08D");
-            else if (file.status.contains("A") || file.status.contains("?")) statusColor = Color.parseColor("#73C991");
-            else if (file.status.contains("D")) statusColor = Color.parseColor("#F14C4C");
-            tvStatus.setTextColor(statusColor);
-
-            LayoutParams statusParams = new LayoutParams(dpToPx(24), WRAP_CONTENT);
-            row.addView(tvStatus, statusParams);
-
-            TextView tvPath = new TextView(getContext());
-            tvPath.setText(file.filePath);
-            tvPath.setTextColor(Color.parseColor("#E0E0E0"));
-            tvPath.setTextSize(13);
-            tvPath.setSingleLine(true);
-            tvPath.setEllipsize(TextUtils.TruncateAt.END);
-            LayoutParams pathParams = new LayoutParams(0, WRAP_CONTENT, 1.0f);
-            pathParams.setMarginStart(dpToPx(12));
-            row.addView(tvPath, pathParams);
-
-            if (file.additions > 0 || file.deletions > 0) {
-                TextView tvDiff = new TextView(getContext());
-                String diffStr = "+" + file.additions + " -" + file.deletions;
-                tvDiff.setText(diffStr);
-                tvDiff.setTextSize(11);
-                tvDiff.setTextColor(Color.parseColor("#808090"));
-                tvDiff.setPadding(0, 0, dpToPx(8), 0);
-                row.addView(tvDiff);
-            }
+            LinearLayout row = createFileRow(file);
 
             row.setOnClickListener(v -> {
                 if (mRepoDir == null || file.filePath == null) return;
@@ -945,11 +1362,16 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
         }
     }
 
+    /** Uncommitted changes: only revert is offered. */
     private void openDiffView(String file1, String file2) {
+        openDiffView(file1, file2, DiffEditorFragment.Mode.GIT_CURRENT, null);
+    }
+
+    private void openDiffView(String file1, String file2, DiffEditorFragment.Mode mode, String title) {
         if (getContext() instanceof MainActivity) {
-            ((MainActivity) getContext()).openDiffInEditor(file1, file2);
+            ((MainActivity) getContext()).openDiffInEditor(file1, file2, mode, title);
         } else {
-            DiffEditorFragment frag = DiffEditorFragment.newInstance(file1, file2);
+            DiffEditorFragment frag = DiffEditorFragment.newInstance(file1, file2, mode, title);
             frag.setOnDiffRevertListener(new DiffEditorFragment.OnDiffRevertListener() {
                 @Override
                 public boolean onAcceptHunk(DiffEditorFragment fragment, DiffEditorFragment.DiffHunk hunk, String f1, String f2) {
@@ -978,8 +1400,8 @@ public class GitStatusView extends LinearLayout implements GitManager.GitStateCh
                     return true;
                 }
             });
-            String title = "Diff: " + new File(file1).getName() + " ↔ " + new File(file2).getName();
-            TabManager.getInstance().openTab(TabType.EDITOR, title, frag);
+            String tabTitle = title != null ? title : "Diff: " + new File(file1).getName() + " ↔ " + new File(file2).getName();
+            TabManager.getInstance().openTab(TabType.EDITOR, tabTitle, frag);
         }
     }
 

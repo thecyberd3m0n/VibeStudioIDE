@@ -1,5 +1,7 @@
 package com.vibestudio.app.git;
 
+import com.vibestudio.app.git.models.GitFileStatus;
+import com.vibestudio.app.git.models.GitRepositoryState;
 import android.content.Context;
 
 import androidx.test.core.app.ApplicationProvider;
@@ -147,7 +149,7 @@ public class GitManagerTest {
         Assert.assertEquals(0, state.stagedFiles.size());
         Assert.assertEquals(1, state.unstagedFiles.size());
 
-        GitStatusView.GitFileStatus status = state.unstagedFiles.get(0);
+        GitFileStatus status = state.unstagedFiles.get(0);
         Assert.assertEquals("M", status.status);
         Assert.assertEquals("README.md", status.filePath);
         Assert.assertEquals(1, status.additions);

@@ -1,3 +1,54 @@
 {
-    "java.configuration.updateBuildConfiguration": "interactive"
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "java.jdt.ls.java.home": "/home/tcd/.jdks/jbr-21.0.11",
+    "java.import.gradle.java.home": "/home/tcd/.jdks/jbr-21.0.11",
+    "java.import.gradle.wrapper.enabled": true,
+    "java.import.gradle.enabled": true,
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-21",
+            "path": "/home/tcd/.jdks/jbr-21.0.11",
+            "default": true
+        }
+    ],
+    "java.import.exclusions": [
+        "**/node_modules/**",
+        "**/.metadata/**",
+        "**/archetype-resources/**",
+        "**/META-INF/maven/**",
+        "**/build/**",
+        "**/bin/**",
+        "**/obj/**",
+        "**/obj_test/**",
+        "**/libtermux_classes/**",
+        "**/compiled_res/**",
+        "**/gen_r/**"
+    ],
+    "gradle.javaHome": "/home/tcd/.jdks/jbr-21.0.11",
+    "gradle.nestedProjects": false,
+    "android-dev-ext.sdkRoot": "/home/tcd/Android/Sdk",
+    "terminal.integrated.env.linux": {
+        "ANDROID_HOME": "/home/tcd/Android/Sdk",
+        "ANDROID_SDK_ROOT": "/home/tcd/Android/Sdk",
+        "JAVA_HOME": "/home/tcd/.jdks/jbr-21.0.11",
+        "PATH": "/home/tcd/Android/Sdk/platform-tools:${env:PATH}"
+    },
+    "files.exclude": {
+        "**/.gradle": true,
+        "**/.cxx": true,
+        "**/build": true,
+        "bin": true,
+        "obj": true,
+        "obj_test": true,
+        "libtermux_classes": true,
+        "compiled_res": true,
+        "gen_r": true,
+        "*.hprof": true
+    },
+    "search.exclude": {
+        "**/build": true,
+        "**/.gradle": true,
+        "**/.cxx": true
+    },
+    "java.import.maven.enabled": false
 }

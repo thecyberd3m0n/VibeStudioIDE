@@ -97,6 +97,30 @@ The compiled, aligned, and signed APK will be created at `bin/VibeStudio.apk`.
 
 ---
 
+### 3. In VS Code (Gradle + adb)
+
+Prerequisites: a full JDK 17+ with `javac` (the `.vscode` configs use Android Studio's `~/.jdks/jbr-21.0.11`;
+a plain `openjdk-*-jre` package is **not** enough and yields "Gradle: Build Error"), Android SDK at `~/Android/Sdk` (set `sdk.dir` in
+`local.properties`), and the recommended extensions from `.vscode/extensions.json`
+(Java, Gradle, Android for VS Code).
+
+1. Enable **Developer options → USB debugging** (or **Wireless debugging**) on the phone, connect it
+   and accept the RSA prompt. Verify with the task **Android: adb devices**. If several devices are
+   attached, the tasks pick the one whose `adb devices -l` line contains `TARGET_DEVICE`
+   (default `motorola`, set in `.vscode/tasks.json`).
+2. Build: `Ctrl+Shift+B` (runs `./gradlew :app:assembleDebug`).
+3. Build + install + launch on the phone: **Terminal → Run Task → Android: build + install + run**
+   (or **Run Test Task**).
+4. Debug: pick **Android: Debug on phone** in the Run and Debug view (`F5`) — it builds, installs
+   and attaches the debugger.
+5. Logs: task **Android: logcat (VibeStudio only)**.
+
+Tip: keep a single `adb` on your `PATH` (the SDK one in `~/Android/Sdk/platform-tools`). A
+different system `adb` (e.g. from `apt`) restarts the server on every call and disconnects
+the device.
+
+---
+
 ## License
 
 Work in Progress.
