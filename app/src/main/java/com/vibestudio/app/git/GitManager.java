@@ -101,22 +101,7 @@ public class GitManager {
         return timeoutMs > 0 ? timeoutMs : 10000;
     }
 
-    /**
-     * Single entry point for every Git command: runs it on the Git PTY session and blocks until it finishes.
-     * Returns null when the session could not be created.
-     */
-    private TerminalSessionManager.CommandResult execute(Context context, String gitArgs, File repoDir, int timeoutMs) {
-        ensureGitSession(context);
-        String fullCommand = formatFullCommand(gitArgs, repoDir);
-        TerminalSession session = getGitSession();
-        if (session == null) {
-            LogViewerService.getInstance().e(TAG, "Git command skipped, no PTY session: " + sanitizeForLogging(fullCommand));
-            return null;
-        }
-        return TerminalSessionManager.getInstance().runCommandBlocking(session, fullCommand, effectiveTimeout(timeoutMs));
-    }
-
-    /** Asynchronous variant of {@link #execute}; the callback runs on the main thread. */
+    /** Single entry point for every Git command: runs it on the Git PTY session; the callback runs on the main thread. */
     private void executeAsync(Context context, String gitArgs, File repoDir, int timeoutMs,
                               TerminalSessionManager.CommandCallback callback) {
         ensureGitSession(context);
@@ -129,24 +114,6 @@ public class GitManager {
             return;
         }
         TerminalSessionManager.getInstance().runCommand(session, fullCommand, effectiveTimeout(timeoutMs), callback);
-    }
-
-    public String runGitCommandSync(Context context, String gitArgs, File repoDir) {
-        return runGitCommandSync(context, gitArgs, repoDir, 10000);
-    }
-
-    public String runGitCommandSync(Context context, String gitArgs, File repoDir, int timeoutMs) {
-        TerminalSessionManager.CommandResult res = execute(context, gitArgs, repoDir, timeoutMs);
-        return res != null && res.output != null ? cleanTerminalOutput(res.output) : null;
-    }
-
-    public String runGitRawCommandSync(Context context, String gitArgs, File repoDir) {
-        return runGitRawCommandSync(context, gitArgs, repoDir, 10000);
-    }
-
-    public String runGitRawCommandSync(Context context, String gitArgs, File repoDir, int timeoutMs) {
-        TerminalSessionManager.CommandResult res = execute(context, gitArgs, repoDir, timeoutMs);
-        return res != null && res.output != null ? cleanRawFileOutput(res.output) : null;
     }
 
     public void runGitRawCommandAsync(Context context, String gitArgs, File repoDir, GitCallback callback) {
@@ -425,12 +392,7 @@ public class GitManager {
                 } catch (Exception ignored) {}
             }
         }
-        String name = runGitCommandSync(context, "config --global user.name", null);
-        if (name == null || name.trim().isEmpty() || name.contains("error") || name.contains("fatal")) {
-            return false;
-        }
-        String email = runGitCommandSync(context, "config --global user.email", null);
-        return email != null && !email.trim().isEmpty() && !email.contains("error") && !email.contains("fatal");
+        return false;
     }
 
     public String getSshPublicKey(Context context) {
@@ -562,10 +524,6 @@ public class GitManager {
         } else {
             return gitCmd;
         }
-    }
-
-    private String executeCommandInternal(Context context, String gitArgs, File repoDir, int timeoutMs) {
-        return runGitCommandSync(context, gitArgs, repoDir, timeoutMs);
     }
 
     private static String getRefreshRepositoryStateCommand() {
@@ -882,10 +840,6 @@ public class GitManager {
                 } catch (Exception ignored) {}
             }
         }
-        String name = runGitCommandSync(context, "config --global user.name", null);
-        if (name != null && !name.trim().isEmpty() && !name.contains("error") && !name.contains("fatal")) {
-            return name.trim();
-        }
         return "";
     }
 
@@ -903,10 +857,6 @@ public class GitManager {
                     }
                 } catch (Exception ignored) {}
             }
-        }
-        String email = runGitCommandSync(context, "config --global user.email", null);
-        if (email != null && !email.trim().isEmpty() && !email.contains("error") && !email.contains("fatal")) {
-            return email.trim();
         }
         return "";
     }

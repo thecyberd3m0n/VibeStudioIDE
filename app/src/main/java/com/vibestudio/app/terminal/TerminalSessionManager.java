@@ -692,9 +692,10 @@ public class TerminalSessionManager {
 
     /**
      * Runs the command on the calling thread and waits for it to finish (or time out). Commands on the same
-     * session are serialized. Never call this from a thread that the session output depends on.
+     * session are serialized. Must never run on the main thread: the emulator is fed by the main looper, so
+     * blocking it means the end marker can never arrive and every command times out.
      */
-    public CommandResult runCommandBlocking(TerminalSession session, String command, int timeoutMs) {
+    private CommandResult runCommandBlocking(TerminalSession session, String command, int timeoutMs) {
         SessionLogger logger = session != null ? mLoggers.get(session) : null;
         String loggedCommand = SessionLogger.redact(command);
 
