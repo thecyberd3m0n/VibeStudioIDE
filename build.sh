@@ -86,7 +86,12 @@ done
 # Remove existing stale app R.java if present in app/src/main/java
 rm -f app/src/main/java/com/vibestudio/app/R.java
 
-AAPT2_LINK_CMD="aapt2 link -o bin/app.unsigned.apk -I libs/android.jar --manifest app/src/main/AndroidManifest.xml --min-sdk-version 26 --target-sdk-version 28 --version-code 3 --version-name 0.0.3 --replace-version --java gen_r --auto-add-overlay"
+VERSION_CODE=$(grep -E 'versionCode\s+[0-9]+' app/build.gradle | head -n 1 | awk '{print $2}')
+VERSION_NAME=$(grep -E 'versionName\s+"[^"]+"' app/build.gradle | head -n 1 | cut -d'"' -f2)
+VERSION_CODE=${VERSION_CODE:-5}
+VERSION_NAME=${VERSION_NAME:-"0.1.1"}
+
+AAPT2_LINK_CMD="aapt2 link -o bin/app.unsigned.apk -I libs/android.jar --manifest app/src/main/AndroidManifest.xml --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --replace-version --java gen_r --auto-add-overlay"
 if [ -d "app/src/main/assets" ]; then
     AAPT2_LINK_CMD="$AAPT2_LINK_CMD -A app/src/main/assets"
 fi
