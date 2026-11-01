@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Git Checkout Strategy**: Improved branch checkout and checkout error handling in `GitManager`.
 
+## [0.1.2]
+
+### Added
+- **Interactive Conflict Editor**: Added `ConflictEditorFragment` and `ConflictParser` for visual three-way merge conflict resolution directly in the editor.
+- **Dedicated Diff Editor Fragment**: Extracted diff view logic into `DiffEditorFragment` with hunk accept/revert controls and overlay rendering.
+- **Session Logging Infrastructure**: Added `SessionLogger` and `LogViewerService` for streaming, filtering, and capturing terminal process I/O and app logs.
+
+### Fixed
+- **Terminal Execution & Output Parsing**: Added terminal I/O taps and improved marker extraction (`extractBetweenMarkers`) in `TerminalSessionManager` to safely parse stdout without prompt echoes or leaks.
+- **Git State & Onboarding Reliability**: Streamlined Git operations, ahead/behind status detection, and error handling during initial onboarding and branch switches.
+- **Editor & UI Layout Improvements**: Refactored `EditorFragment` into `BaseEditorFragment`, improved file list layout in `FilesFragment`, and adjusted onboarding setup flows.
+
 ## [0.1.1]
 
 ### Added
