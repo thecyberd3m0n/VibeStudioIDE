@@ -40,7 +40,7 @@ When Android Package Installer throws generic errors like *"Pakiet wygląda na n
 
 2. **Inspect APK Contents**:
    `unzip -l bin/VibeStudio.apk`
-   CRITICAL: `classes.dex` MUST be located at the root level of the ZIP archive (`classes.dex`), NOT nested under a subdirectory like `bin/classes.dex`. Subdirectories cause PackageManager to throw `INSTALL_FAILED_INVALID_APK: Package code is missing`.
+   CRITICAL: every `classes*.dex` (`classes.dex`, `classes2.dex`, ...) MUST be located at the root level of the ZIP archive, NOT nested under a subdirectory like `bin/classes.dex`. Subdirectories cause PackageManager to throw `INSTALL_FAILED_INVALID_APK: Package code is missing`. The app exceeds the 64K method limit, so `d8` emits more than one dex file; if a secondary dex is left out the APK still installs but whole libraries are missing at runtime (e.g. TextMate syntax highlighting silently stops working because `org.joni` is absent).
 
 3. **Check Badging / Uses-SDK**:
    `aapt dump badging bin/VibeStudio.apk`

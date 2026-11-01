@@ -121,6 +121,11 @@ done
 
 d8 --min-api 24 --lib libs/android.jar --output bin/ bin/app_classes.jar $DEX_LIBS
 
+# The app exceeds the 64K method limit, so d8 emits classes.dex, classes2.dex, ...
+# Every one of them must be packaged or whole libraries (e.g. joni, used by TextMate) silently vanish.
+DEX_FILES=$(cd bin && ls classes*.dex)
+echo "=== Generated DEX files: $(echo $DEX_FILES | tr '\n' ' ')"
+
 echo "=== Adding non-class resources from JAR dependencies ==="
 for j in libs/deps/*.jar; do
     unzip -q -o "$j" -x "*.class" "META-INF/*" -d bin/res_extracted 2>/dev/null || true
@@ -132,7 +137,7 @@ if [ -d bin/res_extracted ]; then
     rm -rf bin/res_extracted
 fi
 
-echo "=== Adding classes.dex to APK ==="
+echo "=== Adding DEX files to APK ==="
 # Add native libraries (e.g. libtermux.so) into lib/ in the APK
 if [ -d "app/src/main/jniLibs" ]; then
     echo "=== Adding native libraries to APK ==="
@@ -142,7 +147,15 @@ if [ -d "app/src/main/jniLibs" ]; then
     rm -rf lib
 fi
 
-cd bin && aapt add app.unsigned.apk classes.dex > /dev/null && cd ..
+cd bin && aapt add app.unsigned.apk $DEX_FILES > /dev/null && cd ..
+
+# Fail fast if any generated dex did not make it into the APK
+for dex in $DEX_FILES; do
+    if ! unzip -l bin/app.unsigned.apk | grep -qE " ${dex}$"; then
+        echo "ERROR: ${dex} is missing from the APK" >&2
+        exit 1
+    fi
+done
 
 echo "=== Signing & Aligning APK ==="
 if [ ! -f debug.keystore ]; then
