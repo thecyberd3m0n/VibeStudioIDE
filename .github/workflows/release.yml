@@ -137,14 +137,23 @@ jobs:
             dist/*.apk
             dist/*.sha256
 
+      # `gh release create` with assets creates a draft, uploads all files, then publishes —
+      # required because this repo uses immutable releases (no asset uploads after publishing).
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: VibeStudio ${{ steps.version.outputs.version }}
-          tag_name: ${{ steps.version.outputs.tag }}
-          body_path: dist/RELEASE_NOTES.md
-          generate_release_notes: ${{ env.generate_notes == 'true' }}
-          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}
-          files: |
-            dist/*.apk
-            dist/*.sha256
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          args=(--title "VibeStudio ${VERSION}" --verify-tag)
+          if [ "$generate_notes" = "true" ]; then
+            args+=(--generate-notes)
+          else
+            args+=(--notes-file dist/RELEASE_NOTES.md)
+          fi
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$TAG" "${args[@]}" dist/*.apk dist/*.sha256
+          gh release view "$TAG" --json assets -q '.assets[].name'
