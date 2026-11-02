@@ -191,6 +191,10 @@ debug key and prints a warning.
 The workflow fails fast if the tag does not match `versionName`. A tag with a suffix
 (e.g. `v0.2.0-beta1`) is published as a pre-release.
 
+Note: this repository uses **immutable releases** — once a tag has been released, that tag name can
+never be pushed again (even if the release is deleted). If a release build fails after the release
+was created, fix the issue and cut a new patch version instead of re-tagging.
+
 ---
 
 ## License
