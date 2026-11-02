@@ -20,6 +20,7 @@ def hasReleaseSigning = [releaseStoreFile, releaseStorePassword, releaseKeyAlias
 android {
     namespace 'com.vibestudio.app'
     compileSdk 36
+    ndkVersion "28.2.13676358"
 
     defaultConfig {
         applicationId "com.vibestudio.app"
