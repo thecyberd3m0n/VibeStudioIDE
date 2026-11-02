@@ -9,6 +9,9 @@ VibeStudio.apk
 libtermux_classes/
 app/src/main/java/com/vibestudio/app/R.java
 debug.keystore
+keystore.properties
+*.jks
+*.keystore
 libs/*.jar
 libs/*.aar
 libs/*.zip

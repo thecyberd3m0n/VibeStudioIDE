@@ -121,6 +121,78 @@ the device.
 
 ---
 
+## CI & Releasing
+
+Two GitHub Actions workflows live in `.github/workflows/`:
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `ci.yml` | push / PR to `main` | `:app:assembleDebug`, uploads the debug APK as an artifact |
+| `release.yml` | push of a `v*` tag | `:app:assembleRelease` signed with the release keystore, verifies the signature, publishes a GitHub Release with `VibeStudio-<version>.apk` (+ `.sha256`) and the matching `CHANGELOG.md` section |
+
+### One-time setup: release keystore
+
+The release workflow always signs with the **same keystore**, stored as repository secrets.
+Generate it once and keep a backup somewhere safe — if it is lost, users cannot upgrade in place.
+
+```bash
+keytool -genkeypair -v \
+  -keystore vibestudio-release.jks \
+  -alias vibestudio \
+  -keyalg RSA -keysize 4096 -validity 10000 \
+  -dname "CN=VibeStudio, O=VibeStudio, C=PL"
+```
+
+Then add these **Settings → Secrets and variables → Actions → Repository secrets**:
+
+| Secret | Value |
+|---|---|
+| `RELEASE_KEYSTORE_BASE64` | `base64 -w0 vibestudio-release.jks` |
+| `RELEASE_KEYSTORE_PASSWORD` | keystore password chosen above |
+| `RELEASE_KEY_ALIAS` | `vibestudio` (or whatever `-alias` you used) |
+| `RELEASE_KEY_PASSWORD` | key password (same as the keystore password unless you set a different one) |
+
+With `gh`:
+
+```bash
+gh secret set RELEASE_KEYSTORE_BASE64 --body "$(base64 -w0 vibestudio-release.jks)"
+gh secret set RELEASE_KEYSTORE_PASSWORD
+gh secret set RELEASE_KEY_ALIAS --body vibestudio
+gh secret set RELEASE_KEY_PASSWORD
+```
+
+Never commit the `.jks` file (`*.jks`, `*.keystore` and `keystore.properties` are git-ignored).
+
+### Local signed release builds (optional)
+
+Create a git-ignored `keystore.properties` in the project root:
+
+```properties
+storeFile=/absolute/path/to/vibestudio-release.jks
+storePassword=...
+keyAlias=vibestudio
+keyPassword=...
+```
+
+and run `./gradlew :app:assembleRelease`. The same values can be supplied via
+`RELEASE_KEYSTORE_FILE`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`
+environment variables (this is what CI uses). Without either, the release build falls back to the
+debug key and prints a warning.
+
+### Cutting a release
+
+1. Bump `versionCode` and `versionName` in `app/build.gradle`.
+2. Add a `## [X.Y.Z]` section to `CHANGELOG.md` (it becomes the release notes).
+3. Commit, then tag and push:
+   ```bash
+   git tag v0.1.5
+   git push origin main v0.1.5
+   ```
+The workflow fails fast if the tag does not match `versionName`. A tag with a suffix
+(e.g. `v0.2.0-beta1`) is published as a pre-release.
+
+---
+
 ## License
 
 Work in Progress.
