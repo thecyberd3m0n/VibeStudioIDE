@@ -66,11 +66,11 @@ jobs:
           echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
           echo "RELEASE_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
-      - name: Set up JDK 21
+      - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
