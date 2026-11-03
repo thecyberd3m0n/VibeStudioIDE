@@ -49,9 +49,14 @@ jobs:
       # TODO: add `./gradlew :app:testDebugUnitTest` once app/src/test compiles under Gradle
       # (GitConflictParsingTest has a bad static import; OnboardingActivityTest references R.id.step4_layout).
 
+      - name: Name debug APK with architecture
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/*.apk "dist/VibeStudio-debug-${GITHUB_SHA::7}-aarch64.apk"
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: VibeStudio-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: dist/*.apk
           retention-days: 14

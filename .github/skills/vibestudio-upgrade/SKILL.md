@@ -30,5 +30,5 @@ If missing, ask the user for it.
    ```
    If `main` is protected and the push is rejected, open a PR for the bump, wait for it to merge, then continue from the merge commit.
 5. **Tag & push**: `git tag v<VERSION> && git push origin v<VERSION>`.
-6. **Verify**: `gh run list --workflow Release --limit 3`, then `gh run watch <id> --exit-status` (build takes ~4 min). On success confirm with `gh release view v<VERSION> --json assets -q '.assets[].name'` — expect `VibeStudio-<VERSION>.apk` and `.sha256`. On failure show `gh run view <id> --log-failed`, diagnose, and report; do not re-push the tag.
+6. **Verify**: `gh run list --workflow Release --limit 3`, then `gh run watch <id> --exit-status` (build takes ~4 min). On success confirm with `gh release view v<VERSION> --json assets -q '.assets[].name'` — expect `VibeStudio-<VERSION>-aarch64.apk` and its `.sha256` (the architecture suffix is set by `ARCH` in release.yml). On failure show `gh run view <id> --log-failed`, diagnose, and report; do not re-push the tag.
 7. Report the release URL (`gh release view v<VERSION> --json url -q .url`).

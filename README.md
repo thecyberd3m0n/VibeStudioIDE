@@ -127,8 +127,8 @@ Two GitHub Actions workflows live in `.github/workflows/`:
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | push / PR to `main` | `:app:assembleDebug`, uploads the debug APK as an artifact |
-| `release.yml` | push of a `v*` tag | `:app:assembleRelease` signed with the release keystore, verifies the signature, publishes a GitHub Release with `VibeStudio-<version>.apk` (+ `.sha256`) and the matching `CHANGELOG.md` section |
+| `ci.yml` | push / PR to `main` | `:app:assembleDebug`, uploads the debug APK (`VibeStudio-debug-<sha>-aarch64.apk`) as an artifact |
+| `release.yml` | push of a `v*` tag | `:app:assembleRelease` signed with the release keystore, verifies the signature, publishes a GitHub Release with `VibeStudio-<version>-aarch64.apk` (+ `.sha256`) and the matching `CHANGELOG.md` section |
 
 ### One-time setup: release keystore
 

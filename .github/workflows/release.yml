@@ -93,6 +93,7 @@ jobs:
         id: artifacts
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          ARCH: aarch64
         run: |
           APK=$(ls app/build/outputs/apk/release/*.apk | grep -v unsigned | head -n 1)
           if [ -z "$APK" ]; then
@@ -108,9 +109,9 @@ jobs:
             exit 1
           fi
           mkdir -p dist
-          OUT="dist/VibeStudio-${VERSION}.apk"
+          OUT="dist/VibeStudio-${VERSION}-${ARCH}.apk"
           cp "$APK" "$OUT"
-          (cd dist && sha256sum "VibeStudio-${VERSION}.apk" > "VibeStudio-${VERSION}.apk.sha256")
+          (cd dist && sha256sum "VibeStudio-${VERSION}-${ARCH}.apk" > "VibeStudio-${VERSION}-${ARCH}.apk.sha256")
           echo "apk=$OUT" >> "$GITHUB_OUTPUT"
 
       - name: Extract release notes from CHANGELOG.md
