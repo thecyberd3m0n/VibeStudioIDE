@@ -141,6 +141,26 @@
             <version>0.24.6</version>
             <type>aar</type>
         </dependency>
+
+        <!-- Markwon (markdown rendering for chat messages) -->
+        <dependency>
+            <groupId>io.noties.markwon</groupId>
+            <artifactId>core</artifactId>
+            <version>4.6.2</version>
+            <type>aar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.noties.markwon</groupId>
+            <artifactId>ext-strikethrough</artifactId>
+            <version>4.6.2</version>
+            <type>aar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.noties.markwon</groupId>
+            <artifactId>ext-tables</artifactId>
+            <version>4.6.2</version>
+            <type>aar</type>
+        </dependency>
         <dependency>
             <groupId>androidx.collection</groupId>
             <artifactId>collection</artifactId>
