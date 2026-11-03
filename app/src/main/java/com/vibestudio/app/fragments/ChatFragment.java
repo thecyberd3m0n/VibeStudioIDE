@@ -29,6 +29,9 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.HorizontalScrollView;
 import android.widget.TextView;
+import io.noties.markwon.Markwon;
+import io.noties.markwon.ext.strikethrough.StrikethroughPlugin;
+import io.noties.markwon.ext.tables.TablePlugin;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -77,6 +80,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     private EditText mMsgInput;
     private FrameLayout mBtnActionButton;
     private TextView mTvActionIcon;
+    private Markwon mMarkwon;
     private ProgressBar mProgressBar;
     private LinearLayout mChangesetBar;
 
@@ -894,16 +898,31 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         tvSender.setTextIsSelectable(true);
 
         TextView tvText = new TextView(context);
-        tvText.setText(msg.getText());
         tvText.setTextColor(Color.parseColor("#FFFFFF"));
         tvText.setTextSize(14);
         tvText.setPadding(0, 4, 0, 0);
+        if (msg.isUser()) {
+            tvText.setText(msg.getText());
+        } else {
+            tvText.setLinkTextColor(Color.parseColor("#80D0FF"));
+            getMarkwon(context).setMarkdown(tvText, msg.getText());
+        }
         tvText.setTextIsSelectable(true);
 
         card.addView(tvSender);
         card.addView(tvText);
 
         mChatContainer.addView(card);
+    }
+
+    private Markwon getMarkwon(Context context) {
+        if (mMarkwon == null) {
+            mMarkwon = Markwon.builder(context.getApplicationContext())
+                    .usePlugin(StrikethroughPlugin.create())
+                    .usePlugin(TablePlugin.create(context.getApplicationContext()))
+                    .build();
+        }
+        return mMarkwon;
     }
 
     private void updateLoadingUI(boolean isLoading) {
