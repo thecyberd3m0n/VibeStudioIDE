@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5]
+
+### Changed
+- **Permanent Release Signing Key**: Releases are now built by GitHub Actions and signed with a dedicated, permanent release keystore (certificate SHA-256 `48:47:89:0A:30:B0:EC:FA:1C:AE:94:1C:FD:10:2D:EC:DB:5B:7D:00:63:50:79:D6:C4:DC:51:F7:BD:CC:8F:B2`). Earlier releases were signed with a throwaway debug key, so upgrading from 0.1.4 or older requires uninstalling the old build once. All future releases will update in place.
+- **CI Pipeline**: Added GitHub Actions workflows — debug build on every push/PR to `main`, and a tag-triggered (`v*`) release workflow that publishes a signed APK with SHA-256 checksum and changelog notes.
+
+### Fixed
+- **Gradle Release Build**: Fixed `assembleRelease` failing on a missing `consumer-rules.pro` in the bundled `terminal-view` module and on the `ExpiredTargetSdkVersion` lint error (`targetSdk 28` is intentional).
+
 ## [0.1.4]
 
 ### Fixed
