@@ -111,6 +111,13 @@
             <artifactId>gson</artifactId>
             <version>2.11.0</version>
         </dependency>
+        <!-- Android-targeted build (no java.beans); used for SKILL.md / *.agent.md frontmatter -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>1.33</version>
+            <classifier>android</classifier>
+        </dependency>
         <dependency>
             <groupId>org.jruby.joni</groupId>
             <artifactId>joni</artifactId>
@@ -132,6 +139,26 @@
             <groupId>io.github.rosemoe</groupId>
             <artifactId>language-textmate</artifactId>
             <version>0.24.6</version>
+            <type>aar</type>
+        </dependency>
+
+        <!-- Markwon (markdown rendering for chat messages) -->
+        <dependency>
+            <groupId>io.noties.markwon</groupId>
+            <artifactId>core</artifactId>
+            <version>4.6.2</version>
+            <type>aar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.noties.markwon</groupId>
+            <artifactId>ext-strikethrough</artifactId>
+            <version>4.6.2</version>
+            <type>aar</type>
+        </dependency>
+        <dependency>
+            <groupId>io.noties.markwon</groupId>
+            <artifactId>ext-tables</artifactId>
+            <version>4.6.2</version>
             <type>aar</type>
         </dependency>
         <dependency>

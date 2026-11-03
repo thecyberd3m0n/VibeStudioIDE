@@ -2,6 +2,8 @@ package com.vibestudio.app.mcp;
 
 import android.content.Context;
 
+import com.vibestudio.app.chat.agents.Agent;
+import com.vibestudio.app.chat.agents.AgentScanner;
 import com.vibestudio.app.chat.skills.Skill;
 import com.vibestudio.app.chat.skills.SkillScanner;
 import com.vibestudio.app.mcp.model.McpTool;
@@ -233,6 +235,7 @@ public class McpClientManager {
 
             List<Skill> customSkills = SkillScanner.scanSkills(mWorkspacePath);
             for (Skill customSkill : customSkills) {
+                if (!customSkill.isModelInvocable()) continue;
                 boolean exists = false;
                 for (int i = 0; i < skills.length(); i++) {
                     if (skills.getJSONObject(i).optString("name", "").equalsIgnoreCase(customSkill.getName())) {
@@ -247,6 +250,27 @@ public class McpClientManager {
                     skillObj.put("priority_tier", 100);
                     skillObj.put("is_loaded", isSkillLoaded(customSkill.getName()));
                     skills.put(skillObj);
+                }
+            }
+
+            // Custom agents are adoptable personas: loading one returns its instructions like a skill does.
+            for (Agent agent : AgentScanner.scanAgents(mWorkspacePath)) {
+                if (!agent.isModelInvocable()) continue;
+                boolean exists = false;
+                for (int i = 0; i < skills.length(); i++) {
+                    if (skills.getJSONObject(i).optString("name", "").equalsIgnoreCase(agent.getName())) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    JSONObject agentObj = new JSONObject();
+                    agentObj.put("name", agent.getName());
+                    agentObj.put("type", "agent");
+                    agentObj.put("description", agent.getDescription());
+                    agentObj.put("priority_tier", 100);
+                    agentObj.put("is_loaded", isSkillLoaded(agent.getName()));
+                    skills.put(agentObj);
                 }
             }
 
@@ -316,6 +340,26 @@ public class McpClientManager {
                         mCachedSchemas.put(cleanSkillName, response);
                         return response;
                     }
+                }
+            }
+            if (skillName != null) {
+                Agent agent = AgentScanner.findAgent(mWorkspacePath, skillName);
+                if (agent != null && agent.isModelInvocable()) {
+                    String cleanAgentName = agent.getName();
+                    markSkillLoaded(cleanAgentName);
+                    response.put("status", "success");
+                    response.put("skill", cleanAgentName);
+                    JSONObject schemaObj = new JSONObject();
+                    schemaObj.put("type", "agent");
+                    if (!agent.getDescription().isEmpty()) {
+                        schemaObj.put("description", agent.getDescription());
+                    }
+                    if (!agent.getInstructions().isEmpty()) {
+                        schemaObj.put("guidelines", agent.getInstructions());
+                    }
+                    response.put("schema", schemaObj);
+                    mCachedSchemas.put(cleanAgentName, response);
+                    return response;
                 }
             }
             response.put("status", "error");

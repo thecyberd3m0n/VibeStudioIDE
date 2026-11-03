@@ -10,8 +10,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class SkillScanner {
     private static final String TAG = "SkillScanner";
@@ -19,14 +17,11 @@ public class SkillScanner {
     private static final String[] SKILL_DIR_REL_PATHS = new String[] {
             ".github/work",
             ".github/skills",
+            ".agents/skills",
             ".github/prompts",
             ".claude/skills",
             ".claude/commands"
     };
-
-    private static final Pattern FRONTMATTER_PATTERN = Pattern.compile("^---\\s*\\n([\\s\\S]*?)\\n---\\s*\\n?([\\s\\S]*)");
-    private static final Pattern NAME_KEY_PATTERN = Pattern.compile("(?m)^name:\\s*[\"']?([^\"'\\r\\n]+)[\"']?");
-    private static final Pattern DESC_KEY_PATTERN = Pattern.compile("(?m)^description:\\s*[\"']?([^\"'\\r\\n]+)[\"']?");
 
     public static List<Skill> scanSkills(String workspacePath) {
         Map<String, Skill> skillMap = new LinkedHashMap<>();
@@ -86,25 +81,12 @@ public class SkillScanner {
         String rawContent = readFileToString(file);
         if (rawContent == null || rawContent.trim().isEmpty()) return null;
 
-        String name = null;
-        String description = null;
-        String content = rawContent;
-
-        Matcher fmMatcher = FRONTMATTER_PATTERN.matcher(rawContent);
-        if (fmMatcher.find()) {
-            String frontmatter = fmMatcher.group(1);
-            content = fmMatcher.group(2);
-
-            Matcher nameMatcher = NAME_KEY_PATTERN.matcher(frontmatter);
-            if (nameMatcher.find()) {
-                name = nameMatcher.group(1).trim();
-            }
-
-            Matcher descMatcher = DESC_KEY_PATTERN.matcher(frontmatter);
-            if (descMatcher.find()) {
-                description = descMatcher.group(1).trim();
-            }
-        }
+        FrontmatterParser.Result parsed = FrontmatterParser.parse(rawContent);
+        String content = parsed.getBody();
+        String name = parsed.getString("name");
+        String description = parsed.getString("description");
+        Boolean userInvocable = parsed.getBoolean("user-invocable");
+        Boolean disableModelInvocation = parsed.getBoolean("disable-model-invocation");
 
         // Infer name if not found in frontmatter
         if (name == null || name.isEmpty()) {
@@ -126,7 +108,8 @@ public class SkillScanner {
             description = extractFirstHeaderOrLine(content, name);
         }
 
-        return new Skill(name, description, content, file.getAbsolutePath());
+        return new Skill(name, description, content, file.getAbsolutePath(),
+                userInvocable == null || userInvocable, disableModelInvocation != null && disableModelInvocation);
     }
 
     private static String extractFirstHeaderOrLine(String text, String fallbackName) {

@@ -3,6 +3,9 @@ package com.vibestudio.app.chat.skills;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -13,6 +16,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+@RunWith(RobolectricTestRunner.class)
+@Config(manifest = Config.NONE)
 public class SkillScannerTest {
 
     private File mTempWorkspace;
@@ -121,4 +126,73 @@ public class SkillScannerTest {
         assertTrue(skill.getContent().contains("code style"));
     }
 
+    @Test
+    public void testParseSkillFileYamlFrontmatter() throws IOException {
+        File skillFile = new File(mTempWorkspace, "yaml-skill.md");
+        try (FileWriter writer = new FileWriter(skillFile)) {
+            writer.write("---\n" +
+                    "name: \"yaml-skill-v2\"\n" +
+                    "description: >\n" +
+                    "  Folded description\n" +
+                    "  across lines\n" +
+                    "tools: [search, edit]\n" +
+                    "---\n" +
+                    "Body text.");
+        }
+
+        Skill skill = SkillScanner.parseSkillFile(skillFile);
+        assertNotNull(skill);
+        assertEquals("yaml-skill-v2", skill.getName());
+        assertEquals("Folded description across lines", skill.getDescription());
+        assertEquals("Body text.", skill.getContent());
+    }
+
+    @Test
+    public void testParseSkillFileMalformedFrontmatterFallsBack() throws IOException {
+        File skillFile = new File(mTempWorkspace, "broken-skill.md");
+        try (FileWriter writer = new FileWriter(skillFile)) {
+            writer.write("---\n" +
+                    "name: [unclosed\n" +
+                    "---\n" +
+                    "Body text.");
+        }
+
+        Skill skill = SkillScanner.parseSkillFile(skillFile);
+        assertNotNull(skill);
+        assertEquals("broken-skill", skill.getName());
+    }
+
+    @Test
+    public void testScanSkillsFromAgentsSkillsDirectory() throws IOException {
+        File dir = new File(mTempWorkspace, ".agents/skills/lint-fix");
+        assertTrue(dir.mkdirs());
+        try (FileWriter writer = new FileWriter(new File(dir, "SKILL.md"))) {
+            writer.write("---\ndescription: Fix lint\n---\nRun the linter.");
+        }
+
+        boolean found = false;
+        for (Skill s : SkillScanner.scanSkills(mTempWorkspace.getAbsolutePath())) {
+            if (s.getName().equals("lint-fix")) {
+                found = true;
+                assertEquals("Fix lint", s.getDescription());
+            }
+        }
+        assertTrue(found);
+    }
+
+    @Test
+    public void testSkillVisibilityFlags() throws IOException {
+        File f = new File(mTempWorkspace, "hidden.md");
+        try (FileWriter writer = new FileWriter(f)) {
+            writer.write("---\nuser-invocable: false\ndisable-model-invocation: true\n---\nBody");
+        }
+        Skill skill = SkillScanner.parseSkillFile(f);
+        assertNotNull(skill);
+        assertTrue(!skill.isUserInvocable());
+        assertTrue(!skill.isModelInvocable());
+
+        Skill defaults = SkillScanner.getDefaultSkills().get(0);
+        assertTrue(defaults.isUserInvocable());
+        assertTrue(defaults.isModelInvocable());
+    }
 }

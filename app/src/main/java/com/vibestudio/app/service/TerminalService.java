@@ -19,6 +19,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
 import com.vibestudio.app.R;
+import com.vibestudio.app.activity.MainActivity;
 import com.vibestudio.app.terminal.TerminalSessionManager;
 
 public class TerminalService extends Service {
@@ -124,6 +125,12 @@ public class TerminalService extends Service {
         }
         PendingIntent exitPendingIntent = PendingIntent.getService(this, 0, exitIntent, pendingFlags);
 
+        Intent openIntent = new Intent(this, MainActivity.class);
+        openIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent openPendingIntent = PendingIntent.getActivity(this, 1, openIntent, pendingFlags);
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("VibeStudio IDE - Terminal Active")
                 .setContentText("Background terminal sessions are active")
@@ -131,6 +138,7 @@ public class TerminalService extends Service {
                 .setLargeIcon(getNotificationLargeIcon())
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setOngoing(true)
+                .setContentIntent(openPendingIntent)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Exit", exitPendingIntent);
         return builder.build();
     }
