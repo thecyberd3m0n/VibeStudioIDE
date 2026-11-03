@@ -16,6 +16,9 @@ allprojects {
 }
 
 subprojects {
+    // Lets Eclipse JDT / VS Code Java see Android module sources; no effect on builds.
+    apply from: rootProject.file('gradle/eclipse-ide.gradle')
+
     afterEvaluate { project ->
         if (project.path.startsWith(":bootstrap-")) {
             if (project.extensions.findByName("android") != null) {

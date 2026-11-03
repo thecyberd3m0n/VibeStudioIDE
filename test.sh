@@ -15,7 +15,7 @@ if [ ! -f "libs/android.jar" ]; then
 fi
 
 # Resolve Maven dependencies if not present
-if [ ! -f "libs/deps/junit-4.13.2.jar" ] || [ "$1" == "--rebuild-deps" ]; then
+if [ ! -f "libs/deps/junit-4.13.2.jar" ] || [ ! -f "libs/deps/snakeyaml-1.33-android.jar" ] || [ "$1" == "--rebuild-deps" ]; then
     echo "=== Resolving dependencies via Maven ==="
     mvn dependency:copy-dependencies -DoutputDirectory=libs/deps -q
 fi

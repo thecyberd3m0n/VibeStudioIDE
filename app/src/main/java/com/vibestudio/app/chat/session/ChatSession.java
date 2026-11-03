@@ -4,7 +4,11 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
+import com.vibestudio.app.chat.agents.Agent;
+import com.vibestudio.app.chat.agents.AgentScanner;
+import com.vibestudio.app.chat.agents.AgentToolPolicy;
 import com.vibestudio.app.chat.compressor.HistoryCompressor;
+import com.vibestudio.app.chat.instructions.InstructionsLoader;
 import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
 import org.json.JSONObject;
@@ -21,7 +25,9 @@ import com.vibestudio.app.service.LogViewerService;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public class ChatSession {
@@ -46,18 +52,25 @@ public class ChatSession {
 
     private boolean mIsLoading = false;
     private volatile boolean mStopRequested = false;
+    // Agent invoked via /agent-name in the latest user message; applies to that whole turn (including tool loops).
+    private volatile Agent mActiveAgent;
 
     public ChatSession() {
         this(null);
     }
 
     public ChatSession(String workspacePath) {
+        this(workspacePath, AiRouter.getInstance());
+    }
+
+    /** Allows tests to supply an isolated router with scripted providers. */
+    public ChatSession(String workspacePath, AiRouter aiRouter) {
         this.mId = UUID.randomUUID().toString();
         this.mWorkspacePath = workspacePath;
         this.mMcpClientManager = new McpClientManager();
         this.mMcpClientManager.setWorkspacePath(workspacePath);
         this.mToolExecutionManager = new ToolExecutionManager(this.mMcpClientManager);
-        this.mAiRouter = AiRouter.getInstance();
+        this.mAiRouter = aiRouter;
         
         String welcomeMsg = "Hello! Welcome to VibeStudio. How can I assist you?";
         this.mMessages.add(new ChatMessage("Assistant", welcomeMsg, false));
@@ -101,8 +114,26 @@ public class ChatSession {
         return mStopRequested;
     }
 
+    /** Slash-command entries: user-invocable skills, plus user-invocable agents (shown as "[agent]") not shadowed by a skill. */
     public List<Skill> getAvailableSkills() {
-        return SkillScanner.scanSkills(mWorkspacePath);
+        List<Skill> result = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+        for (Skill skill : SkillScanner.scanSkills(mWorkspacePath)) {
+            if (skill.isUserInvocable()) {
+                result.add(skill);
+                names.add(skill.getName().toLowerCase());
+            }
+        }
+        for (Agent agent : AgentScanner.scanAgents(mWorkspacePath)) {
+            if (agent.isUserInvocable() && names.add(agent.getName().toLowerCase())) {
+                result.add(new Skill(agent.getName(), "[agent] " + agent.getDescription(), agent.getInstructions(), agent.getSourcePath()));
+            }
+        }
+        return result;
+    }
+
+    public Agent getActiveAgent() {
+        return mActiveAgent;
     }
 
     public Skill resolveSkill(String slashCommandOrName) {
@@ -112,8 +143,8 @@ public class ChatSession {
             name = name.substring(1);
         }
         name = name.toLowerCase();
-        for (Skill skill : getAvailableSkills()) {
-            if (skill.getName().equalsIgnoreCase(name)) {
+        for (Skill skill : SkillScanner.scanSkills(mWorkspacePath)) {
+            if (skill.isUserInvocable() && skill.getName().equalsIgnoreCase(name)) {
                 return skill;
             }
         }
@@ -183,6 +214,7 @@ public class ChatSession {
 
         mStopRequested = false;
         String messageToStore = userText;
+        Agent newActiveAgent = null;
         String trimmed = userText.trim();
         if (trimmed.startsWith("/")) {
             int spaceIdx = trimmed.indexOf(" ");
@@ -190,12 +222,17 @@ public class ChatSession {
             cmdName = cmdName.toLowerCase().trim();
 
             Skill matchedSkill = resolveSkill(cmdName);
+            Agent matchedAgent = matchedSkill == null ? AgentScanner.findAgent(mWorkspacePath, cmdName) : null;
+
             if (matchedSkill != null) {
                 mMcpClientManager.markSkillLoaded(matchedSkill.getName());
+            } else if (matchedAgent != null && matchedAgent.isUserInvocable()) {
+                newActiveAgent = matchedAgent;
             } else if (mMcpClientManager.isRegisteredServer(cmdName)) {
                 mMcpClientManager.markSkillLoaded(cmdName);
             }
         }
+        mActiveAgent = newActiveAgent;
 
         ChatMessage userMsg = new ChatMessage("User", messageToStore, true);
 
@@ -247,8 +284,12 @@ public class ChatSession {
                 : "";
         String catalogString = mMcpClientManager.getHighLevelCatalog().toString();
         String loadedSkillsString = mMcpClientManager.getLoadedSkillsInstructions(context);
+        String workspaceInstructions = InstructionsLoader.buildInstructions(mWorkspacePath);
+        Agent activeAgent = mActiveAgent;
         String fullSystemInstruction = baseInstruction 
                 + workspaceInstruction
+                + workspaceInstructions
+                + buildActiveAgentSection(activeAgent)
                 + "\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n" + catalogString
                 + (loadedSkillsString != null && !loadedSkillsString.isEmpty() ? "\n" + loadedSkillsString : "");
 
@@ -304,6 +345,26 @@ public class ChatSession {
             JSONObject toolCallObj = prep.getToolCallObj();
             String toolName = prep.getToolName();
             JSONObject args = prep.getArgs();
+
+            // 1b. Active agent's tool allow-list
+            AgentToolPolicy toolPolicy = new AgentToolPolicy(activeAgent != null ? activeAgent.getTools() : null);
+            if (toolPolicy.isEnforced() && !McpClientManager.isMetaTool(toolName) && !toolPolicy.isAllowed(toolName)) {
+                String blockedMsg = "Error: Tool '" + toolName + "' is not permitted for agent '" + activeAgent.getName()
+                        + "' (restricted by its 'tools' list). Use only permitted tools or answer without it.";
+                postToolStatusMessage(blockedMsg, ChatMessage.MessageType.ERROR, toolName, args);
+
+                ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
+                ChatMessage toolResultMsg = new ChatMessage("System Tool", blockedMsg, true, ChatMessage.MessageType.ERROR, toolName, null);
+                synchronized (ChatSession.this) {
+                    mMessages.add(modelCallMsg);
+                    mMessages.add(toolResultMsg);
+                }
+
+                if (!mStopRequested) {
+                    new Thread(() -> processUserRequest(context)).start();
+                }
+                return;
+            }
 
             // 2. Boundary Guard Check & Permission Escalation
             if (mWorkspacePath != null && !mWorkspacePath.isEmpty()) {
@@ -374,6 +435,18 @@ public class ChatSession {
 
         // Final normal assistant text response
         postAssistantResponse(rawReply);
+    }
+
+    private static String buildActiveAgentSection(Agent agent) {
+        if (agent == null) return "";
+        StringBuilder sb = new StringBuilder("\n=== ACTIVE AGENT: ").append(agent.getName()).append(" ===\n");
+        sb.append("The user invoked the custom agent '").append(agent.getName())
+                .append("'. For this request, act according to its instructions below.\n");
+        if (!agent.getDescription().isEmpty()) {
+            sb.append("Purpose: ").append(agent.getDescription()).append("\n");
+        }
+        sb.append("\n").append(agent.getInstructions()).append("\n");
+        return sb.toString();
     }
 
     private void postToolStatusMessage(final String summaryText, final ChatMessage.MessageType type, final String toolName, final JSONObject toolArgs) {

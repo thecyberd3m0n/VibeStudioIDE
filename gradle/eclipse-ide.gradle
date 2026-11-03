@@ -1,0 +1,101 @@
+// IDE-only support for Eclipse JDT based tooling (VS Code "Language Support for Java",
+// Buildship). The Android Gradle Plugin does not expose source folders or the compile
+// classpath through Gradle's EclipseProject model, so without this those IDEs import
+// Android modules as empty projects and code navigation does not work.
+//
+// This is only evaluated when an IDE requests the Eclipse model; it has no effect on
+// assemble/test/install tasks.
+
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+import org.gradle.plugins.ide.eclipse.model.Library
+import org.gradle.plugins.ide.eclipse.model.ProjectDependency
+import org.gradle.plugins.ide.eclipse.model.SourceFolder
+
+afterEvaluate { Project p ->
+    def androidExt = p.extensions.findByName('android')
+    if (androidExt == null) return
+
+    p.apply plugin: 'eclipse'
+
+    p.eclipse.classpath.file.whenMerged { cp ->
+        def refs = p.eclipse.classpath.fileReferenceFactory
+
+        // --- Source folders -----------------------------------------------------------
+        def candidates = [
+                'src/main/java', 'src/main/kotlin',
+                'src/debug/java', 'src/debug/kotlin',
+                'build/generated/source/buildConfig/debug',
+                'build/generated/ap_generated_sources/debug/out',
+        ]
+        candidates.each { rel ->
+            if (p.file(rel).isDirectory()) {
+                cp.entries << new SourceFolder(rel, 'bin/main')
+            }
+        }
+
+        // --- android.jar ----------------------------------------------------------------
+        def sdkDir = resolveSdkDir(p)
+        def compileSdk = androidExt.hasProperty('compileSdk') ? androidExt.compileSdk : null
+        if (sdkDir != null && compileSdk != null) {
+            def androidJar = new File(sdkDir, "platforms/android-${compileSdk}/android.jar")
+            if (androidJar.isFile()) {
+                cp.entries << new Library(refs.fromFile(androidJar))
+            }
+        }
+
+        // --- Generated R class (if the module has been built at least once) --------------
+        ['build/intermediates/compile_r_class_jar/debug',
+         'build/intermediates/compile_and_runtime_not_namespaced_r_class_jar/debug'].each { dir ->
+            p.fileTree(dir: dir, include: '**/R.jar').each { File jar ->
+                cp.entries << new Library(refs.fromFile(jar))
+            }
+        }
+
+        // --- Compile classpath: external jars/AARs as libraries, modules as projects ----
+        def config = p.configurations.findByName('debugCompileClasspath')
+        if (config == null) return
+
+        def projectPaths = new LinkedHashSet<String>()
+        try {
+            def view = config.incoming.artifactView {
+                lenient true
+                attributes { attribute(Attribute.of('artifactType', String), 'android-classes-jar') }
+            }
+            view.artifacts.each { art ->
+                def id = art.id.componentIdentifier
+                if (id instanceof ModuleComponentIdentifier && art.file.isFile()) {
+                    cp.entries << new Library(refs.fromFile(art.file))
+                } else if (id instanceof ProjectComponentIdentifier) {
+                    projectPaths << id.projectPath
+                }
+            }
+        } catch (Exception e) {
+            p.logger.warn("eclipse-ide: could not resolve classpath for ${p.path}: ${e.message}")
+        }
+
+        // Local jars (fileTree deps) are not module components; add them explicitly.
+        p.fileTree(dir: 'libs', include: '*.jar').each { File jar ->
+            cp.entries << new Library(refs.fromFile(jar))
+        }
+
+        projectPaths.each { String path ->
+            def dep = p.rootProject.findProject(path)
+            if (dep != null && dep.extensions.findByName('android') != null) {
+                cp.entries << new ProjectDependency('/' + dep.name)
+            }
+        }
+    }
+}
+
+static File resolveSdkDir(Project p) {
+    def localProps = new File(p.rootDir, 'local.properties')
+    if (localProps.isFile()) {
+        def props = new Properties()
+        localProps.withInputStream { props.load(it) }
+        def dir = props.getProperty('sdk.dir')
+        if (dir) return new File(dir)
+    }
+    def env = System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+    return env ? new File(env) : null
+}

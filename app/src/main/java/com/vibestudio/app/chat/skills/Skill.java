@@ -7,12 +7,31 @@ public class Skill {
     private final String mDescription;
     private final String mContent;
     private final String mSourcePath;
+    private final boolean mUserInvocable;
+    private final boolean mDisableModelInvocation;
 
     public Skill(String name, String description, String content, String sourcePath) {
+        this(name, description, content, sourcePath, true, false);
+    }
+
+    public Skill(String name, String description, String content, String sourcePath,
+                 boolean userInvocable, boolean disableModelInvocation) {
         this.mName = name != null ? name.trim() : "";
         this.mDescription = description != null ? description.trim() : "";
         this.mContent = content != null ? content.trim() : "";
         this.mSourcePath = sourcePath != null ? sourcePath.trim() : "";
+        this.mUserInvocable = userInvocable;
+        this.mDisableModelInvocation = disableModelInvocation;
+    }
+
+    /** False when frontmatter has {@code user-invocable: false}: hidden from slash commands. */
+    public boolean isUserInvocable() {
+        return mUserInvocable;
+    }
+
+    /** True when frontmatter has {@code disable-model-invocation: true}: hidden from the model's skill catalog. */
+    public boolean isModelInvocable() {
+        return !mDisableModelInvocation;
     }
 
     public String getName() {

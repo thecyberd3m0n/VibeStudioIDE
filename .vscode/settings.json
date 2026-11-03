@@ -50,5 +50,7 @@
         "**/.gradle": true,
         "**/.cxx": true
     },
-    "java.import.maven.enabled": false
+    "java.import.maven.enabled": false,
+    "java.gradle.buildServer.enabled": "off",
+    "java.compile.nullAnalysis.mode": "automatic"
 }
