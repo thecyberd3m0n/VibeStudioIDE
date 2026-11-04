@@ -7,6 +7,7 @@ import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.chat.provider.AiProvider;
 import com.vibestudio.app.chat.provider.ClaudeAiProvider;
 import com.vibestudio.app.chat.provider.GeminiAiProvider;
+import com.vibestudio.app.chat.provider.GithubCopilotAiProvider;
 import com.vibestudio.app.chat.provider.OpenAiProvider;
 import com.vibestudio.app.db.DatabaseHelper;
 import com.vibestudio.app.service.LogViewerService;
@@ -38,6 +39,7 @@ public class AiRouter {
         registerProvider(new GeminiAiProvider());
         registerProvider(new OpenAiProvider());
         registerProvider(new ClaudeAiProvider());
+        registerProvider(new GithubCopilotAiProvider());
     }
 
     public static synchronized AiRouter getInstance() {
@@ -267,12 +269,10 @@ public class AiRouter {
         }
     }
 
-    // Retain loadActiveProvider for backwards compatibility
     public void loadActiveProvider(Context context) {
         loadActiveState(context);
     }
 
-    // Retain saveActiveProvider for backwards compatibility
     public void saveActiveProvider(Context context, String providerName) {
         saveActiveSelection(context, providerName, getActiveModelName(providerName));
     }

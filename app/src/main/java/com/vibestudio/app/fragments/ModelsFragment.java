@@ -1,11 +1,15 @@
 package com.vibestudio.app.fragments;
 
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.text.TextUtils;
@@ -15,7 +19,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -27,6 +30,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.vibestudio.app.chat.provider.AiProvider;
+import com.vibestudio.app.chat.provider.GithubCopilotAiProvider;
 import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.db.DatabaseHelper;
 import com.vibestudio.app.service.LogViewerService;
@@ -123,7 +127,6 @@ public class ModelsFragment extends Fragment {
             headerRow.setGravity(Gravity.CENTER_VERTICAL);
             headerRow.setLayoutParams(new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
 
-            // Collapsible Chevron Indicator (Borderless, vertically centered at left)
             final TextView btnToggle = new TextView(context);
             btnToggle.setText("❯");
             btnToggle.setRotation(isExpanded ? 90 : 0);
@@ -156,7 +159,6 @@ public class ModelsFragment extends Fragment {
             apiKeyStatus.setTextSize(12);
             apiKeyStatus.setPadding(8, 0, 12, 0);
 
-            // 🔑 Icon Button for setting/editing API key
             Button btnKey = new Button(context);
             btnKey.setText("🔑");
             btnKey.setTextSize(14);
@@ -186,7 +188,6 @@ public class ModelsFragment extends Fragment {
 
             card.addView(headerRow);
 
-            // Billing Info Row if Key is Present
             if (hasApiKey) {
                 TextView billingView = new TextView(context);
                 billingView.setText("💳 " + provider.getBillingInfo(apiKey));
@@ -196,11 +197,9 @@ public class ModelsFragment extends Fragment {
                 card.addView(billingView);
             }
 
-            // Budget Bar Section - query budget if server budget info or local usage is available
             long usedTokens = router.getUsedTokens(context, pName);
             long totalBudget = router.getTokenBudget(context, pName);
 
-            // Fetch live budget info from server if key is set
             if (hasApiKey) {
                 provider.fetchBudgetInfo(apiKey, new AiProvider.BudgetCallback() {
                     @Override
@@ -220,12 +219,10 @@ public class ModelsFragment extends Fragment {
 
                     @Override
                     public void onError(String errorMessage) {
-                        // Ignore error, fallback to stored budget
                     }
                 });
             }
 
-            // Only show budget bar if totalBudget > 0
             if (hasApiKey && totalBudget > 0) {
                 long tokensLeft = Math.max(0, totalBudget - usedTokens);
                 float usedRatio = Math.max(0f, Math.min(1f, (float) usedTokens / (float) totalBudget));
@@ -236,63 +233,41 @@ public class ModelsFragment extends Fragment {
 
                 TextView budgetLabel = new TextView(context);
                 budgetLabel.setText(String.format("📊 %,d/%,d tokens used", usedTokens, totalBudget));
-                budgetLabel.setTextColor(Color.parseColor("#A0A0B0"));
-                budgetLabel.setTextSize(12);
-                budgetLabel.setPadding(0, 0, 0, 6);
+                budgetLabel.setTextColor(Color.parseColor("#8E8EA0"));
+                budgetLabel.setTextSize(11);
 
-                FrameLayout barTrack = new FrameLayout(context);
-                GradientDrawable trackBg = new GradientDrawable();
-                trackBg.setColor(Color.parseColor("#2A2D3E"));
-                trackBg.setCornerRadius(8f);
-                barTrack.setBackground(trackBg);
-
-                LinearLayout.LayoutParams trackParams = new LinearLayout.LayoutParams(MATCH_PARENT, 16);
-                trackParams.setMargins(0, 2, 0, 4);
-                barTrack.setLayoutParams(trackParams);
+                LinearLayout barBg = new LinearLayout(context);
+                barBg.setBackgroundColor(Color.parseColor("#2E2E3E"));
+                LinearLayout.LayoutParams barBgParams = new LinearLayout.LayoutParams(MATCH_PARENT, 8);
+                barBgParams.setMargins(0, 4, 0, 4);
+                barBg.setLayoutParams(barBgParams);
 
                 View barFill = new View(context);
-                String barColor;
-                if (usedRatio < 0.60f) {
-                    barColor = "#03DAC6"; // Green: Low usage (< 60%)
-                } else if (usedRatio < 0.85f) {
-                    barColor = "#FFC107"; // Yellow: Moderate usage (60% - 85%)
-                } else {
-                    barColor = "#CF6679"; // Red: High usage (> 85%)
-                }
+                int fillColor = (usedRatio > 0.9f) ? Color.parseColor("#CF6679")
+                        : (usedRatio > 0.7f) ? Color.parseColor("#FFB74D")
+                        : Color.parseColor("#03DAC6");
+                barFill.setBackgroundColor(fillColor);
+                LinearLayout.LayoutParams fillParams = new LinearLayout.LayoutParams(0, MATCH_PARENT, usedRatio);
+                barFill.setLayoutParams(fillParams);
 
-                GradientDrawable fillBg = new GradientDrawable();
-                fillBg.setColor(Color.parseColor(barColor));
-                fillBg.setCornerRadius(8f);
-                barFill.setBackground(fillBg);
+                View barEmpty = new View(context);
+                LinearLayout.LayoutParams emptyParams = new LinearLayout.LayoutParams(0, MATCH_PARENT, 1f - usedRatio);
+                barEmpty.setLayoutParams(emptyParams);
 
-                LinearLayout fillContainer = new LinearLayout(context);
-                fillContainer.setOrientation(LinearLayout.HORIZONTAL);
-                fillContainer.setLayoutParams(new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
-
-                float safeRatio = Math.max(0.01f, usedRatio);
-                barFill.setLayoutParams(new LinearLayout.LayoutParams(0, MATCH_PARENT, safeRatio));
-                fillContainer.addView(barFill);
-
-                if (usedRatio < 0.99f) {
-                    View emptySpace = new View(context);
-                    emptySpace.setLayoutParams(new LinearLayout.LayoutParams(0, MATCH_PARENT, 1.0f - usedRatio));
-                    fillContainer.addView(emptySpace);
-                }
-
-                barTrack.addView(fillContainer);
+                barBg.addView(barFill);
+                barBg.addView(barEmpty);
 
                 budgetContainer.addView(budgetLabel);
-                budgetContainer.addView(barTrack);
+                budgetContainer.addView(barBg);
+
                 card.addView(budgetContainer);
             }
 
-            // Models Container
             final LinearLayout modelsContainer = new LinearLayout(context);
             modelsContainer.setOrientation(LinearLayout.VERTICAL);
-            modelsContainer.setPadding(8, 16, 8, 8);
+            modelsContainer.setPadding(0, 12, 0, 0);
             modelsContainer.setVisibility(isExpanded ? View.VISIBLE : View.GONE);
 
-            // Toggle Expand / Collapse Action or Request API Key if Missing
             View.OnClickListener toggleClickListener = new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -311,9 +286,12 @@ public class ModelsFragment extends Fragment {
             providerTitle.setOnClickListener(toggleClickListener);
 
             if (!hasApiKey) {
-                // Requirement: Do NOT display models without API key
                 TextView noKeyWarning = new TextView(context);
-                noKeyWarning.setText("⚠️ API key required to view and select models for " + pName + ".");
+                if (pName.equalsIgnoreCase("GitHub Copilot")) {
+                    noKeyWarning.setText("⚠️ GitHub Copilot authentication required to view and select models.");
+                } else {
+                    noKeyWarning.setText("⚠️ API key required to view and select models for " + pName + ".");
+                }
                 noKeyWarning.setTextColor(Color.parseColor("#CF6679"));
                 noKeyWarning.setTextSize(13);
                 noKeyWarning.setPadding(12, 12, 12, 12);
@@ -327,28 +305,39 @@ public class ModelsFragment extends Fragment {
             } else {
                 List<String> availableModels = provider.getAvailableModels();
                 if (availableModels.isEmpty()) {
-                    TextView noModelsNotice = new TextView(context);
-                    noModelsNotice.setText("ℹ️ No models configured yet for " + pName + ".");
-                    noModelsNotice.setTextColor(Color.parseColor("#A0A0B0"));
-                    noModelsNotice.setTextSize(13);
-                    noModelsNotice.setPadding(12, 12, 12, 12);
-                    modelsContainer.addView(noModelsNotice);
+                    TextView loadingText = new TextView(context);
+                    loadingText.setText("Loading available models...");
+                    loadingText.setTextColor(Color.parseColor("#8E8EA0"));
+                    loadingText.setTextSize(13);
+                    loadingText.setPadding(12, 12, 12, 12);
+                    modelsContainer.addView(loadingText);
+
+                    provider.fetchAvailableModels(apiKey, new AiProvider.ModelsCallback() {
+                        @Override
+                        public void onSuccess(List<String> models) {
+                            if (getContext() != null) {
+                                renderProviderCards(getContext());
+                            }
+                        }
+
+                        @Override
+                        public void onError(String errorMessage) {
+                            if (getContext() != null) {
+                                renderProviderCards(getContext());
+                            }
+                        }
+                    });
                 } else {
                     String currentActiveModel = router.getActiveModelName(pName);
-
-                    // Ensure currentActiveModel matches one of the available models
                     boolean hasMatch = false;
-                    if (currentActiveModel != null) {
-                        for (String m : availableModels) {
-                            if (m.equalsIgnoreCase(currentActiveModel)) {
-                                hasMatch = true;
-                                break;
-                            }
+                    for (String m : availableModels) {
+                        if (m != null && m.equalsIgnoreCase(currentActiveModel)) {
+                            hasMatch = true;
+                            break;
                         }
                     }
 
                     if (!hasMatch && !availableModels.isEmpty()) {
-                        // Try matching provider default model
                         String defModel = provider.getDefaultModel();
                         if (defModel != null) {
                             for (String m : availableModels) {
@@ -359,7 +348,6 @@ public class ModelsFragment extends Fragment {
                                 }
                             }
                         }
-                        // Fallback to first available model if still no match
                         if (!hasMatch) {
                             currentActiveModel = availableModels.get(0);
                         }
@@ -389,7 +377,6 @@ public class ModelsFragment extends Fragment {
                         rowParams.setMargins(0, 8, 0, 8);
                         modelRow.setLayoutParams(rowParams);
 
-                        // Custom Radio Icon (Checkmark / Circle chip)
                         TextView selectionBadge = new TextView(context);
                         if (isSelectedModel) {
                             selectionBadge.setText("✔");
@@ -402,7 +389,6 @@ public class ModelsFragment extends Fragment {
                         selectionBadge.setTypeface(null, Typeface.BOLD);
                         selectionBadge.setPadding(0, 0, 16, 0);
 
-                        // Model Name
                         TextView modelTitle = new TextView(context);
                         modelTitle.setText(modelName);
                         modelTitle.setTextSize(14);
@@ -413,7 +399,6 @@ public class ModelsFragment extends Fragment {
                         LinearLayout.LayoutParams titleTextParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f);
                         modelTitle.setLayoutParams(titleTextParams);
 
-                        // Active Label Chip (only for the globally active provider & model)
                         if (isGloballyActive) {
                             TextView activeChip = new TextView(context);
                             activeChip.setText("ACTIVE");
@@ -463,7 +448,7 @@ public class ModelsFragment extends Fragment {
         layout.setPadding(32, 24, 32, 24);
 
         final EditText input = new EditText(context);
-        input.setHint("Enter " + providerName + " API Key");
+        input.setHint(providerName.equalsIgnoreCase("GitHub Copilot") ? "GitHub Token (gho_...)" : "Enter " + providerName + " API Key");
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
 
         String currentKey = mDbHelper != null ? mDbHelper.getApiKey(providerName) : "";
@@ -471,80 +456,293 @@ public class ModelsFragment extends Fragment {
             input.setText(currentKey);
         }
 
-        layout.addView(input);
-
         final ProgressBar progressBar = new ProgressBar(context);
         progressBar.setVisibility(View.GONE);
-        layout.addView(progressBar);
 
         final TextView errorTextView = new TextView(context);
         errorTextView.setTextColor(Color.parseColor("#CF6679"));
         errorTextView.setTextSize(12);
         errorTextView.setPadding(0, 12, 0, 0);
         errorTextView.setVisibility(View.GONE);
-        layout.addView(errorTextView);
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Configure " + providerName + " API Key 🔑");
-        builder.setView(layout);
+        builder.setTitle(providerName.equalsIgnoreCase("GitHub Copilot") ? "GitHub Copilot Login 🚀" : "Configure " + providerName + " API Key 🔑");
 
-        builder.setPositiveButton("Save", null);
-        builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                dialog.cancel();
-            }
-        });
+        if (providerObj instanceof GithubCopilotAiProvider) {
+            final GithubCopilotAiProvider copilotProvider = (GithubCopilotAiProvider) providerObj;
 
-        final AlertDialog dialog = builder.create();
-        dialog.show();
+            TextView instructions = new TextView(context);
+            instructions.setText("Login via GitHub Browser flow (Device Code) or paste an existing GitHub OAuth Token below.");
+            instructions.setTextColor(Color.parseColor("#BB86FC"));
+            instructions.setTextSize(13);
+            instructions.setPadding(0, 0, 0, 16);
+            layout.addView(instructions);
 
-        Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-        positiveButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                final String key = input.getText().toString().trim();
-                if (TextUtils.isEmpty(key)) {
-                    if (mDbHelper != null) {
-                        mDbHelper.saveApiKey(providerName, "");
-                    }
-                    renderProviderCards(context);
-                    Toast.makeText(context, providerName + " API Key removed", Toast.LENGTH_SHORT).show();
-                    dialog.dismiss();
-                    return;
+            final Button btnLoginGithub = new Button(context);
+            btnLoginGithub.setText("🔐 Login with GitHub");
+            btnLoginGithub.setTextColor(Color.WHITE);
+            btnLoginGithub.setTextSize(14);
+            btnLoginGithub.setTypeface(null, Typeface.BOLD);
+
+            GradientDrawable btnBg = new GradientDrawable();
+            btnBg.setColor(Color.parseColor("#238636"));
+            btnBg.setCornerRadius(12f);
+            btnLoginGithub.setBackground(btnBg);
+            btnLoginGithub.setPadding(24, 16, 24, 16);
+            layout.addView(btnLoginGithub);
+
+            final LinearLayout codeContainer = new LinearLayout(context);
+            codeContainer.setOrientation(LinearLayout.VERTICAL);
+            codeContainer.setPadding(16, 16, 16, 16);
+            codeContainer.setVisibility(View.GONE);
+
+            GradientDrawable codeBg = new GradientDrawable();
+            codeBg.setColor(Color.parseColor("#161B22"));
+            codeBg.setCornerRadius(12f);
+            codeBg.setStroke(2, Color.parseColor("#30363D"));
+            codeContainer.setBackground(codeBg);
+
+            LinearLayout.LayoutParams codeBoxParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+            codeBoxParams.setMargins(0, 16, 0, 16);
+            codeContainer.setLayoutParams(codeBoxParams);
+
+            final TextView userCodeText = new TextView(context);
+            userCodeText.setTextSize(22);
+            userCodeText.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            userCodeText.setTextColor(Color.parseColor("#58A6FF"));
+            userCodeText.setGravity(Gravity.CENTER);
+            userCodeText.setPadding(8, 12, 8, 12);
+            codeContainer.addView(userCodeText);
+
+            final Button btnCopyOpenChrome = new Button(context);
+            btnCopyOpenChrome.setText("📋 Copy Code & Open Chrome");
+            btnCopyOpenChrome.setTextColor(Color.WHITE);
+            btnCopyOpenChrome.setTextSize(13);
+
+            GradientDrawable copyBtnBg = new GradientDrawable();
+            copyBtnBg.setColor(Color.parseColor("#1F6FEB"));
+            copyBtnBg.setCornerRadius(8f);
+            btnCopyOpenChrome.setBackground(copyBtnBg);
+            codeContainer.addView(btnCopyOpenChrome);
+
+            final TextView statusText = new TextView(context);
+            statusText.setText("Waiting for authorization on GitHub...");
+            statusText.setTextColor(Color.parseColor("#8B949E"));
+            statusText.setTextSize(12);
+            statusText.setGravity(Gravity.CENTER);
+            statusText.setPadding(0, 12, 0, 0);
+            codeContainer.addView(statusText);
+
+            layout.addView(codeContainer);
+
+            TextView labelOr = new TextView(context);
+            labelOr.setText("— OR PASTE TOKEN MANUALLY —");
+            labelOr.setTextColor(Color.parseColor("#8B949E"));
+            labelOr.setTextSize(11);
+            labelOr.setGravity(Gravity.CENTER);
+            labelOr.setPadding(0, 20, 0, 8);
+            layout.addView(labelOr);
+
+            layout.addView(input);
+            layout.addView(progressBar);
+            layout.addView(errorTextView);
+
+            builder.setView(layout);
+            builder.setPositiveButton("Save", null);
+            builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    dialog.cancel();
                 }
+            });
 
-                progressBar.setVisibility(View.VISIBLE);
-                errorTextView.setVisibility(View.GONE);
-                input.setEnabled(false);
-                positiveButton.setEnabled(false);
+            final AlertDialog dialog = builder.create();
+            dialog.show();
 
-                LogViewerService.getInstance().i(TAG, "Starting validation for " + providerName + " API Key...");
+            final Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
 
-                providerObj.validateKey(key, new AiProvider.ValidationCallback() {
-                    @Override
-                    public void onSuccess(List<String> models) {
+            btnLoginGithub.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    btnLoginGithub.setEnabled(false);
+                    progressBar.setVisibility(View.VISIBLE);
+                    errorTextView.setVisibility(View.GONE);
+
+                    copilotProvider.requestDeviceCode(new GithubCopilotAiProvider.DeviceCodeCallback() {
+                        @Override
+                        public void onSuccess(final GithubCopilotAiProvider.DeviceCodeResponse response) {
+                            progressBar.setVisibility(View.GONE);
+                            codeContainer.setVisibility(View.VISIBLE);
+                            userCodeText.setText(response.userCode);
+
+                            final String verificationUri = response.verificationUri;
+
+                            View.OnClickListener openChromeAction = new View.OnClickListener() {
+                                @Override
+                                public void onClick(View v) {
+                                    ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+                                    if (clipboard != null) {
+                                        ClipData clip = ClipData.newPlainText("GitHub User Code", response.userCode);
+                                        clipboard.setPrimaryClip(clip);
+                                    }
+                                    Toast.makeText(context, "Code " + response.userCode + " copied! Paste in Chrome.", Toast.LENGTH_LONG).show();
+
+                                    try {
+                                        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(verificationUri));
+                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                        context.startActivity(intent);
+                                    } catch (Exception e) {
+                                        Toast.makeText(context, "Unable to launch browser: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                                    }
+                                };
+                            };
+
+                            btnCopyOpenChrome.setOnClickListener(openChromeAction);
+
+                            openChromeAction.onClick(null);
+
+                            statusText.setText("Code " + response.userCode + " copied! Authorizing on GitHub...");
+
+                            copilotProvider.pollAccessToken(response.deviceCode, response.interval, new GithubCopilotAiProvider.TokenPollCallback() {
+                                @Override
+                                public void onSuccess(String accessToken) {
+                                    if (mDbHelper != null) {
+                                        mDbHelper.saveApiKey(providerName, accessToken);
+                                    }
+                                    input.setText(accessToken);
+                                    Toast.makeText(context, "GitHub Copilot Authenticated Successfully! 🎉", Toast.LENGTH_LONG).show();
+                                    renderProviderCards(context);
+                                    dialog.dismiss();
+                                }
+
+                                @Override
+                                public void onError(String errorMessage) {
+                                    btnLoginGithub.setEnabled(true);
+                                    errorTextView.setText(errorMessage);
+                                    errorTextView.setVisibility(View.VISIBLE);
+                                    statusText.setText("Authentication failed or expired.");
+                                }
+                            });
+                        }
+
+                        @Override
+                        public void onError(String errorMessage) {
+                            btnLoginGithub.setEnabled(true);
+                            progressBar.setVisibility(View.GONE);
+                            errorTextView.setText(errorMessage);
+                            errorTextView.setVisibility(View.VISIBLE);
+                        }
+                    });
+                }
+            });
+
+            positiveButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    final String key = input.getText().toString().trim();
+                    if (TextUtils.isEmpty(key)) {
                         if (mDbHelper != null) {
-                            mDbHelper.saveApiKey(providerName, key);
-                            AiRouter.getInstance().saveCachedModels(context, providerName, models);
-                            LogViewerService.getInstance().i(TAG, providerName + " API Key validated and saved to SQLite DB.");
+                            mDbHelper.saveApiKey(providerName, "");
                         }
                         renderProviderCards(context);
-                        Toast.makeText(context, providerName + " API Key validated & saved!", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(context, providerName + " Token removed", Toast.LENGTH_SHORT).show();
                         dialog.dismiss();
+                        return;
                     }
 
-                    @Override
-                    public void onError(String errorMessage) {
-                        progressBar.setVisibility(View.GONE);
-                        input.setEnabled(true);
-                        positiveButton.setEnabled(true);
-                        errorTextView.setText(errorMessage);
-                        errorTextView.setVisibility(View.VISIBLE);
-                        LogViewerService.getInstance().w(TAG, providerName + " API Key validation error: " + errorMessage);
+                    progressBar.setVisibility(View.VISIBLE);
+                    errorTextView.setVisibility(View.GONE);
+                    input.setEnabled(false);
+                    positiveButton.setEnabled(false);
+
+                    providerObj.validateKey(key, new AiProvider.ValidationCallback() {
+                        @Override
+                        public void onSuccess(List<String> models) {
+                            if (mDbHelper != null) {
+                                mDbHelper.saveApiKey(providerName, key);
+                                AiRouter.getInstance().saveCachedModels(context, providerName, models);
+                            }
+                            renderProviderCards(context);
+                            Toast.makeText(context, providerName + " Authenticated & Saved!", Toast.LENGTH_SHORT).show();
+                            dialog.dismiss();
+                        }
+
+                        @Override
+                        public void onError(String errorMessage) {
+                            progressBar.setVisibility(View.GONE);
+                            input.setEnabled(true);
+                            positiveButton.setEnabled(true);
+                            errorTextView.setText(errorMessage);
+                            errorTextView.setVisibility(View.VISIBLE);
+                        }
+                    });
+                }
+            });
+
+        } else {
+            layout.addView(input);
+            layout.addView(progressBar);
+            layout.addView(errorTextView);
+
+            builder.setView(layout);
+            builder.setPositiveButton("Save", null);
+            builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    dialog.cancel();
+                }
+            });
+
+            final AlertDialog dialog = builder.create();
+            dialog.show();
+
+            Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            positiveButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    final String key = input.getText().toString().trim();
+                    if (TextUtils.isEmpty(key)) {
+                        if (mDbHelper != null) {
+                            mDbHelper.saveApiKey(providerName, "");
+                        }
+                        renderProviderCards(context);
+                        Toast.makeText(context, providerName + " API Key removed", Toast.LENGTH_SHORT).show();
+                        dialog.dismiss();
+                        return;
                     }
-                });
-            }
-        });
+
+                    progressBar.setVisibility(View.VISIBLE);
+                    errorTextView.setVisibility(View.GONE);
+                    input.setEnabled(false);
+                    positiveButton.setEnabled(false);
+
+                    LogViewerService.getInstance().i(TAG, "Starting validation for " + providerName + " API Key...");
+
+                    providerObj.validateKey(key, new AiProvider.ValidationCallback() {
+                        @Override
+                        public void onSuccess(List<String> models) {
+                            if (mDbHelper != null) {
+                                mDbHelper.saveApiKey(providerName, key);
+                                AiRouter.getInstance().saveCachedModels(context, providerName, models);
+                                LogViewerService.getInstance().i(TAG, providerName + " API Key validated and saved to SQLite DB.");
+                            }
+                            renderProviderCards(context);
+                            Toast.makeText(context, providerName + " API Key validated & saved!", Toast.LENGTH_SHORT).show();
+                            dialog.dismiss();
+                        }
+
+                        @Override
+                        public void onError(String errorMessage) {
+                            progressBar.setVisibility(View.GONE);
+                            input.setEnabled(true);
+                            positiveButton.setEnabled(true);
+                            errorTextView.setText(errorMessage);
+                            errorTextView.setVisibility(View.VISIBLE);
+                            LogViewerService.getInstance().w(TAG, providerName + " API Key validation error: " + errorMessage);
+                        }
+                    });
+                }
+            });
+        }
     }
 }
