@@ -33,6 +33,7 @@ import java.util.UUID;
 public class ChatSession {
 
     private static final String TAG = "ChatSession";
+    private static final String GENERIC_ASSISTANT_SENDER = "Assistant";
 
     public interface OnChatMessageListener {
         void onMessageAdded(ChatMessage message);
@@ -73,7 +74,7 @@ public class ChatSession {
         this.mAiRouter = aiRouter;
         
         String welcomeMsg = "Hello! Welcome to VibeStudio. How can I assist you?";
-        this.mMessages.add(new ChatMessage("Assistant", welcomeMsg, false));
+        this.mMessages.add(new ChatMessage(GENERIC_ASSISTANT_SENDER, welcomeMsg, false));
     }
 
     public String getId() {
@@ -261,6 +262,9 @@ public class ChatSession {
         String apiKey = mAiRouter.getActiveApiKey(context);
         String activeProviderName = mAiRouter.getActiveProviderName();
         String activeModelName = mAiRouter.getActiveModelName(activeProviderName);
+        // Messages produced during this turn are attributed to the model that generated them, so a
+        // single chat window can show which model authored each reply after the user switches.
+        final String modelAuthor = resolveModelAuthor(activeProviderName, activeModelName);
 
         if (apiKey == null || apiKey.isEmpty()) {
             LogViewerService.getInstance().w(TAG, "No API key found in connection manager for provider: " + activeProviderName);
@@ -329,7 +333,7 @@ public class ChatSession {
             String errorMsg = "Error: " + e.getMessage();
             LogViewerService.getInstance().e(TAG, errorMsg);
             postToolStatusMessage(rawReply, ChatMessage.MessageType.ERROR, "tool", null);
-            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, "tool", null);
+            ChatMessage modelCallMsg = new ChatMessage(modelAuthor, rawReply, false, ChatMessage.MessageType.TOOL_CALL, "tool", null);
             ChatMessage toolResultMsg = new ChatMessage("System Tool", errorMsg, true, ChatMessage.MessageType.ERROR, "tool", null);
             synchronized (ChatSession.this) {
                 mMessages.add(modelCallMsg);
@@ -353,7 +357,7 @@ public class ChatSession {
                         + "' (restricted by its 'tools' list). Use only permitted tools or answer without it.";
                 postToolStatusMessage(blockedMsg, ChatMessage.MessageType.ERROR, toolName, args);
 
-                ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
+                ChatMessage modelCallMsg = new ChatMessage(modelAuthor, rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
                 ChatMessage toolResultMsg = new ChatMessage("System Tool", blockedMsg, true, ChatMessage.MessageType.ERROR, toolName, null);
                 synchronized (ChatSession.this) {
                     mMessages.add(modelCallMsg);
@@ -377,7 +381,7 @@ public class ChatSession {
                             String blockedMsg = "Error: Access denied to path outside workspace boundary (" + targetPath + ").";
                             postToolStatusMessage(blockedMsg, ChatMessage.MessageType.ERROR, toolName, args);
 
-                            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
+                            ChatMessage modelCallMsg = new ChatMessage(modelAuthor, rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
                             ChatMessage toolResultMsg = new ChatMessage("System Tool", blockedMsg, true, ChatMessage.MessageType.ERROR, toolName, null);
                             synchronized (ChatSession.this) {
                                 mMessages.add(modelCallMsg);
@@ -402,7 +406,7 @@ public class ChatSession {
             ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
 
             // Record assistant call and system tool result in conversation history (for LLM context)
-            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
+            ChatMessage modelCallMsg = new ChatMessage(modelAuthor, rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
             ChatMessage toolResultMsg = new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
                     toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT, toolName, null);
 
@@ -434,7 +438,7 @@ public class ChatSession {
         }
 
         // Final normal assistant text response
-        postAssistantResponse(rawReply);
+        postAssistantResponse(modelAuthor, rawReply);
     }
 
     private static String buildActiveAgentSection(Agent agent) {
@@ -461,11 +465,25 @@ public class ChatSession {
         });
     }
 
+    /** Builds the sender label, e.g. "GitHub Copilot gpt-4o"; falls back to whichever part is known. */
+    static String resolveModelAuthor(String providerName, String modelName) {
+        String provider = providerName != null ? providerName.trim() : "";
+        String model = modelName != null ? modelName.trim() : "";
+        if (!provider.isEmpty() && !model.isEmpty()) return provider + " " + model;
+        if (!model.isEmpty()) return model;
+        if (!provider.isEmpty()) return provider;
+        return GENERIC_ASSISTANT_SENDER;
+    }
+
     private void postAssistantResponse(final String reply) {
+        postAssistantResponse(GENERIC_ASSISTANT_SENDER, reply);
+    }
+
+    private void postAssistantResponse(final String sender, final String reply) {
         mMainHandler.post(new Runnable() {
             @Override
             public void run() {
-                ChatMessage assistantMsg = new ChatMessage("Assistant", reply, false);
+                ChatMessage assistantMsg = new ChatMessage(sender, reply, false);
                 synchronized (ChatSession.this) {
                     mMessages.add(assistantMsg);
                     mIsLoading = false;
