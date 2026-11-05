@@ -36,8 +36,10 @@ import com.vibestudio.app.db.DatabaseHelper;
 import com.vibestudio.app.service.LogViewerService;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class ModelsFragment extends Fragment {
 
@@ -50,6 +52,8 @@ public class ModelsFragment extends Fragment {
 
     // Track collapse state per provider
     private final Map<String, Boolean> mExpandedState = new HashMap<>();
+    // Providers whose model list has already been refreshed from the network this session.
+    private final Set<String> mModelsRefreshed = new HashSet<>();
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -312,10 +316,12 @@ public class ModelsFragment extends Fragment {
                     loadingText.setPadding(12, 12, 12, 12);
                     modelsContainer.addView(loadingText);
 
+                    mModelsRefreshed.add(pName);
                     provider.fetchAvailableModels(apiKey, new AiProvider.ModelsCallback() {
                         @Override
                         public void onSuccess(List<String> models) {
                             if (getContext() != null) {
+                                AiRouter.getInstance().saveCachedModels(getContext(), pName, models);
                                 renderProviderCards(getContext());
                             }
                         }
@@ -328,6 +334,27 @@ public class ModelsFragment extends Fragment {
                         }
                     });
                 } else {
+                    // getAvailableModels() falls back to the default model when nothing has been
+                    // fetched yet, so refresh from the network once per session to get the real list.
+                    if (!mModelsRefreshed.contains(pName)) {
+                        mModelsRefreshed.add(pName);
+                        final List<String> shownModels = availableModels;
+                        provider.fetchAvailableModels(apiKey, new AiProvider.ModelsCallback() {
+                            @Override
+                            public void onSuccess(List<String> models) {
+                                if (getContext() != null && models != null && !models.equals(shownModels)) {
+                                    AiRouter.getInstance().saveCachedModels(getContext(), pName, models);
+                                    renderProviderCards(getContext());
+                                }
+                            }
+
+                            @Override
+                            public void onError(String errorMessage) {
+                                LogViewerService.getInstance().w(TAG, "Model refresh failed for " + pName + ": " + errorMessage);
+                            }
+                        });
+                    }
+
                     String currentActiveModel = router.getActiveModelName(pName);
                     boolean hasMatch = false;
                     for (String m : availableModels) {

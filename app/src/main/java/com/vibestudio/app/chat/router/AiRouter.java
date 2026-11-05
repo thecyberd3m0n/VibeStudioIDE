@@ -123,6 +123,22 @@ public class AiRouter {
             mActiveProviderName = DEFAULT_PROVIDER;
         }
 
+        // If the active provider has no credentials but another one does, switch to it so the
+        // user is not stuck on an unconfigured default after authenticating a different provider.
+        String activeKey = dbHelper.getApiKey(mActiveProviderName);
+        if (activeKey == null || activeKey.isEmpty()) {
+            for (AiProvider provider : mProviders.values()) {
+                String key = dbHelper.getApiKey(provider.getName());
+                if (key != null && !key.isEmpty()) {
+                    LogViewerService.getInstance().i(TAG, "Active provider '" + mActiveProviderName
+                            + "' has no credentials; switching to configured provider '" + provider.getName() + "'");
+                    mActiveProviderName = provider.getName();
+                    dbHelper.setSetting(SETTING_ACTIVE_PROVIDER, mActiveProviderName);
+                    break;
+                }
+            }
+        }
+
         for (AiProvider provider : mProviders.values()) {
             String pName = provider.getName();
 

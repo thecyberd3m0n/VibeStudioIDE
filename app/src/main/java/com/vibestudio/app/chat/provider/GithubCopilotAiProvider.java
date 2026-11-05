@@ -25,6 +25,15 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
 
     private static final String TAG = "GithubCopilotAiProvider";
     public static final String CLIENT_ID = "01ab8ac9400c4e429b23";
+    private static final String EDITOR_NAME = "VibeStudio";
+    private static final String GITHUB_API_VERSION = "2025-10-01";
+    // The Copilot API validates Editor-Version against an allow-list bound to the OAuth app that
+    // issued the token. CLIENT_ID is GitHub's VS Code app, so only "vscode/<ver>" is accepted here
+    // (anything else, including "Zed/" or "VibeStudio/", yields HTTP 400 "unknown Editor-Version").
+    // VibeStudio therefore identifies itself through Editor-Plugin-Version and User-Agent instead.
+    private static final String REQUIRED_EDITOR_VERSION = "vscode/1.90.0";
+
+    private static volatile String sEditorVersion = EDITOR_NAME + "/unknown";
 
     private static final List<String> DEFAULT_COPILOT_MODELS = Arrays.asList(
             "gpt-4o",
@@ -67,6 +76,31 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
     @Override
     public String getName() {
         return "GitHub Copilot";
+    }
+
+    /** Resolves the app version once so every Copilot request identifies itself as VibeStudio. */
+    public static void initEditorVersion(Context context) {
+        if (context == null) return;
+        try {
+            String v = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0).versionName;
+            if (v != null && !v.trim().isEmpty()) {
+                sEditorVersion = EDITOR_NAME + "/" + v.trim();
+            }
+        } catch (Exception e) {
+            LogViewerService.getInstance().w(TAG, "Unable to resolve app version for Editor-Version header", e);
+        }
+    }
+
+    public static String getEditorVersion() {
+        return sEditorVersion;
+    }
+
+    private static void applyEditorHeaders(HttpURLConnection conn) {
+        conn.setRequestProperty("User-Agent", sEditorVersion);
+        conn.setRequestProperty("Editor-Version", REQUIRED_EDITOR_VERSION);
+        conn.setRequestProperty("Editor-Plugin-Version", sEditorVersion);
+        conn.setRequestProperty("X-GitHub-Api-Version", GITHUB_API_VERSION);
     }
 
     @Override
@@ -228,7 +262,7 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("GET");
         conn.setRequestProperty("Authorization", "token " + githubOAuthToken);
-        conn.setRequestProperty("User-Agent", "GitHubCopilot/1.155.0");
+        applyEditorHeaders(conn);
         conn.setRequestProperty("Accept", "application/json");
         conn.setConnectTimeout(10000);
         conn.setReadTimeout(10000);
@@ -264,7 +298,8 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setRequestProperty("Authorization", "Bearer " + copilotToken);
-            conn.setRequestProperty("Editor-Version", "vscode/1.90.0");
+            conn.setRequestProperty("Accept", "application/json");
+            applyEditorHeaders(conn);
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
 
@@ -273,22 +308,14 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
             String resStr = readStream(is);
 
             if (code >= 200 && code < 300) {
-                JSONObject json = new JSONObject(resStr);
-                List<String> modelsList = new ArrayList<>();
-                if (json.has("data")) {
-                    JSONArray dataArr = json.getJSONArray("data");
-                    for (int i = 0; i < dataArr.length(); i++) {
-                        JSONObject mObj = dataArr.getJSONObject(i);
-                        String id = mObj.optString("id", "");
-                        if (!id.isEmpty()) {
-                            modelsList.add(id);
-                        }
-                    }
-                }
+                List<String> modelsList = parseChatModels(resStr);
                 if (!modelsList.isEmpty()) {
                     setAvailableModels(modelsList);
                     return modelsList;
                 }
+                LogViewerService.getInstance().w(TAG, "Copilot /models returned no selectable chat models, using defaults");
+            } else {
+                LogViewerService.getInstance().w(TAG, "Copilot /models failed (HTTP " + code + "): " + resStr);
             }
         } catch (Exception e) {
             LogViewerService.getInstance().w(TAG, "Fetching models from copilot models API failed, using defaults", e);
@@ -296,6 +323,46 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
 
         setAvailableModels(DEFAULT_COPILOT_MODELS);
         return DEFAULT_COPILOT_MODELS;
+    }
+
+    /**
+     * Keeps only models a user can actually pick for chat: chat-capable, exposed in the model
+     * picker, and not gated behind a policy the user has not yet accepted. The chat default
+     * is moved to the front of the list.
+     */
+    static List<String> parseChatModels(String responseBody) throws Exception {
+        List<String> modelsList = new ArrayList<>();
+        JSONObject json = new JSONObject(responseBody);
+        if (!json.has("data")) return modelsList;
+
+        String defaultModel = null;
+        JSONArray dataArr = json.getJSONArray("data");
+        for (int i = 0; i < dataArr.length(); i++) {
+            JSONObject mObj = dataArr.optJSONObject(i);
+            if (mObj == null) continue;
+            String id = mObj.optString("id", "");
+            if (id.isEmpty()) continue;
+
+            if (!mObj.optBoolean("model_picker_enabled", true)) continue;
+
+            JSONObject caps = mObj.optJSONObject("capabilities");
+            if (caps != null && !"chat".equals(caps.optString("type", "chat"))) continue;
+
+            JSONObject policy = mObj.optJSONObject("policy");
+            if (policy != null && !"enabled".equals(policy.optString("state", "enabled"))) continue;
+
+            if (modelsList.contains(id)) continue;
+            if (mObj.optBoolean("is_chat_default", false) && defaultModel == null) {
+                defaultModel = id;
+            }
+            modelsList.add(id);
+        }
+
+        if (defaultModel != null) {
+            modelsList.remove(defaultModel);
+            modelsList.add(0, defaultModel);
+        }
+        return modelsList;
     }
 
     @Override
@@ -325,8 +392,8 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Authorization", "Bearer " + copilotToken);
-            conn.setRequestProperty("Editor-Version", "vscode/1.90.0");
-            conn.setRequestProperty("Copilot-Integration-Id", "vscode-chat");
+            applyEditorHeaders(conn);
+            conn.setRequestProperty("X-Initiator", "user");
             conn.setConnectTimeout(15000);
             conn.setReadTimeout(30000);
             conn.setDoOutput(true);
