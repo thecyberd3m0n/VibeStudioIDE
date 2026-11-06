@@ -311,6 +311,7 @@ public class ChatSession {
             return;
         }
 
+        String reasoningContent = response.getReasoningContent();
         String rawReply = response.getContent();
 
         if (rawReply == null || rawReply.trim().isEmpty()) {
@@ -322,6 +323,18 @@ public class ChatSession {
         if (rawReply.startsWith("Error:")) {
             postErrorResponse(rawReply);
             return;
+        }
+
+        if ((reasoningContent == null || reasoningContent.trim().isEmpty()) && rawReply.contains("{")) {
+            int jsonIdx = rawReply.indexOf("{");
+            String preceding = rawReply.substring(0, jsonIdx).trim();
+            if (!preceding.isEmpty()) {
+                reasoningContent = preceding;
+            }
+        }
+
+        if (reasoningContent != null && !reasoningContent.trim().isEmpty()) {
+            postReasoningMessage(modelAuthor, reasoningContent.trim());
         }
 
         // 1. Tool Call Parsing, Path Canonicalization & Pre-execution State Preparation (Funneled)
@@ -406,7 +419,8 @@ public class ChatSession {
             ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
 
             // Record assistant call and system tool result in conversation history (for LLM context)
-            ChatMessage modelCallMsg = new ChatMessage(modelAuthor, rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
+            String historyCallText = toolCallObj != null ? toolCallObj.toString() : rawReply;
+            ChatMessage modelCallMsg = new ChatMessage(modelAuthor, historyCallText, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
             ChatMessage toolResultMsg = new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
                     toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT, toolName, null);
 
@@ -451,6 +465,15 @@ public class ChatSession {
         }
         sb.append("\n").append(agent.getInstructions()).append("\n");
         return sb.toString();
+    }
+
+    private void postReasoningMessage(final String sender, final String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        ChatMessage msg = new ChatMessage(sender, text, false, ChatMessage.MessageType.REASONING);
+        synchronized (this) {
+            mMessages.add(msg);
+        }
+        notifyMessageAdded(msg);
     }
 
     private void postToolStatusMessage(final String summaryText, final ChatMessage.MessageType type, final String toolName, final JSONObject toolArgs) {
@@ -510,30 +533,40 @@ public class ChatSession {
     }
 
     private void notifyMessageAdded(final ChatMessage message) {
-        List<OnChatMessageListener> listeners;
-        synchronized (mListeners) {
-            listeners = new ArrayList<>(mListeners);
-        }
-        for (OnChatMessageListener l : listeners) {
-            try {
-                l.onMessageAdded(message);
-            } catch (Exception e) {
-                LogViewerService.getInstance().e(TAG, "Error notifying message listener", e);
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                List<OnChatMessageListener> listeners;
+                synchronized (mListeners) {
+                    listeners = new ArrayList<>(mListeners);
+                }
+                for (OnChatMessageListener l : listeners) {
+                    try {
+                        l.onMessageAdded(message);
+                    } catch (Exception e) {
+                        LogViewerService.getInstance().e(TAG, "Error notifying message listener", e);
+                    }
+                }
             }
-        }
+        });
     }
 
     private void notifyLoading(final boolean isLoading) {
-        List<OnChatMessageListener> listeners;
-        synchronized (mListeners) {
-            listeners = new ArrayList<>(mListeners);
-        }
-        for (OnChatMessageListener l : listeners) {
-            try {
-                l.onResponseLoading(isLoading);
-            } catch (Exception e) {
-                LogViewerService.getInstance().e(TAG, "Error notifying loading listener", e);
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                List<OnChatMessageListener> listeners;
+                synchronized (mListeners) {
+                    listeners = new ArrayList<>(mListeners);
+                }
+                for (OnChatMessageListener l : listeners) {
+                    try {
+                        l.onResponseLoading(isLoading);
+                    } catch (Exception e) {
+                        LogViewerService.getInstance().e(TAG, "Error notifying loading listener", e);
+                    }
+                }
             }
-        }
+        });
     }
 }

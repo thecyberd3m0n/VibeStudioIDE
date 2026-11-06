@@ -56,24 +56,48 @@ public class ToolExecutionManager {
     private static JSONObject parseToolCallInternal(String rawText) {
         if (rawText == null || rawText.trim().isEmpty()) return null;
 
-        // 1. Standard JSON format: {"planned_delay_ms": 0, "tool": "tool_name", "args": {...}}
+        // 1. Standard JSON format with robust brace matching
         if (rawText.contains("{") && rawText.contains("\"tool\"")) {
-            try {
-                int jsonStart = rawText.indexOf("{");
-                int jsonEnd = rawText.lastIndexOf("}");
-                if (jsonStart != -1 && jsonEnd > jsonStart) {
-                    String jsonBlock = rawText.substring(jsonStart, jsonEnd + 1).trim();
-                    JSONObject toolCallObj = new JSONObject(jsonBlock);
-                    String toolName = toolCallObj.optString("tool", "");
-                    if (!toolName.isEmpty()) {
-                        return toolCallObj;
+            int len = rawText.length();
+            for (int i = 0; i < len; i++) {
+                if (rawText.charAt(i) == '{') {
+                    int depth = 0;
+                    boolean inString = false;
+                    boolean escaped = false;
+                    for (int j = i; j < len; j++) {
+                        char c = rawText.charAt(j);
+                        if (escaped) {
+                            escaped = false;
+                            continue;
+                        }
+                        if (c == '\\' && inString) {
+                            escaped = true;
+                            continue;
+                        }
+                        if (c == '"') {
+                            inString = !inString;
+                            continue;
+                        }
+                        if (!inString) {
+                            if (c == '{') depth++;
+                            else if (c == '}') {
+                                depth--;
+                                if (depth == 0) {
+                                    String candidate = rawText.substring(i, j + 1).trim();
+                                    try {
+                                        JSONObject obj = new JSONObject(candidate);
+                                        if (obj.has("tool") && !obj.optString("tool", "").isEmpty()) {
+                                            return obj;
+                                        }
+                                    } catch (Exception ignored) {}
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
-            } catch (Exception e) {
-                LogViewerService.getInstance().w(TAG, "Failed parsing standard JSON tool call: " + e.getMessage());
             }
         }
-
         // 2. Malformed function call fallback: e.g. "call:editor:editor_read_file{"path":"..."}" or "call:file_list_directory{"path":"..."}"
         if (rawText.contains("call:") && rawText.contains("{")) {
             try {

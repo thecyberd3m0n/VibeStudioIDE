@@ -108,6 +108,24 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
         return "gpt-4o";
     }
 
+    @Override
+    public void setAvailableModels(List<String> models) {
+        if (models != null) {
+            List<String> filtered = new ArrayList<>();
+            for (String m : models) {
+                if (m != null && !m.trim().isEmpty()) {
+                    String id = m.trim();
+                    if (!id.contains("-sol") && !id.contains("embedding") && !id.contains("codex")) {
+                        filtered.add(id);
+                    }
+                }
+            }
+            super.setAvailableModels(filtered);
+            return;
+        }
+        super.setAvailableModels(models);
+    }
+
     public void requestDeviceCode(final DeviceCodeCallback callback) {
         new Thread(new Runnable() {
             @Override
@@ -346,7 +364,16 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
             if (!mObj.optBoolean("model_picker_enabled", true)) continue;
 
             JSONObject caps = mObj.optJSONObject("capabilities");
-            if (caps != null && !"chat".equals(caps.optString("type", "chat"))) continue;
+            if (caps != null) {
+                String type = caps.optString("type", "");
+                if (!type.isEmpty() && !"chat".equalsIgnoreCase(type)) {
+                    continue;
+                }
+            }
+
+            if (id.contains("-sol") || id.contains("embedding") || id.contains("codex")) {
+                continue;
+            }
 
             JSONObject policy = mObj.optJSONObject("policy");
             if (policy != null && !"enabled".equals(policy.optString("state", "enabled"))) continue;
@@ -399,15 +426,20 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
             conn.setDoOutput(true);
 
             JSONArray messagesArray = new JSONArray();
+            boolean isReasoningModel = targetModel.startsWith("o1") || targetModel.startsWith("o3");
+
             if (systemInstruction != null && !systemInstruction.trim().isEmpty()) {
                 JSONObject sysMsg = new JSONObject();
-                sysMsg.put("role", "system");
+                sysMsg.put("role", isReasoningModel ? "developer" : "system");
                 sysMsg.put("content", systemInstruction);
                 messagesArray.put(sysMsg);
             }
 
             if (history != null) {
                 for (ChatMessage msg : history) {
+                    if (msg != null && msg.getType() == ChatMessage.MessageType.REASONING) {
+                        continue;
+                    }
                     JSONObject chatMsg = new JSONObject();
                     chatMsg.put("role", msg.isUser() ? "user" : "assistant");
                     chatMsg.put("content", msg.getText());
@@ -446,11 +478,24 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
                 if (choices.length() > 0) {
                     JSONObject choice = choices.getJSONObject(0);
                     JSONObject msg = choice.getJSONObject("message");
-                    String resContent = msg.getString("content");
+                    String resContent = msg.optString("content", "");
+                    String reasoningContent = msg.optString("reasoning_content", null);
+                    if (reasoningContent == null || reasoningContent.trim().isEmpty()) {
+                        reasoningContent = msg.optString("thinking", null);
+                    }
+                    if (reasoningContent == null || reasoningContent.trim().isEmpty()) {
+                        reasoningContent = msg.optString("reasoning", null);
+                    }
+
+                    if (resContent.trim().isEmpty() && reasoningContent != null && !reasoningContent.trim().isEmpty()) {
+                        resContent = reasoningContent;
+                        reasoningContent = null;
+                    }
+
                     if (tokensUsed <= 0) {
                         tokensUsed = calculateTokenUsage(systemInstruction, history, resContent);
                     }
-                    return AiResponse.success(resContent, tokensUsed);
+                    return AiResponse.success(resContent, reasoningContent, tokensUsed);
                 }
                 return AiResponse.success("No content returned.", tokensUsed);
             } else {

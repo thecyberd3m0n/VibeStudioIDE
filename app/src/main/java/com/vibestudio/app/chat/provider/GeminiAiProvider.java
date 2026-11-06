@@ -251,7 +251,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
                 StringBuilder currentText = null;
 
                 for (ChatMessage msg : history) {
-                    if (msg == null || msg.getText() == null || msg.getText().trim().isEmpty()) {
+                    if (msg == null || msg.getText() == null || msg.getText().trim().isEmpty() || msg.getType() == ChatMessage.MessageType.REASONING) {
                         continue;
                     }
                     String role = msg.isUser() ? "user" : "model";

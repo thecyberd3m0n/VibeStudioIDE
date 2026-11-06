@@ -8,7 +8,8 @@ public class ChatMessage {
         NORMAL,
         TOOL_CALL,
         TOOL_RESULT,
-        ERROR
+        ERROR,
+        REASONING
     }
 
     private final String sender;

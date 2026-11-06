@@ -81,9 +81,20 @@ public class AiRouter {
 
     public String getActiveModelName(String providerName) {
         String selected = mActiveModelPerProvider.get(providerName);
-        if (selected != null) return selected;
         AiProvider provider = getProvider(providerName);
-        return (provider != null) ? provider.getDefaultModel() : null;
+        if (provider == null) {
+            return selected;
+        }
+
+        if (selected != null && (selected.contains("-sol") || selected.contains("embedding") || selected.contains("codex"))) {
+            selected = null;
+        }
+
+        if (selected != null && !selected.trim().isEmpty()) {
+            return selected.trim();
+        }
+
+        return provider.getDefaultModel();
     }
 
     public void setActiveModelName(String providerName, String modelName) {
@@ -123,8 +134,6 @@ public class AiRouter {
             mActiveProviderName = DEFAULT_PROVIDER;
         }
 
-        // If the active provider has no credentials but another one does, switch to it so the
-        // user is not stuck on an unconfigured default after authenticating a different provider.
         String activeKey = dbHelper.getApiKey(mActiveProviderName);
         if (activeKey == null || activeKey.isEmpty()) {
             for (AiProvider provider : mProviders.values()) {
@@ -160,7 +169,11 @@ public class AiRouter {
             // Restore active model selection
             String savedModel = dbHelper.getSetting(SETTING_ACTIVE_MODEL_PREFIX + pName);
             if (savedModel != null && !savedModel.trim().isEmpty()) {
-                mActiveModelPerProvider.put(pName, savedModel.trim());
+                String trimmed = savedModel.trim();
+                if (trimmed.contains("-sol") || trimmed.contains("embedding") || trimmed.contains("codex")) {
+                    trimmed = provider.getDefaultModel();
+                }
+                mActiveModelPerProvider.put(pName, trimmed);
             } else if (!mActiveModelPerProvider.containsKey(pName)) {
                 mActiveModelPerProvider.put(pName, provider.getDefaultModel());
             }
@@ -185,6 +198,10 @@ public class AiRouter {
 
     public void saveCachedModels(Context context, String providerName, List<String> models) {
         if (context == null || providerName == null || models == null || models.isEmpty()) return;
+        AiProvider provider = getProvider(providerName);
+        if (provider != null) {
+            provider.setAvailableModels(models);
+        }
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < models.size(); i++) {
             if (i > 0) sb.append(",");
@@ -307,6 +324,20 @@ public class AiRouter {
         }
         String selectedModel = getActiveModelName(mActiveProviderName);
         AiResponse response = activeProvider.generateContent(context, apiKey, selectedModel, systemInstruction, history);
+
+        if (response != null && !response.isSuccess() && response.getErrorMessage() != null) {
+            String err = response.getErrorMessage().toLowerCase();
+            if ((err.contains("unsupported_api_for_model") || err.contains("is not accessible")
+                    || (err.contains("model") && (err.contains("not found") || err.contains("invalid"))))
+                    && !selectedModel.equalsIgnoreCase(activeProvider.getDefaultModel())) {
+                String fallbackModel = activeProvider.getDefaultModel();
+                LogViewerService.getInstance().w(TAG, "Model '" + selectedModel + "' failed with error: "
+                        + response.getErrorMessage() + ". Retrying with default model: " + fallbackModel);
+                saveActiveSelection(context, mActiveProviderName, fallbackModel);
+                response = activeProvider.generateContent(context, apiKey, fallbackModel, systemInstruction, history);
+            }
+        }
+
         if (response != null && response.isSuccess() && response.getUsedTokens() > 0) {
             addUsedTokens(context, activeProvider.getName(), response.getUsedTokens());
         }

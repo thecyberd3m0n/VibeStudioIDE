@@ -1,50 +1,38 @@
-# TODO: AI Agent Workspace Safety & Sandbox Architecture
+# Agentic Execution Loop & Architecture Refactoring Plan
 
-> **Architecture & Implementation Scope:**
-> We are not reimplementing VS Code's full low-level infrastructure (such as daemon helper processes).
-> Instead, we focus on **3 core features** with our own tailored UX:
-> 1. **Assigning workspace to chat session** (Workspace Scoping) - *Repository = Workspace*.
-> 2. **Protecting rest of filesystem** (Boundary Protection & Permission Prompts).
-> 3. **Keep / Undo of agent changes** (File Changeset Tracking & Rollback UI).
+## Architectural Overview
+The current agent execution loop relies on standard string parsing of JSON blocks within normal text responses. When models (e.g. GitHub Copilot GPT-4o) generate conversational filler without emitting a structured tool call JSON, the execution loop terminates prematurely, forcing manual user intervention ("go").
+
+To align VibeStudio with standard agentic loop patterns (such as VS Code Agent Sessions, OpenAI Function Calling loop, and LangChain Agent Executors), the loop architecture needs to be refactored systematically.
 
 ---
 
-## 📍 Feature 1: Assigning Workspace to Chat Session (Workspace Scoping)
-*Goal: Associate a workspace path (directory/repository) with a ChatSession, triggered via UI context menus.*
+## Refactoring Tasks
 
-- [x] **Directory & Repository Context Menu Option**:
-  - Add `"Open Scoped Chat"` to directory & repository context menus in the File Manager (`FileActionRegistry`).
-  - When selected, create a new `ChatSession` bound to the selected directory path and open a dedicated Chat Tab.
-- [x] **Session Workspace Domain Model**:
-  - Store `workspacePath` in `ChatSession`.
-  - Display workspace banner / label in `ChatFragment` (`📁 Workspace Scope: /path/to/repo`).
-  - Pass the active workspace path into system prompt context (`<workspace_root>`).
-- [x] **Path Contextualization**:
-  - Canonicalize tool target paths relative to the session's assigned `workspacePath`.
-  - Default terminal working directory (`cwd`) to the session's assigned workspace path.
+### 1. Robust Tool Call Resolution & State Machine (`AgentLoopController`)
+- **Task**: Separate loop control state from `ChatSession.java` into a dedicated `AgentLoopController` or `AgentTurnHandler`.
+- **States**:
+  - `IDLE`: Waiting for user input.
+  - `EXECUTING_TOOL`: Tool execution in progress.
+  - `AWAITING_MODEL_TURN`: Payload sent to LLM, waiting for tool call or final text output.
+  - `STEP_COMPLETED`: Tool executed and output appended to history; automatically triggers next model turn.
+  - `TASK_FINISHED`: Model generated final assistant output without tool calls, or explicitly signaled completion.
 
----
+### 2. Multi-Modal Function Calling & Tool Injection Strategy
+- **Task**: Standardize system instructions and JSON tool schemas across all providers (`GitHub Copilot`, `OpenAI`, `Claude`, `Gemini`).
+- **Enforcement**:
+  - Inject explicit system prompt stop-guards instructing model: "When executing multi-step tasks, EVERY response MUST contain a tool call JSON object until the task is complete. Never output conversational updates alone."
+  - Handle partial responses and native function/tool call payloads directly where supported by the provider APIs.
 
-## 🛡️ Feature 2: Protecting Rest of Filesystem (Boundary Protection)
-*Goal: Prevent agent file read/write or terminal operations outside the assigned workspace scope without user approval.*
+### 3. Asynchronous Task & Terminal Monitoring Handlers
+- **Task**: Improve async tool monitoring (`execute_command_async`, long-running builds).
+- **Mechanism**:
+  - Introduce an `AsyncToolMonitor` pattern that polls terminal logs/process status without depending on LLM conversational pauses.
+  - Automatically feed terminal status updates back into the conversation history as `System Tool` messages to drive the next agent turn.
 
-- [x] **Out-of-Bounds Detection (`WorkspaceBoundaryGuard`)**:
-  - Intercept file tool calls (read, write, list, delete) and terminal commands targeting paths outside the assigned `workspacePath`.
-  - Prevent relative path traversal attacks (`..` directory escape).
-- [x] **Interactive Permission Escalation Prompt**:
-  - Intercept out-of-bounds tool requests and display a user permission dialog:
-    *"Agent is requesting access outside the workspace: <path>. Allow access?"*
-- [x] **Session Access Grants**:
-  - Maintain session-scoped permission grants for approved external paths.
+### 4. Continuous Turn Execution & Loop Guard
+- **Task**: Provide clean max-turn guards, error recoveries, and cancellation handling without string matching heuristical hacks.
+- **Guardrails**:
+  - Support configurable maximum turn counts (`max_turns: 50`) per user request.
+  - Maintain session history integrity and cleanly post model reasoning (`ReasoningToolMessage`) and UI updates on the main UI thread.
 
----
-
-## 🔄 Feature 3: Keep / Undo of Agent Changes (Workspace Sandbox & Rollback)
-*Goal: Track changes made by the AI Agent and allow one-click Keep or Undo.*
-
-- [x] **Changeset Tracking (`WorkspaceChangesetTracker`)**:
-  - Capture pre-edit file states or git diff snapshots before agent file operations.
-- [x] **Visual Diff & "Keep / Undo" UI**:
-  - Render proposed/modified changes in chat/editor view with **Keep** and **Undo** buttons.
-- [x] **Revert / Rollback Action**:
-  - Restore modified files to their pre-agent snapshot when **Undo** is pressed.
