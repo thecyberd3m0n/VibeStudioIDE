@@ -4,6 +4,7 @@ import android.content.Context;
 
 import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONArray;
@@ -402,6 +403,21 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
 
     @Override
     public AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history) {
+        return generateContent(context, apiKey, selectedModel, systemInstruction, history, null);
+    }
+
+    @Override
+    public AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history, List<McpTool> tools) {
+        AiResponse response = requestChatCompletion(apiKey, selectedModel, systemInstruction, history, tools);
+        // Not every Copilot model accepts "tools"; fall back to the text tool protocol for those.
+        if (!response.isSuccess() && response.getStatusCode() == 400 && tools != null && !tools.isEmpty()) {
+            LogViewerService.getInstance().w(TAG, "Request with native tools rejected (HTTP 400); retrying without tools.");
+            response = requestChatCompletion(apiKey, selectedModel, systemInstruction, history, null);
+        }
+        return response;
+    }
+
+    private AiResponse requestChatCompletion(String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history, List<McpTool> tools) {
         if (apiKey == null || apiKey.trim().isEmpty()) {
             return AiResponse.error(401, "Error: GitHub OAuth Token is missing or empty.");
         }
@@ -451,6 +467,20 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
             payload.put("model", targetModel);
             payload.put("messages", messagesArray);
 
+            if (tools != null && !tools.isEmpty()) {
+                JSONArray toolsArray = new JSONArray();
+                for (McpTool tool : tools) {
+                    JSONObject function = new JSONObject();
+                    function.put("name", tool.getName());
+                    function.put("description", tool.getDescription());
+                    JSONObject parameters = toolParameters(tool);
+                    function.put("parameters", parameters != null ? parameters : new JSONObject().put("type", "object").put("properties", new JSONObject()));
+                    toolsArray.put(new JSONObject().put("type", "function").put("function", function));
+                }
+                payload.put("tools", toolsArray);
+                payload.put("tool_choice", "auto");
+            }
+
             String requestBody = payload.toString();
 
             logRequestDetails(TAG, "POST", url.toString(), conn.getRequestProperties(), requestBody);
@@ -478,13 +508,22 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
                 if (choices.length() > 0) {
                     JSONObject choice = choices.getJSONObject(0);
                     JSONObject msg = choice.getJSONObject("message");
-                    String resContent = msg.optString("content", "");
+                    String resContent = msg.isNull("content") ? "" : msg.optString("content", "");
                     String reasoningContent = msg.optString("reasoning_content", null);
                     if (reasoningContent == null || reasoningContent.trim().isEmpty()) {
                         reasoningContent = msg.optString("thinking", null);
                     }
                     if (reasoningContent == null || reasoningContent.trim().isEmpty()) {
                         reasoningContent = msg.optString("reasoning", null);
+                    }
+
+                    JSONArray toolCalls = msg.optJSONArray("tool_calls");
+                    if (toolCalls != null && toolCalls.length() > 0) {
+                        JSONObject function = toolCalls.getJSONObject(0).getJSONObject("function");
+                        // Arguments arrive as a JSON-encoded string.
+                        JSONObject args = new JSONObject(function.optString("arguments", "{}").trim().isEmpty() ? "{}" : function.optString("arguments"));
+                        String call = toolCallContent(function.optString("name"), args);
+                        resContent = resContent.trim().isEmpty() ? call : resContent.trim() + "\n" + call;
                     }
 
                     if (resContent.trim().isEmpty() && reasoningContent != null && !reasoningContent.trim().isEmpty()) {

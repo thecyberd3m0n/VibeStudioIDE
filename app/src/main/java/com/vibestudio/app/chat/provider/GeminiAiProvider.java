@@ -4,6 +4,7 @@ import android.content.Context;
 
 import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONArray;
@@ -116,6 +117,11 @@ public class GeminiAiProvider extends AbstractAiProvider {
 
     @Override
     public AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history) {
+        return generateContent(context, apiKey, selectedModel, systemInstruction, history, null);
+    }
+
+    @Override
+    public AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history, List<McpTool> tools) {
         if (apiKey == null || apiKey.isEmpty()) {
             return AiResponse.error(401, "Error: Gemini API Key is missing or empty.");
         }
@@ -128,7 +134,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
             targetModel = targetModel.substring(7);
         }
 
-        String rawResponse = executeHttpRequest(apiKey, targetModel, systemInstruction, history);
+        String rawResponse = executeHttpRequest(apiKey, targetModel, systemInstruction, history, tools);
         int statusCode = extractStatusCode(rawResponse);
 
         // Fallback try if target model returns 404 or 400 model-not-found
@@ -138,7 +144,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
                 for (String fallbackModel : FALLBACK_MODELS) {
                     if (!fallbackModel.equalsIgnoreCase(targetModel)) {
                         LogViewerService.getInstance().w(TAG, "Model " + targetModel + " failed (" + statusCode + "), attempting fallback model " + fallbackModel);
-                        rawResponse = executeHttpRequest(apiKey, fallbackModel, systemInstruction, history);
+                        rawResponse = executeHttpRequest(apiKey, fallbackModel, systemInstruction, history, tools);
                         statusCode = extractStatusCode(rawResponse);
                         if (statusCode >= 200 && statusCode < 300) {
                             break;
@@ -229,7 +235,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
         }
     }
 
-    private String executeHttpRequest(String apiKey, String modelName, String systemInstruction, List<ChatMessage> history) {
+    private String executeHttpRequest(String apiKey, String modelName, String systemInstruction, List<ChatMessage> history, List<McpTool> tools) {
         HttpURLConnection conn = null;
         try {
             String cleanModel = (modelName != null && modelName.startsWith("models/")) ? modelName.substring(7) : modelName;
@@ -304,6 +310,21 @@ public class GeminiAiProvider extends AbstractAiProvider {
 
             payload.put("contents", contentsArray);
 
+            if (tools != null && !tools.isEmpty()) {
+                JSONArray declarations = new JSONArray();
+                for (McpTool tool : tools) {
+                    JSONObject declaration = new JSONObject();
+                    declaration.put("name", tool.getName());
+                    declaration.put("description", tool.getDescription());
+                    JSONObject parameters = toolParameters(tool);
+                    if (parameters != null) {
+                        declaration.put("parameters", parameters);
+                    }
+                    declarations.put(declaration);
+                }
+                payload.put("tools", new JSONArray().put(new JSONObject().put("functionDeclarations", declarations)));
+            }
+
             String requestBody = payload.toString();
 
             // Log Request Details
@@ -355,17 +376,29 @@ public class GeminiAiProvider extends AbstractAiProvider {
                     JSONObject content = firstCand.optJSONObject("content");
                     if (content != null) {
                         JSONArray parts = content.optJSONArray("parts");
-                        if (parts != null && parts.length() > 0) {
-                            JSONObject firstPart = parts.getJSONObject(0);
-                            String text = firstPart.optString("text", "");
-                            if (!text.trim().isEmpty()) {
-                                return text;
+                        if (parts != null) {
+                            StringBuilder text = new StringBuilder();
+                            JSONObject functionCall = null;
+                            for (int i = 0; i < parts.length(); i++) {
+                                JSONObject part = parts.getJSONObject(i);
+                                text.append(part.optString("text", ""));
+                                if (functionCall == null) {
+                                    functionCall = part.optJSONObject("functionCall");
+                                }
+                            }
+                            String reply = text.toString().trim();
+                            if (functionCall != null) {
+                                String call = toolCallContent(functionCall.optString("name"), functionCall.optJSONObject("args"));
+                                return reply.isEmpty() ? call : reply + "\n" + call;
+                            }
+                            if (!reply.isEmpty()) {
+                                return reply;
                             }
                         }
                     }
                 }
 
-                // Fallback if parts[0].text is empty
+                // Fallback if no text or function call was returned
                 String finishReason = firstCand.optString("finishReason", "");
                 String finishMessage = firstCand.optString("finishMessage", "");
 

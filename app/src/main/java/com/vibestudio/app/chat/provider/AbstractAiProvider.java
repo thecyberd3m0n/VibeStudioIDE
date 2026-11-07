@@ -5,7 +5,10 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.service.LogViewerService;
+
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -233,6 +236,25 @@ public abstract class AbstractAiProvider implements AiProvider {
         }
         if (responseText != null) chars += responseText.length();
         return Math.max(1, chars / 4);
+    }
+
+    /** Renders a native tool call in the {"tool", "args"} form that ToolExecutionManager parses. */
+    protected static String toolCallContent(String name, JSONObject args) {
+        try {
+            JSONObject call = new JSONObject();
+            call.put("planned_delay_ms", 0);
+            call.put("tool", name);
+            call.put("args", args != null ? args : new JSONObject());
+            return call.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** The tool's JSON-schema parameters, or null for argument-less tools (some APIs reject empty object schemas). */
+    protected static JSONObject toolParameters(McpTool tool) {
+        JSONObject schema = tool.toJsonSchema().optJSONObject("inputSchema");
+        return schema != null && schema.has("properties") ? schema : null;
     }
 
     protected static String censorKey(String token) {

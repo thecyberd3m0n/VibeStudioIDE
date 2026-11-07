@@ -4,6 +4,7 @@ import android.content.Context;
 
 import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.chat.provider.AiProvider;
 import com.vibestudio.app.chat.provider.ClaudeAiProvider;
 import com.vibestudio.app.chat.provider.GeminiAiProvider;
@@ -318,12 +319,16 @@ public class AiRouter {
     }
 
     public AiResponse generateContent(Context context, String apiKey, String systemInstruction, List<ChatMessage> history) {
+        return generateContent(context, apiKey, systemInstruction, history, null);
+    }
+
+    public AiResponse generateContent(Context context, String apiKey, String systemInstruction, List<ChatMessage> history, List<McpTool> tools) {
         AiProvider activeProvider = getProvider(mActiveProviderName);
         if (activeProvider == null) {
             throw new IllegalStateException("Active provider '" + mActiveProviderName + "' is not registered in AiRouter");
         }
         String selectedModel = getActiveModelName(mActiveProviderName);
-        AiResponse response = activeProvider.generateContent(context, apiKey, selectedModel, systemInstruction, history);
+        AiResponse response = activeProvider.generateContent(context, apiKey, selectedModel, systemInstruction, history, tools);
 
         if (response != null && !response.isSuccess() && response.getErrorMessage() != null) {
             String err = response.getErrorMessage().toLowerCase();
@@ -334,7 +339,7 @@ public class AiRouter {
                 LogViewerService.getInstance().w(TAG, "Model '" + selectedModel + "' failed with error: "
                         + response.getErrorMessage() + ". Retrying with default model: " + fallbackModel);
                 saveActiveSelection(context, mActiveProviderName, fallbackModel);
-                response = activeProvider.generateContent(context, apiKey, fallbackModel, systemInstruction, history);
+                response = activeProvider.generateContent(context, apiKey, fallbackModel, systemInstruction, history, tools);
             }
         }
 

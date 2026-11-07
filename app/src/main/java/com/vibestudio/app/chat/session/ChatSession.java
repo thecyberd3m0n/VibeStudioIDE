@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
+import com.vibestudio.app.chat.session.AgentLoopController.StepResult;
 import com.vibestudio.app.chat.agents.Agent;
 import com.vibestudio.app.chat.agents.AgentScanner;
 import com.vibestudio.app.chat.agents.AgentToolPolicy;
@@ -51,6 +52,8 @@ public class ChatSession {
     private final AiRouter mAiRouter;
     private WorkspaceChangesetTracker mChangesetTracker;
 
+    private int mConsecutiveNudges;
+    private final AgentLoopController mAgentLoop = new AgentLoopController();
     private boolean mIsLoading = false;
     private volatile boolean mStopRequested = false;
     // Agent invoked via /agent-name in the latest user message; applies to that whole turn (including tool loops).
@@ -109,6 +112,10 @@ public class ChatSession {
 
     public McpClientManager getMcpClientManager() {
         return mMcpClientManager;
+    }
+
+    public AgentLoopController getAgentLoop() {
+        return mAgentLoop;
     }
 
     public boolean isStopRequested() {
@@ -202,12 +209,7 @@ public class ChatSession {
                 notifyLoading(true);
             }
         });
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                processUserRequest(context);
-            }
-        }).start();
+        startAgentLoop(context);
     }
 
     public void addUserMessage(final Context context, final String userText) {
@@ -244,18 +246,28 @@ public class ChatSession {
             notifyLoading(true);
         }
 
+        startAgentLoop(context);
+    }
+
+    private void startAgentLoop(final Context context) {
+        mConsecutiveNudges = 0;
         new Thread(new Runnable() {
             @Override
             public void run() {
-                processUserRequest(context);
+                mAgentLoop.run(
+                        loop -> runTurn(context),
+                        () -> mStopRequested,
+                        () -> postErrorResponse("Stopped after " + mAgentLoop.getMaxTurns()
+                                + " agent turns without finishing. Send a message to continue."),
+                        error -> postErrorResponse("Error: " + error.getMessage()));
             }
         }).start();
     }
 
-    private void processUserRequest(final Context context) {
+    private StepResult runTurn(final Context context) {
         if (mStopRequested) {
             postAssistantResponse("⏹️ Operation stopped by user.");
-            return;
+            return StepResult.FINISHED;
         }
 
         mAiRouter.loadActiveProvider(context);
@@ -269,7 +281,7 @@ public class ChatSession {
         if (apiKey == null || apiKey.isEmpty()) {
             LogViewerService.getInstance().w(TAG, "No API key found in connection manager for provider: " + activeProviderName);
             postErrorResponse("Error: " + activeProviderName + " API Key is not configured. Please set your API Key in the Models tab.");
-            return;
+            return StepResult.FINISHED;
         }
 
         List<ChatMessage> snapshot;
@@ -295,20 +307,21 @@ public class ChatSession {
                 + workspaceInstructions
                 + buildActiveAgentSection(activeAgent)
                 + "\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n" + catalogString
-                + (loadedSkillsString != null && !loadedSkillsString.isEmpty() ? "\n" + loadedSkillsString : "");
+                + (loadedSkillsString != null && !loadedSkillsString.isEmpty() ? "\n" + loadedSkillsString : "")
+                + AgentLoopController.STOP_GUARD;
 
         LogViewerService.getInstance().i(TAG, "Generating content via " + activeProviderName + " using selected model: " + activeModelName);
-        AiResponse response = mAiRouter.generateContent(context, apiKey, fullSystemInstruction, snapshot);
+        AiResponse response = mAiRouter.generateContent(context, apiKey, fullSystemInstruction, snapshot, mMcpClientManager.getActiveTools());
 
         if (mStopRequested) {
             postAssistantResponse("⏹️ Operation stopped by user.");
-            return;
+            return StepResult.FINISHED;
         }
 
         if (!response.isSuccess()) {
             LogViewerService.getInstance().w(TAG, "AI Provider (" + activeProviderName + " / " + activeModelName + ") error: " + response.getErrorMessage());
             postErrorResponse(response.getErrorMessage());
-            return;
+            return StepResult.FINISHED;
         }
 
         String reasoningContent = response.getReasoningContent();
@@ -317,12 +330,12 @@ public class ChatSession {
         if (rawReply == null || rawReply.trim().isEmpty()) {
             LogViewerService.getInstance().w(TAG, "Received empty response content from " + activeProviderName);
             postErrorResponse("Error: Received empty response from " + activeProviderName + ". Please tap Retry below.");
-            return;
+            return StepResult.FINISHED;
         }
 
         if (rawReply.startsWith("Error:")) {
             postErrorResponse(rawReply);
-            return;
+            return StepResult.FINISHED;
         }
 
         if ((reasoningContent == null || reasoningContent.trim().isEmpty()) && rawReply.contains("{")) {
@@ -355,13 +368,25 @@ public class ChatSession {
             notifyMessageAdded(modelCallMsg);
             notifyMessageAdded(toolResultMsg);
             notifyLoading(false);
-            return;
+            return StepResult.FINISHED;
         }
 
         if (prep != null) {
             JSONObject toolCallObj = prep.getToolCallObj();
             String toolName = prep.getToolName();
             JSONObject args = prep.getArgs();
+
+            mConsecutiveNudges = 0;
+
+            if (McpClientManager.isTaskCompleteTool(toolName)) {
+                String summary = args.optString("summary", "").trim();
+                if (summary.isEmpty()) {
+                    finishLoading();
+                } else {
+                    postAssistantResponse(modelAuthor, summary);
+                }
+                return StepResult.FINISHED;
+            }
 
             // 1b. Active agent's tool allow-list
             AgentToolPolicy toolPolicy = new AgentToolPolicy(activeAgent != null ? activeAgent.getTools() : null);
@@ -377,10 +402,7 @@ public class ChatSession {
                     mMessages.add(toolResultMsg);
                 }
 
-                if (!mStopRequested) {
-                    new Thread(() -> processUserRequest(context)).start();
-                }
-                return;
+                return StepResult.CONTINUE;
             }
 
             // 2. Boundary Guard Check & Permission Escalation
@@ -401,10 +423,7 @@ public class ChatSession {
                                 mMessages.add(toolResultMsg);
                             }
 
-                            if (!mStopRequested) {
-                                new Thread(() -> processUserRequest(context)).start();
-                            }
-                            return;
+                            return StepResult.CONTINUE;
                         }
                     }
                 }
@@ -416,6 +435,7 @@ public class ChatSession {
             postToolStatusMessage(requestMsg, ChatMessage.MessageType.TOOL_CALL, toolName, args);
 
             // Execute tool with context pass-through
+            mAgentLoop.setState(AgentLoopController.State.EXECUTING_TOOL);
             ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
 
             // Record assistant call and system tool result in conversation history (for LLM context)
@@ -436,23 +456,29 @@ public class ChatSession {
 
             if (mStopRequested) {
                 postAssistantResponse("⏹️ Operation stopped by user.");
-                return;
+                return StepResult.FINISHED;
             }
 
             LogViewerService.getInstance().i(TAG, "Tool execution completed for " + toolName + ". Continuing agent execution loop...");
 
-            // Continuous execution loop without arbitrary depth limit
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    processUserRequest(context);
-                }
-            }).start();
-            return;
+            return StepResult.CONTINUE;
         }
 
-        // Final normal assistant text response
+        // A reply without a tool call is not a finish signal; only 'task_complete' is. Nudge a bounded number of times.
+        if (mConsecutiveNudges < AgentLoopController.MAX_CONSECUTIVE_NUDGES) {
+            mConsecutiveNudges++;
+            ChatMessage replyMsg = new ChatMessage(modelAuthor, rawReply, false);
+            ChatMessage nudgeMsg = new ChatMessage("System Tool", AgentLoopController.NUDGE_MESSAGE, true);
+            synchronized (this) {
+                mMessages.add(replyMsg);
+                mMessages.add(nudgeMsg);
+            }
+            notifyMessageAdded(replyMsg);
+            return StepResult.CONTINUE;
+        }
+
         postAssistantResponse(modelAuthor, rawReply);
+        return StepResult.FINISHED;
     }
 
     private static String buildActiveAgentSection(Agent agent) {
@@ -496,6 +522,18 @@ public class ChatSession {
         if (!model.isEmpty()) return model;
         if (!provider.isEmpty()) return provider;
         return GENERIC_ASSISTANT_SENDER;
+    }
+
+    private void finishLoading() {
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                synchronized (ChatSession.this) {
+                    mIsLoading = false;
+                    notifyLoading(false);
+                }
+            }
+        });
     }
 
     private void postAssistantResponse(final String reply) {

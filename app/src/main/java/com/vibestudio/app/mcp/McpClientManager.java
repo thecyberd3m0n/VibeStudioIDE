@@ -34,6 +34,12 @@ public class McpClientManager {
     private static final String TAG = "McpClientManager";
     public static final String META_TOOL_GET_SKILL_SCHEMA = "get_skill_schema";
 
+    public static final String TOOL_TASK_COMPLETE = "task_complete";
+
+    public static boolean isTaskCompleteTool(String toolName) {
+        return TOOL_TASK_COMPLETE.equalsIgnoreCase(toolName);
+    }
+
     public static boolean isMetaTool(String toolName) {
         return META_TOOL_GET_SKILL_SCHEMA.equalsIgnoreCase(toolName);
     }
@@ -219,6 +225,29 @@ public class McpClientManager {
         return sb.toString();
     }
 
+    private static McpTool buildMetaTool() {
+        return McpTool.builder(META_TOOL_GET_SKILL_SCHEMA, "Fetches detailed parameters and tool schemas for one or multiple skill names in a single batch call.")
+                .addProperty("skill_name", PropertyType.STRING, "Single skill name (e.g. 'file') or comma-separated list of skills to batch load.", false)
+                .addProperty("skills", PropertyType.ARRAY, "List of skill names to batch load (e.g. ['file', 'terminal', 'browser']).", false)
+                .build();
+    }
+
+    /**
+     * Tools to declare through a provider's native function-calling API: every registered server's tools, so the
+     * model can act immediately without a schema-loading round trip, plus the meta tool for custom skills and agents.
+     */
+    public List<McpTool> getActiveTools() {
+        List<McpTool> tools = new ArrayList<>();
+        tools.add(buildMetaTool());
+        tools.add(McpTool.builder(TOOL_TASK_COMPLETE, "Call when the user's request is fully done, or when you need input from the user. This ends the agent loop.")
+                .addProperty("summary", PropertyType.STRING, "Final message shown to the user: what was done, or the question you need answered.", false)
+                .build());
+        for (McpServer server : getSortedServers()) {
+            tools.addAll(server.getTools());
+        }
+        return tools;
+    }
+
     public JSONObject getHighLevelCatalog() {
         JSONObject catalog = new JSONObject();
         try {
@@ -276,10 +305,7 @@ public class McpClientManager {
 
             catalog.put("available_skills", skills);
 
-            McpTool metaTool = McpTool.builder(META_TOOL_GET_SKILL_SCHEMA, "Fetches detailed parameters and tool schemas for one or multiple skill names in a single batch call.")
-                    .addProperty("skill_name", PropertyType.STRING, "Single skill name (e.g. 'file') or comma-separated list of skills to batch load.", false)
-                    .addProperty("skills", PropertyType.ARRAY, "List of skill names to batch load (e.g. ['file', 'terminal', 'browser']).", false)
-                    .build();
+            McpTool metaTool = buildMetaTool();
 
             catalog.put("meta_tool", metaTool.toJsonSchema());
 

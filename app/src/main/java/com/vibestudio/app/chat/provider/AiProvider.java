@@ -4,6 +4,7 @@ import android.content.Context;
 
 import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.mcp.model.McpTool;
 
 import java.util.List;
 
@@ -65,4 +66,13 @@ public interface AiProvider {
     String getSystemInstruction(Context context);
 
     AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history);
+
+    /**
+     * Like the overload above, but declares {@code tools} through the provider's native function-calling API.
+     * A native call comes back as {"tool": ..., "args": ...} JSON in {@link AiResponse#getContent()}.
+     * Providers without native support ignore {@code tools}.
+     */
+    default AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history, List<McpTool> tools) {
+        return generateContent(context, apiKey, selectedModel, systemInstruction, history);
+    }
 }

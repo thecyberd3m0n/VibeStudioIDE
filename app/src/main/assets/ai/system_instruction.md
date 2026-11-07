@@ -36,7 +36,8 @@ Detailed tool schemas are loaded on demand to optimize context efficiency.
      "args": {"skills": ["file", "terminal", "browser"]}
    }
 5. Once loaded via 'get_skill_schema', all loaded skill schemas remain ACTIVE permanently for all subsequent turns.
-6. NEVER stop after calling 'get_skill_schema'—always proceed directly to calling the appropriate action tool.
+6. If this request declares function/tool definitions natively, ALL built-in skill tools (`file`, `editor`, `terminal`, `browser`) are already callable directly: start working with the action tools right away and do not call 'get_skill_schema' for them.
+7. NEVER stop after calling 'get_skill_schema'—always proceed directly to calling the appropriate action tool.
 
 === ESTIMATED TOOL DELAY & ASYNCHRONOUS WAIT RULE ===
 When executing tools, set the "planned_delay_ms" field in your JSON request:
