@@ -20,8 +20,10 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 public class GeminiAiProvider extends AbstractAiProvider {
 
@@ -35,9 +37,49 @@ public class GeminiAiProvider extends AbstractAiProvider {
             "gemini-pro-latest"
     );
 
+    private static final Pattern SNAPSHOT_SUFFIX = Pattern.compile("-\\d{3}$");
+
+    /** Id fragments of specialized models that are not general text/agent models. */
+    private static final List<String> EXCLUDED_ID_PARTS = Arrays.asList(
+            "live", "tuning", "vision",
+            "tts", "transcribe", "audio",
+            "image", "nano-banana", "omni",
+            "embedding", "robotics", "computer-use"
+    );
+
+    /**
+     * Keeps only models usable in VibeStudio's agent workflow: the Gemini family (this excludes Gemma and
+     * Deep Research), without live-streaming, tuning, vision, speech, image-generation, omni, robotics,
+     * computer-use or embedding variants, and without pinned numeric snapshots such as "-001" (the
+     * unpinned id is kept).
+     */
+    static boolean isIdeCompatibleModel(String modelId) {
+        if (modelId == null || !modelId.startsWith("gemini-") || SNAPSHOT_SUFFIX.matcher(modelId).find()) {
+            return false;
+        }
+        for (String part : EXCLUDED_ID_PARTS) {
+            if (modelId.contains(part)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Override
     public String getName() {
         return "Gemini";
+    }
+
+    /** Gemini models can return several functionCall parts in one reply. */
+    @Override
+    public boolean supportsParallelToolCalls() {
+        return true;
+    }
+
+    /** The model list is filtered to general Gemini models (see isIdeCompatibleModel), all of which support function calling. */
+    @Override
+    public boolean supportsNativeTools() {
+        return true;
     }
 
     @Override
@@ -90,7 +132,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
                         supportsGen = true;
                     }
 
-                    if (supportsGen && !rawName.isEmpty()) {
+                    if (supportsGen && isIdeCompatibleModel(rawName)) {
                         modelsList.add(rawName);
                     }
                 }
@@ -169,7 +211,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
             if (tokensUsed <= 0) {
                 tokensUsed = calculateTokenUsage(systemInstruction, history, content);
             }
-            return AiResponse.success(content, tokensUsed);
+            return AiResponse.success(content, tokensUsed).withToolCalls(parseToolCalls(rawResponse));
         } else {
             String errorMessage = "Error (" + statusCode + "): " + parseErrorResponse(extractBody(rawResponse), statusCode);
             return AiResponse.error(statusCode, errorMessage);
@@ -249,49 +291,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
             conn.setReadTimeout(30000);
             conn.setDoOutput(true);
 
-            JSONArray contentsArray = new JSONArray();
-            if (history != null && !history.isEmpty()) {
-                String lastRole = null;
-                JSONObject currentContentObj = null;
-                JSONArray currentParts = null;
-                StringBuilder currentText = null;
-
-                for (ChatMessage msg : history) {
-                    if (msg == null || msg.getText() == null || msg.getText().trim().isEmpty() || msg.getType() == ChatMessage.MessageType.REASONING) {
-                        continue;
-                    }
-                    String role = msg.isUser() ? "user" : "model";
-                    String text = msg.getText();
-
-                    if (role.equals(lastRole) && currentParts != null) {
-                        currentText.append("\n\n").append(text);
-                        currentParts.getJSONObject(0).put("text", currentText.toString());
-                    } else {
-                        lastRole = role;
-                        currentText = new StringBuilder(text);
-
-                        JSONObject textPart = new JSONObject();
-                        textPart.put("text", text);
-
-                        currentParts = new JSONArray();
-                        currentParts.put(textPart);
-
-                        currentContentObj = new JSONObject();
-                        currentContentObj.put("role", role);
-                        currentContentObj.put("parts", currentParts);
-
-                        contentsArray.put(currentContentObj);
-                    }
-                }
-
-                // Gemini API requires first content turn to be "user"
-                if (contentsArray.length() > 0) {
-                    JSONObject first = contentsArray.getJSONObject(0);
-                    if (!"user".equals(first.optString("role"))) {
-                        first.put("role", "user");
-                    }
-                }
-            }
+            JSONArray contentsArray = buildContents(history, tools != null && !tools.isEmpty());
 
             JSONObject payload = new JSONObject();
 
@@ -364,6 +364,105 @@ public class GeminiAiProvider extends AbstractAiProvider {
         }
     }
 
+    static final String STATE_KIND = "gemini";
+
+    /**
+     * The request's {@code contents}. With native tools, calls this provider produced go back as functionCall parts
+     * (exactly as received, so thought signatures survive) answered by functionResponse parts; consecutive turns of
+     * one role are merged, as the API expects alternating turns.
+     */
+    static JSONArray buildContents(List<ChatMessage> history, boolean nativeTools) throws Exception {
+        JSONArray contents = new JSONArray();
+        JSONObject current = null;
+        Map<String, String> callApiIds = new HashMap<>();
+
+        for (NativeHistory.Item item : NativeHistory.project(history, nativeTools, STATE_KIND)) {
+            switch (item.kind) {
+                case USER:
+                case ASSISTANT: {
+                    if (item.text == null || item.text.trim().isEmpty()) break;
+                    String role = item.kind == NativeHistory.Item.Kind.USER ? "user" : "model";
+                    JSONObject last = lastPart(current, role);
+                    if (last != null && last.has("text")) {
+                        last.put("text", last.getString("text") + "\n\n" + item.text);
+                    } else {
+                        current = contentFor(contents, current, role);
+                        current.getJSONArray("parts").put(new JSONObject().put("text", item.text));
+                    }
+                    break;
+                }
+                case ASSISTANT_CALLS: {
+                    current = new JSONObject().put("role", "model").put("parts", new JSONArray());
+                    contents.put(current);
+                    for (NativeHistory.Call call : item.calls) {
+                        JSONObject part = new JSONObject(call.state);
+                        JSONObject functionCall = part.optJSONObject("functionCall");
+                        String apiId = functionCall != null ? functionCall.optString("id", "") : "";
+                        if (!apiId.isEmpty()) callApiIds.put(call.id, apiId);
+                        current.getJSONArray("parts").put(part);
+                    }
+                    break;
+                }
+                default: {
+                    JSONObject response = new JSONObject().put(item.error ? "error" : "result", item.text);
+                    JSONObject functionResponse = new JSONObject().put("name", item.call.name).put("response", response);
+                    String apiId = callApiIds.get(item.call.id);
+                    if (apiId != null) functionResponse.put("id", apiId);
+                    current = contentFor(contents, current, "user");
+                    current.getJSONArray("parts").put(new JSONObject().put("functionResponse", functionResponse));
+                    break;
+                }
+            }
+        }
+
+        // Gemini API requires first content turn to be "user"
+        if (contents.length() > 0) {
+            JSONObject first = contents.getJSONObject(0);
+            if (!"user".equals(first.optString("role"))) {
+                first.put("role", "user");
+            }
+        }
+        return contents;
+    }
+
+    /** The last part of {@code current} when it belongs to {@code role}, else null. */
+    private static JSONObject lastPart(JSONObject current, String role) {
+        if (current == null || !role.equals(current.optString("role"))) return null;
+        JSONArray parts = current.optJSONArray("parts");
+        return parts != null && parts.length() > 0 ? parts.optJSONObject(parts.length() - 1) : null;
+    }
+
+    /** {@code current} if it is a turn of {@code role}, else a new turn appended to {@code contents}. */
+    private static JSONObject contentFor(JSONArray contents, JSONObject current, String role) throws Exception {
+        if (current != null && role.equals(current.optString("role"))) return current;
+        JSONObject created = new JSONObject().put("role", role).put("parts", new JSONArray());
+        contents.put(created);
+        return created;
+    }
+
+    /** The function calls of the first candidate with the raw part each came in (it may carry a thought signature). */
+    private List<AiResponse.ToolCall> parseToolCalls(String rawResult) {
+        List<AiResponse.ToolCall> calls = new ArrayList<>();
+        try {
+            JSONArray candidates = new JSONObject(extractBody(rawResult)).optJSONArray("candidates");
+            JSONObject content = candidates != null && candidates.length() > 0
+                    ? candidates.getJSONObject(0).optJSONObject("content") : null;
+            JSONArray parts = content != null ? content.optJSONArray("parts") : null;
+            for (int i = 0; parts != null && i < parts.length(); i++) {
+                JSONObject part = parts.getJSONObject(i);
+                JSONObject functionCall = part.optJSONObject("functionCall");
+                if (functionCall == null) continue;
+                String id = functionCall.optString("id", "");
+                calls.add(new AiResponse.ToolCall(id.isEmpty() ? newCallId() : id,
+                        toolCallObject(functionCall.optString("name"), functionCall.optJSONObject("args")),
+                        part.toString(), STATE_KIND));
+            }
+        } catch (Exception e) {
+            LogViewerService.getInstance().w(TAG, "Could not read structured function calls: " + e.getMessage());
+        }
+        return calls;
+    }
+
     private String parseGeminiResponse(String rawResult) {
         try {
             String rawJson = extractBody(rawResult);
@@ -378,18 +477,19 @@ public class GeminiAiProvider extends AbstractAiProvider {
                         JSONArray parts = content.optJSONArray("parts");
                         if (parts != null) {
                             StringBuilder text = new StringBuilder();
-                            JSONObject functionCall = null;
+                            StringBuilder calls = new StringBuilder();
                             for (int i = 0; i < parts.length(); i++) {
                                 JSONObject part = parts.getJSONObject(i);
                                 text.append(part.optString("text", ""));
-                                if (functionCall == null) {
-                                    functionCall = part.optJSONObject("functionCall");
+                                JSONObject functionCall = part.optJSONObject("functionCall");
+                                if (functionCall != null) {
+                                    if (calls.length() > 0) calls.append('\n');
+                                    calls.append(toolCallContent(functionCall.optString("name"), functionCall.optJSONObject("args")));
                                 }
                             }
                             String reply = text.toString().trim();
-                            if (functionCall != null) {
-                                String call = toolCallContent(functionCall.optString("name"), functionCall.optJSONObject("args"));
-                                return reply.isEmpty() ? call : reply + "\n" + call;
+                            if (calls.length() > 0) {
+                                return reply.isEmpty() ? calls.toString() : reply + "\n" + calls;
                             }
                             if (!reply.isEmpty()) {
                                 return reply;

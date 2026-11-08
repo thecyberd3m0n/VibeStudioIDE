@@ -53,7 +53,12 @@ public class TerminalMcpServer implements McpServer {
 
     @Override
     public boolean supportsPlannedDelay(String toolName) {
-        return "execute_command_async".equalsIgnoreCase(toolName);
+        return "execute_command_async".equalsIgnoreCase(toolName) || "read_terminal_output".equalsIgnoreCase(toolName);
+    }
+
+    @Override
+    public boolean plannedDelayBeforeExecution(String toolName) {
+        return "read_terminal_output".equalsIgnoreCase(toolName);
     }
 
     public TerminalMcpServer() {
@@ -64,13 +69,13 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 1: execute_command
-        mTools.add(McpTool.builder("execute_command", "Execute a fast, synchronous bash shell command in a terminal session. Takes no planned delay and returns results directly and instantly without future readout.")
+        mTools.add(McpTool.builder("execute_command", "Execute a fast, synchronous bash shell command in a terminal session. Takes no planned delay and returns results directly and instantly without future readout. Use non-interactive flags (e.g. --yes, CI=true) so the command never waits for input.")
                 .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
 
         // Tool 1b: execute_command_async
-        mTools.add(McpTool.builder("execute_command_async", "Execute a long-running, background, or server bash shell command in a terminal session asynchronously.")
+        mTools.add(McpTool.builder("execute_command_async", "Execute a long-running, background, or server bash shell command in a terminal session asynchronously. Use non-interactive flags (e.g. --yes, CI=true) and answer 'n' to telemetry prompts with send_keystroke; set planned_delay_ms to wait before the snapshot.")
                 .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
@@ -83,7 +88,7 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 3: read_terminal_output
-        mTools.add(McpTool.builder("read_terminal_output", "Read a paginated or filtered output fragment from a terminal session screen buffer.")
+        mTools.add(McpTool.builder("read_terminal_output", "Read a paginated or filtered output fragment from a terminal session screen buffer. While a command is still running, call this with planned_delay_ms (it waits, then reads) instead of replying with text.")
                 .addProperty("max_lines", PropertyType.INTEGER, "Maximum number of lines to return (default: 30 to conserve tokens).", false)
                 .addProperty("start_line", PropertyType.INTEGER, "Start line index for pagination (default: 0).", false)
                 .addProperty("tail_only", PropertyType.BOOLEAN, "If true, returns only the latest trailing lines (default: true).", false)

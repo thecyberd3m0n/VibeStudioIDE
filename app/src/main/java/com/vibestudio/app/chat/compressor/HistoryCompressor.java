@@ -21,6 +21,11 @@ public class HistoryCompressor {
         return charCount / 4; // ~4 characters per token heuristic
     }
 
+    private static boolean isLinkedResult(ChatMessage msg) {
+        return msg != null && msg.getCallId() != null
+                && (msg.getType() == ChatMessage.MessageType.TOOL_RESULT || msg.getType() == ChatMessage.MessageType.ERROR);
+    }
+
     public static List<ChatMessage> compressIfNeeded(List<ChatMessage> history) {
         if (history == null || history.size() <= 6) {
             return history != null ? new ArrayList<>(history) : new ArrayList<ChatMessage>();
@@ -36,6 +41,11 @@ public class HistoryCompressor {
         compressed.add(history.get(0));
 
         int midEndIndex = history.size() - 4;
+        // Never cut between a tool call and its result: a result without its call is rejected by function-calling
+        // APIs, so the kept part starts at the call.
+        while (midEndIndex > 1 && isLinkedResult(history.get(midEndIndex))) {
+            midEndIndex--;
+        }
         StringBuilder summary = new StringBuilder("[Context Summary of previous conversation steps]:\n");
         boolean hadSkillLoads = false;
         for (int i = 1; i < midEndIndex; i++) {

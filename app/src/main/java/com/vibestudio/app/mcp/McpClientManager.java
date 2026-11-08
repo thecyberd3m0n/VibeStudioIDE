@@ -32,6 +32,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class McpClientManager {
 
     private static final String TAG = "McpClientManager";
+    public static final String PLANNED_DELAY_FIELD = "planned_delay_ms";
+    private static final String PLANNED_DELAY_DESCRIPTION = "Optional. Milliseconds to wait after dispatching, before the result is read back "
+            + "(e.g. 5000 to start a dev server, 15000 for dependency installs). Omit or 0 for instant operations.";
     public static final String META_TOOL_GET_SKILL_SCHEMA = "get_skill_schema";
 
     public static final String TOOL_TASK_COMPLETE = "task_complete";
@@ -113,6 +116,14 @@ public class McpClientManager {
         }
         McpServer server = findServerForTool(toolName);
         return server != null && server.supportsPlannedDelay(toolName);
+    }
+
+    public boolean plannedDelayBeforeExecution(String toolName) {
+        if (toolName == null || isMetaTool(toolName)) {
+            return false;
+        }
+        McpServer server = findServerForTool(toolName);
+        return server != null && server.plannedDelayBeforeExecution(toolName);
     }
 
     public CharSequence formatToolCall(String toolName, JSONObject args) {
@@ -205,22 +216,48 @@ public class McpClientManager {
     }
 
     public String getLoadedSkillsInstructions(Context context) {
+        return getLoadedSkillsInstructions(context, false);
+    }
+
+    /**
+     * @param nativeTools the built-in skills' tool schemas already reach the model as declared tools, so only their
+     *                    usage guidelines are injected; custom skills and agents are always injected in full
+     */
+    public String getLoadedSkillsInstructions(Context context, boolean nativeTools) {
         if (mLoadedSkills.isEmpty()) {
             return "";
         }
-        StringBuilder sb = new StringBuilder();
-        sb.append("\n=== LOADED SKILLS SCHEMAS (ACTIVE IN CONTEXT) ===\n");
-        sb.append("The following skills are already loaded and ACTIVE in your context window:\n");
+        StringBuilder body = new StringBuilder();
         for (String skillName : mLoadedSkills) {
             JSONObject schema = getSkillSchema(context, skillName);
-            sb.append("\n--- SKILL: ").append(skillName.toUpperCase()).append(" ---\n");
-            if (schema != null && schema.has("schema")) {
-                JSONObject schemaObj = schema.optJSONObject("schema");
-                if (schemaObj != null) {
-                    sb.append(schemaObj.toString()).append("\n");
+            JSONObject schemaObj = schema != null ? schema.optJSONObject("schema") : null;
+            if (schemaObj == null) {
+                if (!nativeTools) {
+                    body.append("\n--- SKILL: ").append(skillName.toUpperCase()).append(" ---\n");
                 }
+                continue;
             }
+            if (nativeTools && mRegisteredServers.containsKey(skillName.toLowerCase())) {
+                String guidelines = schemaObj.optString("guidelines", "").trim();
+                if (!guidelines.isEmpty()) {
+                    body.append("\n--- ").append(skillName.toUpperCase()).append(" GUIDELINES ---\n").append(guidelines).append("\n");
+                }
+                continue;
+            }
+            body.append("\n--- SKILL: ").append(skillName.toUpperCase()).append(" ---\n").append(schemaObj).append("\n");
         }
+        if (body.length() == 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        if (nativeTools) {
+            sb.append("\n=== LOADED SKILLS (ACTIVE IN CONTEXT) ===\n");
+            sb.append("Built-in skill tools are declared natively; these are their guidelines, plus any custom skills or agents you loaded:\n");
+        } else {
+            sb.append("\n=== LOADED SKILLS SCHEMAS (ACTIVE IN CONTEXT) ===\n");
+            sb.append("The following skills are already loaded and ACTIVE in your context window:\n");
+        }
+        sb.append(body);
         sb.append("\nIMPORTANT: Do NOT call '").append(META_TOOL_GET_SKILL_SCHEMA).append("' again for any of the above loaded skills. Invoke their action tools directly.\n");
         return sb.toString();
     }
@@ -243,12 +280,25 @@ public class McpClientManager {
                 .addProperty("summary", PropertyType.STRING, "Final message shown to the user: what was done, or the question you need answered.", false)
                 .build());
         for (McpServer server : getSortedServers()) {
-            tools.addAll(server.getTools());
+            for (McpTool tool : server.getTools()) {
+                tools.add(server.supportsPlannedDelay(tool.getName())
+                        ? tool.withOptionalProperty(PLANNED_DELAY_FIELD, PropertyType.INTEGER, PLANNED_DELAY_DESCRIPTION)
+                        : tool);
+            }
         }
         return tools;
     }
 
     public JSONObject getHighLevelCatalog() {
+        return getHighLevelCatalog(false);
+    }
+
+    /**
+     * @param nativeTools the built-in skills' tools are declared natively: their entries carry no is_loaded flag
+     *                    (it would change the prompt mid-session for nothing) and the meta tool schema is left out,
+     *                    since it is declared with the other tools
+     */
+    public JSONObject getHighLevelCatalog(boolean nativeTools) {
         JSONObject catalog = new JSONObject();
         try {
             JSONArray skills = new JSONArray();
@@ -258,7 +308,9 @@ public class McpClientManager {
                 skillObj.put("name", server.getName());
                 skillObj.put("description", server.getDescription());
                 skillObj.put("priority_tier", server.getPriority());
-                skillObj.put("is_loaded", isSkillLoaded(server.getName()));
+                if (!nativeTools) {
+                    skillObj.put("is_loaded", isSkillLoaded(server.getName()));
+                }
                 skills.put(skillObj);
             }
 
@@ -305,9 +357,9 @@ public class McpClientManager {
 
             catalog.put("available_skills", skills);
 
-            McpTool metaTool = buildMetaTool();
-
-            catalog.put("meta_tool", metaTool.toJsonSchema());
+            if (!nativeTools) {
+                catalog.put("meta_tool", buildMetaTool().toJsonSchema());
+            }
 
         } catch (JSONException ignored) {}
         return catalog;

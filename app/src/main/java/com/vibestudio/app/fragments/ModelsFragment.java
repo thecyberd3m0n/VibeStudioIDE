@@ -364,7 +364,10 @@ public class ModelsFragment extends Fragment {
                         }
                     }
 
-                    if (!hasMatch && !availableModels.isEmpty()) {
+                    // Only one model is selected in the whole app: the active provider's. Other providers show none.
+                    if (!isProviderActive) {
+                        currentActiveModel = null;
+                    } else if (!hasMatch && !availableModels.isEmpty()) {
                         String defModel = provider.getDefaultModel();
                         if (defModel != null) {
                             for (String m : availableModels) {
@@ -381,8 +384,8 @@ public class ModelsFragment extends Fragment {
                     }
 
                     for (final String modelName : availableModels) {
-                        final boolean isSelectedModel = modelName.equalsIgnoreCase(currentActiveModel);
-                        final boolean isGloballyActive = isProviderActive && isSelectedModel;
+                        final boolean isSelectedModel = isProviderActive && modelName.equalsIgnoreCase(currentActiveModel);
+                        final boolean isGloballyActive = isSelectedModel;
 
                         final LinearLayout modelRow = new LinearLayout(context);
                         modelRow.setOrientation(LinearLayout.HORIZONTAL);

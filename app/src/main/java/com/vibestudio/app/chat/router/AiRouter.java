@@ -3,6 +3,7 @@ package com.vibestudio.app.chat.router;
 import android.content.Context;
 
 import com.vibestudio.app.chat.model.AiResponse;
+import com.vibestudio.app.chat.prompt.PromptAssets;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.chat.provider.AiProvider;
@@ -15,9 +16,12 @@ import com.vibestudio.app.service.LogViewerService;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class AiRouter {
 
@@ -25,6 +29,8 @@ public class AiRouter {
     private static final String SETTING_ACTIVE_PROVIDER = "active_ai_provider";
     private static final String SETTING_ACTIVE_MODEL_PREFIX = "active_ai_model_";
     private static final String SETTING_CACHED_MODELS_PREFIX = "cached_ai_models_";
+    private static final String SETTING_MODEL_CAPS_PREFIX = "cached_ai_model_caps_";
+    private static final String SETTING_NATIVE_TOOLS_DOWNGRADED = "native_tools_downgraded";
     private static final String SETTING_USED_TOKENS_PREFIX = "token_used_";
     private static final String SETTING_BUDGET_TOKENS_PREFIX = "token_budget_";
     public static final String DEFAULT_PROVIDER = "Gemini";
@@ -35,6 +41,8 @@ public class AiRouter {
     private final Map<String, AiProvider> mProviders = new LinkedHashMap<>();
     private String mActiveProviderName = DEFAULT_PROVIDER;
     private final Map<String, String> mActiveModelPerProvider = new LinkedHashMap<>();
+    /** "provider|model" entries whose API rejected native tools; they use the text protocol from then on. */
+    private final Set<String> mNativeToolsDowngraded = Collections.synchronizedSet(new LinkedHashSet<String>());
 
     public AiRouter() {
         registerProvider(new GeminiAiProvider());
@@ -87,7 +95,7 @@ public class AiRouter {
             return selected;
         }
 
-        if (selected != null && (selected.contains("-sol") || selected.contains("embedding") || selected.contains("codex"))) {
+        if (selected != null && selected.contains("embedding")) {
             selected = null;
         }
 
@@ -104,25 +112,50 @@ public class AiRouter {
         }
     }
 
+    private static String downgradeKey(String providerName, String modelName) {
+        return providerName + "|" + modelName;
+    }
+
+    /**
+     * Whether requests to this provider/model declare tools through function calling. False means the text
+     * protocol: the provider or model can't do it, or its API already rejected it.
+     */
+    public boolean usesNativeTools(String providerName, String modelName) {
+        AiProvider provider = getProvider(providerName);
+        return provider != null
+                && provider.supportsNativeTools(modelName)
+                && !mNativeToolsDowngraded.contains(downgradeKey(providerName, modelName));
+    }
+
+    /** Whether the model may return several tool calls in one reply; only possible with native tools. */
+    public boolean usesParallelToolCalls(String providerName, String modelName) {
+        AiProvider provider = getProvider(providerName);
+        return provider != null && usesNativeTools(providerName, modelName) && provider.supportsParallelToolCalls(modelName);
+    }
+
+    /** Remembers (and persists) that the model's API rejected native tools. */
+    public void markNativeToolsUnsupported(Context context, String providerName, String modelName) {
+        if (providerName == null || modelName == null) return;
+        mNativeToolsDowngraded.add(downgradeKey(providerName, modelName));
+        if (context != null) {
+            StringBuilder sb = new StringBuilder();
+            synchronized (mNativeToolsDowngraded) {
+                for (String entry : mNativeToolsDowngraded) {
+                    if (sb.length() > 0) sb.append(",");
+                    sb.append(entry);
+                }
+            }
+            new DatabaseHelper(context.getApplicationContext()).setSetting(SETTING_NATIVE_TOOLS_DOWNGRADED, sb.toString());
+        }
+        LogViewerService.getInstance().w(TAG, "Native tools rejected by " + providerName + " / " + modelName + "; using the text protocol for it from now on.");
+    }
+
     public String getSystemInstruction(Context context) {
         AiProvider activeProvider = getActiveProvider();
         if (activeProvider != null) {
             return activeProvider.getSystemInstruction(context);
         }
-        if (context != null) {
-            try (java.io.InputStream in = context.getAssets().open("ai/system_instruction.md");
-                 java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line).append("\n");
-                }
-                return sb.toString();
-            } catch (Exception e) {
-                com.vibestudio.app.service.LogViewerService.getInstance().w(TAG, "Failed to load system_instruction.md from assets/ai", e);
-            }
-        }
-        return "";
+        return PromptAssets.read(context, "system_instruction.md");
     }
 
     public void loadActiveState(Context context) {
@@ -149,6 +182,13 @@ public class AiRouter {
             }
         }
 
+        String downgraded = dbHelper.getSetting(SETTING_NATIVE_TOOLS_DOWNGRADED);
+        if (downgraded != null && !downgraded.trim().isEmpty()) {
+            for (String entry : downgraded.split(",")) {
+                if (!entry.trim().isEmpty()) mNativeToolsDowngraded.add(entry.trim());
+            }
+        }
+
         for (AiProvider provider : mProviders.values()) {
             String pName = provider.getName();
 
@@ -166,12 +206,16 @@ public class AiRouter {
                     provider.setAvailableModels(cachedList);
                 }
             }
+            String cachedCaps = dbHelper.getSetting(SETTING_MODEL_CAPS_PREFIX + pName);
+            if (cachedCaps != null && !cachedCaps.trim().isEmpty()) {
+                provider.restoreModelCapabilitiesState(cachedCaps);
+            }
 
             // Restore active model selection
             String savedModel = dbHelper.getSetting(SETTING_ACTIVE_MODEL_PREFIX + pName);
             if (savedModel != null && !savedModel.trim().isEmpty()) {
                 String trimmed = savedModel.trim();
-                if (trimmed.contains("-sol") || trimmed.contains("embedding") || trimmed.contains("codex")) {
+                if (trimmed.contains("embedding")) {
                     trimmed = provider.getDefaultModel();
                 }
                 mActiveModelPerProvider.put(pName, trimmed);
@@ -210,6 +254,10 @@ public class AiRouter {
         }
         DatabaseHelper dbHelper = new DatabaseHelper(context.getApplicationContext());
         dbHelper.setSetting(SETTING_CACHED_MODELS_PREFIX + providerName, sb.toString());
+        String capsState = provider != null ? provider.getModelCapabilitiesState() : null;
+        if (capsState != null) {
+            dbHelper.setSetting(SETTING_MODEL_CAPS_PREFIX + providerName, capsState);
+        }
     }
 
     public int getUsedTokens(Context context, String providerName) {

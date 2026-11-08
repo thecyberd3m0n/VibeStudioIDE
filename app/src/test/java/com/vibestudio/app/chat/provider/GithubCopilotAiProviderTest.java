@@ -34,6 +34,52 @@ public class GithubCopilotAiProviderTest {
     }
 
     @Test
+    public void parseChatModelsKeepsModelsWithAnySupportedEndpointAndDropsOthers() throws Exception {
+        String body = "{\"data\":["
+                + "{\"id\":\"gpt-4.1\",\"capabilities\":{\"type\":\"chat\"},\"supported_endpoints\":[\"/chat/completions\",\"/responses\"]},"
+                + "{\"id\":\"gpt-5-responses-only\",\"capabilities\":{\"type\":\"chat\"},\"supported_endpoints\":[\"/responses\"]},"
+                + "{\"id\":\"messages-only\",\"capabilities\":{\"type\":\"chat\"},\"supported_endpoints\":[\"/v1/messages\"]},"
+                + "{\"id\":\"gpt-4o\",\"capabilities\":{\"type\":\"chat\"}}"
+                + "]}";
+
+        assertEquals(Arrays.asList("gpt-4.1", "gpt-5-responses-only", "gpt-4o"), GithubCopilotAiProvider.parseChatModels(body));
+    }
+
+    @Test
+    public void parseChatModelsReportsToolCallsAndApiPerModel() throws Exception {
+        String body = "{\"data\":["
+                + "{\"id\":\"with-tools\",\"capabilities\":{\"type\":\"chat\",\"supports\":{\"tool_calls\":true,\"parallel_tool_calls\":true}}},"
+                + "{\"id\":\"no-tools\",\"capabilities\":{\"type\":\"chat\",\"supports\":{\"tool_calls\":false}}},"
+                + "{\"id\":\"grok-4.7\",\"capabilities\":{\"type\":\"chat\"},\"supported_endpoints\":[\"/responses\"]}"
+                + "]}";
+        java.util.Map<String, GithubCopilotAiProvider.ModelInfo> infos = new java.util.LinkedHashMap<>();
+
+        GithubCopilotAiProvider.parseChatModels(body, infos);
+
+        assertTrue(infos.get("with-tools").toolCalls);
+        assertTrue(!infos.get("no-tools").toolCalls);
+        assertTrue(!infos.get("grok-4.7").toolCalls);
+        assertTrue(infos.get("with-tools").parallelToolCalls);
+        assertTrue(!infos.get("no-tools").parallelToolCalls);
+        assertEquals(CopilotApi.RESPONSES, infos.get("grok-4.7").api);
+        assertEquals(CopilotApi.CHAT_COMPLETIONS, infos.get("with-tools").api);
+    }
+
+    @Test
+    public void unknownModelsAreTriedWithNativeTools() {
+        GithubCopilotAiProvider provider = new GithubCopilotAiProvider();
+        provider.restoreModelCapabilitiesState("{\"no-tools\":{\"tools\":false,\"api\":\"CHAT_COMPLETIONS\"},\"legacy\":true,"
+                + "\"parallel\":{\"tools\":true,\"parallel\":true,\"api\":\"CHAT_COMPLETIONS\"}}");
+
+        assertTrue(!provider.supportsNativeTools("no-tools"));
+        assertTrue(provider.supportsNativeTools("legacy"));
+        assertTrue(provider.supportsNativeTools("never-seen"));
+        assertTrue(provider.supportsParallelToolCalls("parallel"));
+        assertTrue(!provider.supportsParallelToolCalls("legacy"));
+        assertTrue(!provider.supportsParallelToolCalls("never-seen"));
+    }
+
+    @Test
     public void parseChatModelsAcceptsMinimalEntries() throws Exception {
         List<String> models = GithubCopilotAiProvider.parseChatModels("{\"data\":[{\"id\":\"gpt-4o\"}]}");
         assertEquals(Arrays.asList("gpt-4o"), models);
@@ -42,6 +88,24 @@ public class GithubCopilotAiProviderTest {
     @Test
     public void parseChatModelsReturnsEmptyWhenNoData() throws Exception {
         assertTrue(GithubCopilotAiProvider.parseChatModels("{\"object\":\"list\"}").isEmpty());
+    }
+
+    @Test
+    public void toolCallContentLiftsPlannedDelayOutOfArgs() throws Exception {
+        org.json.JSONObject args = new org.json.JSONObject().put("command", "npm run dev").put("planned_delay_ms", 5000);
+
+        org.json.JSONObject call = new org.json.JSONObject(AbstractAiProvider.toolCallContent("execute_command_async", args));
+
+        assertEquals(5000, call.getLong("planned_delay_ms"));
+        assertEquals("execute_command_async", call.getString("tool"));
+        assertEquals("npm run dev", call.getJSONObject("args").getString("command"));
+        assertTrue(!call.getJSONObject("args").has("planned_delay_ms"));
+    }
+
+    @Test
+    public void toolCallContentDefaultsToZeroDelay() throws Exception {
+        org.json.JSONObject call = new org.json.JSONObject(AbstractAiProvider.toolCallContent("file", null));
+        assertEquals(0, call.getLong("planned_delay_ms"));
     }
 
     @Test

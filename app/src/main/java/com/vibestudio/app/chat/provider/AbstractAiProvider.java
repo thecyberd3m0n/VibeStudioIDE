@@ -5,6 +5,8 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.chat.prompt.PromptAssets;
+import com.vibestudio.app.mcp.McpClientManager;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.service.LogViewerService;
 
@@ -164,20 +166,7 @@ public abstract class AbstractAiProvider implements AiProvider {
 
     @Override
     public String getSystemInstruction(Context context) {
-        if (context != null) {
-            try (InputStream in = context.getAssets().open("ai/system_instruction.md");
-                 BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line).append("\n");
-                }
-                return sb.toString();
-            } catch (Exception e) {
-                LogViewerService.getInstance().w(getName(), "Failed to load system_instruction.md from assets/ai", e);
-            }
-        }
-        return "";
+        return PromptAssets.read(context, "system_instruction.md");
     }
 
     protected void logRequestDetails(String tag, String method, String url, Map<String, List<String>> headers, String body) {
@@ -238,17 +227,33 @@ public abstract class AbstractAiProvider implements AiProvider {
         return Math.max(1, chars / 4);
     }
 
-    /** Renders a native tool call in the {"tool", "args"} form that ToolExecutionManager parses. */
-    protected static String toolCallContent(String name, JSONObject args) {
+    /**
+     * A native tool call in the {"planned_delay_ms", "tool", "args"} form that ToolExecutionManager parses. A
+     * model-supplied planned_delay_ms (only declared on async tools) is lifted out of the args to the top level.
+     */
+    protected static JSONObject toolCallObject(String name, JSONObject args) {
         try {
+            JSONObject toolArgs = args != null ? new JSONObject(args.toString()) : new JSONObject();
+            long delayMs = Math.max(0L, toolArgs.optLong(McpClientManager.PLANNED_DELAY_FIELD, 0L));
+            toolArgs.remove(McpClientManager.PLANNED_DELAY_FIELD);
             JSONObject call = new JSONObject();
-            call.put("planned_delay_ms", 0);
+            call.put(McpClientManager.PLANNED_DELAY_FIELD, delayMs);
             call.put("tool", name);
-            call.put("args", args != null ? args : new JSONObject());
-            return call.toString();
+            call.put("args", toolArgs);
+            return call;
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /** Same call rendered as the JSON text that goes into a reply's content. */
+    protected static String toolCallContent(String name, JSONObject args) {
+        return toolCallObject(name, args).toString();
+    }
+
+    /** An id for a tool call whose API didn't issue one. */
+    protected static String newCallId() {
+        return "call_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 24);
     }
 
     /** The tool's JSON-schema parameters, or null for argument-less tools (some APIs reject empty object schemas). */

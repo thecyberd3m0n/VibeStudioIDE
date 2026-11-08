@@ -6,6 +6,10 @@ The `terminal` skill provides control over the active shared terminal session in
 - **`execute_command` (Synchronous / Instant)**: Use for quick, non-blocking bash shell commands (e.g., `ls`, `git status`, `cat file`, `pwd`, quick queries). Takes **no planned delay** (`planned_delay_ms: 0`) and returns results directly and instantly without waiting for future readouts, allowing the agent loop to restart immediately.
 - **`execute_command_async` (Asynchronous / Long-running)**: Use for commands that start long-running background tasks, dev servers, watchers, or heavy build processes (e.g., `npm run dev`, `gradlew assembleDebug`, `npm install`). Supports and uses `planned_delay_ms` to pause for process startup or output before capturing initial snapshots. Use `read_terminal_output` to inspect output from ongoing async sessions.
 
+## Waiting for Long-running Commands (`planned_delay_ms`)
+- Set `planned_delay_ms` to a realistic estimate so the result is read back once instead of polling (e.g. 5000 for starting a dev server, 15000 for `npm install` / `ng new`). `execute_command` always uses 0.
+- Never answer with text while a command is still running. Call `read_terminal_output` with `planned_delay_ms` (it waits first, then reads) and extend it on each readout (e.g. 2000, 5000, 10000) until the command finishes. Use `grep_pattern` or `max_lines: 30` to keep reads cheap.
+
 ## Non-Interactive & Automation Best Practices
 - **Prefer Non-Interactive Flags**: Whenever possible, pass non-interactive flags or environment variables to CLI tools to bypass setup wizards (e.g., `npm create vite@latest my-app -- --template react`, `npm init -y`, `CI=true npm test`, `npx --yes ...`).
 - **Auto-respond "No" to telemetry/analytics prompts**: When interactive CLI tools prompt for optional metrics or telemetry sharing (e.g. "share anonymous statistics? y/N", "Send telemetry? y/N"), respond "n" / "N".

@@ -59,6 +59,14 @@ public interface McpServer {
     }
 
     /**
+     * Whether the planned delay must elapse before the tool runs (read-style tools that observe state which
+     * needs time to change) instead of after it (tools that start work and then snapshot it).
+     */
+    default boolean plannedDelayBeforeExecution(String toolName) {
+        return false;
+    }
+
+    /**
      * Creates a tool message view for chat UI for tools handled by this McpServer.
      */
     BaseToolMessageView createToolMessageView(Context context, String toolName);

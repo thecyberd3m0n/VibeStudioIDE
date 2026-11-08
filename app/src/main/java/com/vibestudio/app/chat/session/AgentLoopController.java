@@ -37,6 +37,9 @@ public class AgentLoopController {
 
     public static final int DEFAULT_MAX_TURNS = 50;
 
+    /** Upper bound on tool calls run from one model reply when the model supports parallel calls. */
+    public static final int MAX_PARALLEL_TOOL_CALLS = 8;
+
     /** Appended to the system instruction so the model keeps calling tools until the task is done. */
     public static final String STOP_GUARD = "\n=== AGENT LOOP RULES ===\n"
             + "When executing a multi-step task, EVERY response MUST contain a tool call until the task is complete. "
@@ -45,11 +48,21 @@ public class AgentLoopController {
             + "(text-protocol form: {\"tool\": \"task_complete\", \"args\": {\"summary\": \"...\"}}). "
             + "A response without a tool call is treated as an unfinished turn.\n";
 
-    /** How many text-only replies in a row are answered with a "continue" nudge before the loop gives up. */
-    public static final int MAX_CONSECUTIVE_NUDGES = 2;
-
     public static final String NUDGE_MESSAGE = "Continue: if the task is not finished, call the next tool now. "
             + "If it is finished, or you need input from the user, call 'task_complete'.";
+
+    public static final String TERMINAL_NUDGE_MESSAGE = "A terminal command may still be running. Do not reply with text: "
+            + "call 'read_terminal_output' (set planned_delay_ms to wait for progress) to check it, and keep working "
+            + "until the task is done. When it is finished, or you need input from the user, call 'task_complete'.";
+
+    /** The nudge to send after a text-only reply, given the last tool the model called. */
+    public static String nudgeFor(String lastToolName) {
+        if ("execute_command_async".equals(lastToolName) || "read_terminal_output".equals(lastToolName)
+                || "send_keystroke".equals(lastToolName)) {
+            return TERMINAL_NUDGE_MESSAGE;
+        }
+        return NUDGE_MESSAGE;
+    }
 
     private volatile State mState = State.IDLE;
     private volatile int mMaxTurns = DEFAULT_MAX_TURNS;

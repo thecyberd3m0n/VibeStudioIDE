@@ -42,3 +42,6 @@ compiled_test_res/
 .classpath
 .project
 .settings/
+
+# Kotlin compiler error logs
+.kotlin/errors/
