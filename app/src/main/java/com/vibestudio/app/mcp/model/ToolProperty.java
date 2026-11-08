@@ -38,6 +38,9 @@ public class ToolProperty {
         if (description != null) {
             obj.put("description", description);
         }
+        if (type == PropertyType.ARRAY) {
+            obj.put("items", new JSONObject().put("type", PropertyType.STRING.getValue()));
+        }
         return obj;
     }
 }
