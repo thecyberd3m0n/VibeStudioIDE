@@ -94,9 +94,22 @@ final class CopilotResponsesApi {
             payload.put("tool_choice", "auto");
         }
 
+        if (supportsReasoning(model)) {
+            // Summaries are only returned on request; the encrypted items let reasoning be replayed with store=false.
+            payload.put("reasoning", new JSONObject().put("effort", "medium").put("summary", "auto"));
+            payload.put("include", new JSONArray().put("reasoning.encrypted_content"));
+        }
+
         payload.put("stream", true);
         payload.put("store", false);
         return payload;
+    }
+
+    /** Models known to accept the {@code reasoning} parameter; others may answer HTTP 400. */
+    static boolean supportsReasoning(String model) {
+        if (model == null) return false;
+        String name = model.toLowerCase(java.util.Locale.ROOT);
+        return name.matches("gpt-([5-9]|\\d{2,}).*") || name.matches("o\\d.*");
     }
 
     static final String STATE_KIND = "responses";

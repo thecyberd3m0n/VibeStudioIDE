@@ -211,7 +211,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
             if (tokensUsed <= 0) {
                 tokensUsed = calculateTokenUsage(systemInstruction, history, content);
             }
-            return AiResponse.success(content, tokensUsed).withToolCalls(parseToolCalls(rawResponse));
+            return AiResponse.success(content, parseThoughts(rawResponse), tokensUsed).withToolCalls(parseToolCalls(rawResponse));
         } else {
             String errorMessage = "Error (" + statusCode + "): " + parseErrorResponse(extractBody(rawResponse), statusCode);
             return AiResponse.error(statusCode, errorMessage);
@@ -323,6 +323,11 @@ public class GeminiAiProvider extends AbstractAiProvider {
                     declarations.put(declaration);
                 }
                 payload.put("tools", new JSONArray().put(new JSONObject().put("functionDeclarations", declarations)));
+            }
+
+            if (supportsThoughts(cleanModel)) {
+                payload.put("generationConfig", new JSONObject()
+                        .put("thinkingConfig", new JSONObject().put("includeThoughts", true)));
             }
 
             String requestBody = payload.toString();
@@ -463,6 +468,39 @@ public class GeminiAiProvider extends AbstractAiProvider {
         return calls;
     }
 
+    /** Only these models accept thinkingConfig; others reject it with HTTP 400. */
+    static boolean supportsThoughts(String model) {
+        if (model == null) return false;
+        String name = model.toLowerCase(java.util.Locale.ROOT);
+        if (name.contains("gemini-flash-latest") || name.contains("gemini-pro-latest")) return true; // aliases of current thinking models
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("gemini-(\\d+)(?:\\.(\\d+))?").matcher(name);
+        if (!m.find()) return false;
+        int major = Integer.parseInt(m.group(1));
+        int minor = m.group(2) != null ? Integer.parseInt(m.group(2)) : 0;
+        return major > 2 || (major == 2 && minor >= 5);
+    }
+
+    /** The thought-summary parts of the first candidate, or null when there are none. */
+    private String parseThoughts(String rawResult) {
+        try {
+            JSONArray candidates = new JSONObject(extractBody(rawResult)).optJSONArray("candidates");
+            JSONObject content = candidates != null && candidates.length() > 0
+                    ? candidates.getJSONObject(0).optJSONObject("content") : null;
+            JSONArray parts = content != null ? content.optJSONArray("parts") : null;
+            StringBuilder thoughts = new StringBuilder();
+            for (int i = 0; parts != null && i < parts.length(); i++) {
+                JSONObject part = parts.getJSONObject(i);
+                if (part.optBoolean("thought", false) && !part.optString("text", "").isEmpty()) {
+                    if (thoughts.length() > 0) thoughts.append('\n');
+                    thoughts.append(part.getString("text"));
+                }
+            }
+            return thoughts.length() > 0 ? thoughts.toString().trim() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private String parseGeminiResponse(String rawResult) {
         try {
             String rawJson = extractBody(rawResult);
@@ -480,6 +518,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
                             StringBuilder calls = new StringBuilder();
                             for (int i = 0; i < parts.length(); i++) {
                                 JSONObject part = parts.getJSONObject(i);
+                                if (part.optBoolean("thought", false)) continue;
                                 text.append(part.optString("text", ""));
                                 JSONObject functionCall = part.optJSONObject("functionCall");
                                 if (functionCall != null) {

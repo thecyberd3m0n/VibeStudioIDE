@@ -85,4 +85,14 @@ public class CopilotApiTest {
         assertEquals(0, request.getJSONArray("input").length());
         assertTrue(request.getBoolean("stream"));
     }
+
+    @Test
+    public void requestsReasoningSummariesOnlyForReasoningModels() throws Exception {
+        JSONObject request = CopilotResponsesApi.buildRequest("gpt-6-luna", "SYS", null, null);
+        assertEquals("auto", request.getJSONObject("reasoning").getString("summary"));
+        assertEquals("reasoning.encrypted_content", request.getJSONArray("include").getString(0));
+
+        assertTrue(!CopilotResponsesApi.buildRequest("gpt-4.1", "SYS", null, null).has("reasoning"));
+        assertTrue(!CopilotResponsesApi.buildRequest("grok-4.7", "SYS", null, null).has("reasoning"));
+    }
 }
