@@ -32,6 +32,7 @@ public class AiRouterTest {
 
     @Before
     public void setUp() {
+        com.vibestudio.app.test.ShadowDatabaseHelper.reset();
         mContext = RuntimeEnvironment.getApplication();
         mRouter = new AiRouter();
     }
@@ -106,6 +107,34 @@ public class AiRouterTest {
 
         mRouter.setActiveProviderName("Gemini");
         assertEquals("gemini-secret-key", mRouter.getActiveApiKey(mContext));
+    }
+
+    @Test
+    public void testLoadActiveStateSwitchesToConfiguredProviderWhenDefaultHasNoKey() {
+        DatabaseHelper dbHelper = new DatabaseHelper(mContext);
+        dbHelper.saveApiKey("GitHub Copilot", "gho_token");
+
+        AiRouter router = new AiRouter();
+        router.loadActiveState(mContext);
+
+        assertEquals("GitHub Copilot", router.getActiveProviderName());
+        assertEquals("gho_token", router.getActiveApiKey(mContext));
+
+        AiRouter reloaded = new AiRouter();
+        reloaded.loadActiveState(mContext);
+        assertEquals("GitHub Copilot", reloaded.getActiveProviderName());
+    }
+
+    @Test
+    public void testLoadActiveStateKeepsExplicitSelectionWhenItHasKey() {
+        DatabaseHelper dbHelper = new DatabaseHelper(mContext);
+        dbHelper.saveApiKey("Gemini", "gemini-key");
+        dbHelper.saveApiKey("OpenAI", "openai-key");
+        mRouter.saveActiveSelection(mContext, "OpenAI", "gpt-4o");
+
+        AiRouter router = new AiRouter();
+        router.loadActiveState(mContext);
+        assertEquals("OpenAI", router.getActiveProviderName());
     }
 
     @Test

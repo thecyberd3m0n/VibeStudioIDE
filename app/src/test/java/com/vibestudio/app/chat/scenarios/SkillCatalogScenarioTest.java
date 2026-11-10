@@ -135,4 +135,25 @@ public class SkillCatalogScenarioTest {
         JSONObject res = mManager.getSkillSchema(RuntimeEnvironment.getApplication(), "does-not-exist");
         assertEquals("error", res.getString("status"));
     }
+
+    @Test
+    public void nativeCatalogLeavesOutLoadFlagsAndTheMetaToolForBuiltInSkills() throws Exception {
+        org.json.JSONObject catalog = mManager.getHighLevelCatalog(true);
+
+        assertFalse(catalog.has("meta_tool"));
+        JSONArray skills = catalog.getJSONArray("available_skills");
+        for (int i = 0; i < skills.length(); i++) {
+            assertFalse(skills.getJSONObject(i).has("is_loaded"));
+        }
+        assertTrue(mManager.getHighLevelCatalog(false).has("meta_tool"));
+    }
+
+    @Test
+    public void nativeLoadedSkillsCarryNoToolSchemasForBuiltInSkills() throws Exception {
+        mManager.markSkillLoaded("terminal");
+        android.content.Context context = RuntimeEnvironment.getApplication();
+
+        assertTrue(mManager.getLoadedSkillsInstructions(context, false).contains("inputSchema"));
+        assertFalse(mManager.getLoadedSkillsInstructions(context, true).contains("inputSchema"));
+    }
 }

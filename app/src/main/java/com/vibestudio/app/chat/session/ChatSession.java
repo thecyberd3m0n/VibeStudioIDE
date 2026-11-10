@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
+import com.vibestudio.app.chat.session.AgentLoopController.StepResult;
 import com.vibestudio.app.chat.agents.Agent;
 import com.vibestudio.app.chat.agents.AgentScanner;
 import com.vibestudio.app.chat.agents.AgentToolPolicy;
@@ -13,6 +14,7 @@ import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
 import org.json.JSONObject;
 import com.vibestudio.app.chat.model.ToolResult;
+import com.vibestudio.app.chat.prompt.ToolProtocolPrompt;
 import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.chat.safety.PermissionPromptManager;
 import com.vibestudio.app.chat.safety.WorkspaceBoundaryGuard;
@@ -21,6 +23,7 @@ import com.vibestudio.app.chat.skills.Skill;
 import com.vibestudio.app.chat.skills.SkillScanner;
 import com.vibestudio.app.chat.tool.ToolExecutionManager;
 import com.vibestudio.app.mcp.McpClientManager;
+import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.service.LogViewerService;
 
 import java.io.File;
@@ -33,6 +36,7 @@ import java.util.UUID;
 public class ChatSession {
 
     private static final String TAG = "ChatSession";
+    private static final String GENERIC_ASSISTANT_SENDER = "Assistant";
 
     public interface OnChatMessageListener {
         void onMessageAdded(ChatMessage message);
@@ -50,6 +54,8 @@ public class ChatSession {
     private final AiRouter mAiRouter;
     private WorkspaceChangesetTracker mChangesetTracker;
 
+    private String mLastToolName;
+    private final AgentLoopController mAgentLoop = new AgentLoopController();
     private boolean mIsLoading = false;
     private volatile boolean mStopRequested = false;
     // Agent invoked via /agent-name in the latest user message; applies to that whole turn (including tool loops).
@@ -73,7 +79,7 @@ public class ChatSession {
         this.mAiRouter = aiRouter;
         
         String welcomeMsg = "Hello! Welcome to VibeStudio. How can I assist you?";
-        this.mMessages.add(new ChatMessage("Assistant", welcomeMsg, false));
+        this.mMessages.add(new ChatMessage(GENERIC_ASSISTANT_SENDER, welcomeMsg, false));
     }
 
     public String getId() {
@@ -108,6 +114,10 @@ public class ChatSession {
 
     public McpClientManager getMcpClientManager() {
         return mMcpClientManager;
+    }
+
+    public AgentLoopController getAgentLoop() {
+        return mAgentLoop;
     }
 
     public boolean isStopRequested() {
@@ -201,12 +211,7 @@ public class ChatSession {
                 notifyLoading(true);
             }
         });
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                processUserRequest(context);
-            }
-        }).start();
+        startAgentLoop(context);
     }
 
     public void addUserMessage(final Context context, final String userText) {
@@ -243,29 +248,42 @@ public class ChatSession {
             notifyLoading(true);
         }
 
+        startAgentLoop(context);
+    }
+
+    private void startAgentLoop(final Context context) {
+        mLastToolName = null;
         new Thread(new Runnable() {
             @Override
             public void run() {
-                processUserRequest(context);
+                mAgentLoop.run(
+                        loop -> runTurn(context),
+                        () -> mStopRequested,
+                        () -> postErrorResponse("Stopped after " + mAgentLoop.getMaxTurns()
+                                + " agent turns without finishing. Send a message to continue."),
+                        error -> postErrorResponse("Error: " + error.getMessage()));
             }
         }).start();
     }
 
-    private void processUserRequest(final Context context) {
+    private StepResult runTurn(final Context context) {
         if (mStopRequested) {
             postAssistantResponse("⏹️ Operation stopped by user.");
-            return;
+            return StepResult.FINISHED;
         }
 
         mAiRouter.loadActiveProvider(context);
         String apiKey = mAiRouter.getActiveApiKey(context);
         String activeProviderName = mAiRouter.getActiveProviderName();
         String activeModelName = mAiRouter.getActiveModelName(activeProviderName);
+        // Messages produced during this turn are attributed to the model that generated them, so a
+        // single chat window can show which model authored each reply after the user switches.
+        final String modelAuthor = resolveModelAuthor(activeProviderName, activeModelName);
 
         if (apiKey == null || apiKey.isEmpty()) {
             LogViewerService.getInstance().w(TAG, "No API key found in connection manager for provider: " + activeProviderName);
             postErrorResponse("Error: " + activeProviderName + " API Key is not configured. Please set your API Key in the Models tab.");
-            return;
+            return StepResult.FINISHED;
         }
 
         List<ChatMessage> snapshot;
@@ -276,165 +294,286 @@ public class ChatSession {
         // Apply automatic token history compression rule before sending payload
         snapshot = HistoryCompressor.compressIfNeeded(snapshot);
 
-        // Attach system instructions with workspace scope + high level skills catalog + loaded skills schemas
-        String baseInstruction = mAiRouter.getSystemInstruction(context);
-        String workspaceInstruction = (mWorkspacePath != null && !mWorkspacePath.isEmpty())
-                ? "\n=== ACTIVE WORKSPACE SCOPE ===\nTarget Workspace Path: " + mWorkspacePath
-                + "\nAll file tool paths and terminal working directories default to this workspace scope. Do not read/modify files outside this path without need.\n"
-                : "";
-        String catalogString = mMcpClientManager.getHighLevelCatalog().toString();
-        String loadedSkillsString = mMcpClientManager.getLoadedSkillsInstructions(context);
-        String workspaceInstructions = InstructionsLoader.buildInstructions(mWorkspacePath);
         Agent activeAgent = mActiveAgent;
-        String fullSystemInstruction = baseInstruction 
-                + workspaceInstruction
-                + workspaceInstructions
-                + buildActiveAgentSection(activeAgent)
-                + "\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n" + catalogString
-                + (loadedSkillsString != null && !loadedSkillsString.isEmpty() ? "\n" + loadedSkillsString : "");
+        AgentToolPolicy toolPolicy = new AgentToolPolicy(activeAgent != null ? activeAgent.getTools() : null);
+        boolean nativeTools = mAiRouter.usesNativeTools(activeProviderName, activeModelName);
+        boolean parallelCalls = mAiRouter.usesParallelToolCalls(activeProviderName, activeModelName);
 
-        LogViewerService.getInstance().i(TAG, "Generating content via " + activeProviderName + " using selected model: " + activeModelName);
-        AiResponse response = mAiRouter.generateContent(context, apiKey, fullSystemInstruction, snapshot);
+        LogViewerService.getInstance().i(TAG, "Generating content via " + activeProviderName + " using selected model: " + activeModelName
+                + " (" + (nativeTools ? "native tools" + (parallelCalls ? ", parallel calls" : "") : "text tool protocol") + ")");
+        AiResponse response = mAiRouter.generateContent(context, apiKey,
+                buildSystemInstruction(context, nativeTools, parallelCalls, activeAgent), snapshot,
+                nativeTools ? declaredTools(toolPolicy) : null);
+
+        // The API refused the declared tools: ask again with the text protocol (prompt rebuilt with the schemas
+        // and call format) and, if that works, remember to use it for this model.
+        if (nativeTools && !response.isSuccess() && response.getStatusCode() == 400 && !mStopRequested) {
+            LogViewerService.getInstance().w(TAG, "Request with native tools rejected (HTTP 400); retrying with the text tool protocol.");
+            AiResponse textResponse = mAiRouter.generateContent(context, apiKey,
+                    buildSystemInstruction(context, false, false, activeAgent), snapshot, null);
+            if (textResponse.isSuccess()) {
+                mAiRouter.markNativeToolsUnsupported(context, activeProviderName, activeModelName);
+                response = textResponse;
+                parallelCalls = false;
+            }
+        }
 
         if (mStopRequested) {
             postAssistantResponse("⏹️ Operation stopped by user.");
-            return;
+            return StepResult.FINISHED;
         }
 
         if (!response.isSuccess()) {
             LogViewerService.getInstance().w(TAG, "AI Provider (" + activeProviderName + " / " + activeModelName + ") error: " + response.getErrorMessage());
             postErrorResponse(response.getErrorMessage());
-            return;
+            return StepResult.FINISHED;
         }
 
+        String reasoningContent = response.getReasoningContent();
         String rawReply = response.getContent();
 
         if (rawReply == null || rawReply.trim().isEmpty()) {
             LogViewerService.getInstance().w(TAG, "Received empty response content from " + activeProviderName);
             postErrorResponse("Error: Received empty response from " + activeProviderName + ". Please tap Retry below.");
-            return;
+            return StepResult.FINISHED;
         }
 
         if (rawReply.startsWith("Error:")) {
             postErrorResponse(rawReply);
-            return;
+            return StepResult.FINISHED;
         }
 
-        // 1. Tool Call Parsing, Path Canonicalization & Pre-execution State Preparation (Funneled)
-        WorkspaceChangesetTracker tracker = context != null ? getChangesetTracker(context) : null;
-        ToolExecutionManager.PreparedToolCall prep = null;
-        try {
-            prep = mToolExecutionManager.prepareToolCall(context, rawReply, mWorkspacePath, tracker);
-        } catch (Exception e) {
-            String errorMsg = "Error: " + e.getMessage();
-            LogViewerService.getInstance().e(TAG, errorMsg);
-            postToolStatusMessage(rawReply, ChatMessage.MessageType.ERROR, "tool", null);
-            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, "tool", null);
-            ChatMessage toolResultMsg = new ChatMessage("System Tool", errorMsg, true, ChatMessage.MessageType.ERROR, "tool", null);
-            synchronized (ChatSession.this) {
-                mMessages.add(modelCallMsg);
-                mMessages.add(toolResultMsg);
+        if ((reasoningContent == null || reasoningContent.trim().isEmpty()) && rawReply.contains("{")) {
+            int jsonIdx = rawReply.indexOf("{");
+            String preceding = rawReply.substring(0, jsonIdx).trim();
+            if (!preceding.isEmpty()) {
+                reasoningContent = preceding;
             }
-            notifyMessageAdded(modelCallMsg);
-            notifyMessageAdded(toolResultMsg);
-            notifyLoading(false);
-            return;
         }
 
-        if (prep != null) {
-            JSONObject toolCallObj = prep.getToolCallObj();
-            String toolName = prep.getToolName();
-            JSONObject args = prep.getArgs();
+        if (reasoningContent != null && !reasoningContent.trim().isEmpty()) {
+            postReasoningMessage(modelAuthor, reasoningContent.trim());
+        }
 
-            // 1b. Active agent's tool allow-list
-            AgentToolPolicy toolPolicy = new AgentToolPolicy(activeAgent != null ? activeAgent.getTools() : null);
-            if (toolPolicy.isEnforced() && !McpClientManager.isMetaTool(toolName) && !toolPolicy.isAllowed(toolName)) {
-                String blockedMsg = "Error: Tool '" + toolName + "' is not permitted for agent '" + activeAgent.getName()
-                        + "' (restricted by its 'tools' list). Use only permitted tools or answer without it.";
-                postToolStatusMessage(blockedMsg, ChatMessage.MessageType.ERROR, toolName, args);
-
-                ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
-                ChatMessage toolResultMsg = new ChatMessage("System Tool", blockedMsg, true, ChatMessage.MessageType.ERROR, toolName, null);
-                synchronized (ChatSession.this) {
-                    mMessages.add(modelCallMsg);
-                    mMessages.add(toolResultMsg);
-                }
-
-                if (!mStopRequested) {
-                    new Thread(() -> processUserRequest(context)).start();
-                }
-                return;
+        // 1. Tool call parsing. Every call in the reply is run in order when the model supports parallel calls,
+        // otherwise only the first; the rest are reported back as skipped so the model can re-issue them.
+        String turnId = UUID.randomUUID().toString();
+        List<TurnCall> parsedCalls = new ArrayList<>();
+        if (nativeTools && !response.getToolCalls().isEmpty()) {
+            for (AiResponse.ToolCall nativeCall : response.getToolCalls()) {
+                parsedCalls.add(new TurnCall(nativeCall.getId(), nativeCall.getCall(), nativeCall.getState(), nativeCall.getStateKind(), turnId));
             }
+        } else {
+            for (JSONObject textCall : ToolExecutionManager.parseToolCalls(rawReply)) {
+                parsedCalls.add(new TurnCall("call_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24), textCall, null, null, turnId));
+            }
+        }
+        if (!parsedCalls.isEmpty()) {
+            int allowed = parallelCalls ? AgentLoopController.MAX_PARALLEL_TOOL_CALLS : 1;
+            if (parsedCalls.size() > allowed) {
+                LogViewerService.getInstance().w(TAG, parsedCalls.size() + " tool calls in one reply; running " + allowed + ", skipping the rest.");
+            }
+            WorkspaceChangesetTracker tracker = context != null ? getChangesetTracker(context) : null;
+            for (int i = 0; i < Math.min(allowed, parsedCalls.size()); i++) {
+                ToolExecutionManager.PreparedToolCall prep;
+                try {
+                    prep = mToolExecutionManager.prepareToolCall(context, parsedCalls.get(i).call, mWorkspacePath, tracker);
+                } catch (Exception e) {
+                    String errorMsg = "Error: " + e.getMessage();
+                    LogViewerService.getInstance().e(TAG, errorMsg);
+                    postToolStatusMessage(rawReply, ChatMessage.MessageType.ERROR, "tool", null);
+                    ChatMessage modelCallMsg = new ChatMessage(modelAuthor, rawReply, false, ChatMessage.MessageType.TOOL_CALL, "tool", null);
+                    ChatMessage toolResultMsg = new ChatMessage("System Tool", errorMsg, true, ChatMessage.MessageType.ERROR, "tool", null);
+                    synchronized (ChatSession.this) {
+                        mMessages.add(modelCallMsg);
+                        mMessages.add(toolResultMsg);
+                    }
+                    notifyMessageAdded(modelCallMsg);
+                    notifyMessageAdded(toolResultMsg);
+                    notifyLoading(false);
+                    return StepResult.FINISHED;
+                }
+                if (runToolCall(context, prep, parsedCalls.get(i), modelAuthor, activeAgent, toolPolicy) == StepResult.FINISHED) {
+                    return StepResult.FINISHED;
+                }
+            }
+            for (int i = allowed; i < parsedCalls.size(); i++) {
+                recordSkippedToolCall(modelAuthor, parsedCalls.get(i), allowed);
+            }
+            return StepResult.CONTINUE;
+        }
 
-            // 2. Boundary Guard Check & Permission Escalation
-            if (mWorkspacePath != null && !mWorkspacePath.isEmpty()) {
-                List<String> targetPaths = WorkspaceBoundaryGuard.getToolTargetPaths(toolName, args);
-                for (String targetPath : targetPaths) {
-                    boolean insideWorkspace = WorkspaceBoundaryGuard.isWithinWorkspace(targetPath, mWorkspacePath);
-                    if (!insideWorkspace) {
-                        boolean granted = PermissionPromptManager.getInstance().requestPermissionSync(context, toolName, targetPath);
-                        if (!granted) {
-                            String blockedMsg = "Error: Access denied to path outside workspace boundary (" + targetPath + ").";
-                            postToolStatusMessage(blockedMsg, ChatMessage.MessageType.ERROR, toolName, args);
+        // A reply without a tool call is not a finish signal; only 'task_complete' is, so the loop keeps nudging.
+        // A cap on consecutive nudges is tracked as a future enhancement (issue #34).
+        ChatMessage replyMsg = new ChatMessage(modelAuthor, rawReply, false);
+        ChatMessage nudgeMsg = new ChatMessage("System Tool", AgentLoopController.nudgeFor(mLastToolName), true);
+        synchronized (this) {
+            mMessages.add(replyMsg);
+            mMessages.add(nudgeMsg);
+        }
+        notifyMessageAdded(replyMsg);
+        return StepResult.CONTINUE;
+    }
 
-                            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
-                            ChatMessage toolResultMsg = new ChatMessage("System Tool", blockedMsg, true, ChatMessage.MessageType.ERROR, toolName, null);
-                            synchronized (ChatSession.this) {
-                                mMessages.add(modelCallMsg);
-                                mMessages.add(toolResultMsg);
-                            }
+    private String buildSystemInstruction(Context context, boolean nativeTools, boolean parallelCalls, Agent activeAgent) {
+        String workspaceScope = (mWorkspacePath != null && !mWorkspacePath.isEmpty())
+                ? "\n=== ACTIVE WORKSPACE SCOPE ===\nTarget Workspace Path: " + mWorkspacePath
+                + "\nAll file tool paths and terminal working directories default to this workspace scope. Do not read/modify files outside this path without need.\n"
+                : "";
+        String catalogString = mMcpClientManager.getHighLevelCatalog(nativeTools).toString();
+        String loadedSkillsString = mMcpClientManager.getLoadedSkillsInstructions(context, nativeTools);
+        // Stable parts first, parts that change during a session last (helps prompt-prefix caching).
+        return mAiRouter.getSystemInstruction(context)
+                + ToolProtocolPrompt.build(context, nativeTools, parallelCalls)
+                + workspaceScope
+                + InstructionsLoader.buildInstructions(mWorkspacePath)
+                + buildActiveAgentSection(activeAgent)
+                + "\n=== HIGH-LEVEL SKILLS CATALOG (LAZY LOADING) ===\n" + catalogString
+                + (loadedSkillsString != null && !loadedSkillsString.isEmpty() ? "\n" + loadedSkillsString : "")
+                + AgentLoopController.STOP_GUARD;
+    }
 
-                            if (!mStopRequested) {
-                                new Thread(() -> processUserRequest(context)).start();
-                            }
-                            return;
-                        }
+    /** The tools to declare natively: everything the active agent may use, in a fixed order. */
+    private List<McpTool> declaredTools(AgentToolPolicy toolPolicy) {
+        List<McpTool> tools = new ArrayList<>();
+        for (McpTool tool : mMcpClientManager.getActiveTools()) {
+            String name = tool.getName();
+            if (!toolPolicy.isEnforced() || McpClientManager.isMetaTool(name)
+                    || McpClientManager.isTaskCompleteTool(name) || toolPolicy.isAllowed(name)) {
+                tools.add(tool);
+            }
+        }
+        return tools;
+    }
+
+    /** One tool call of a model reply, with the id and replay data its provider attached. */
+    private static final class TurnCall {
+        final String id;
+        final JSONObject call;
+        final String state;
+        final String stateKind;
+        final String turnId;
+
+        TurnCall(String id, JSONObject call, String state, String stateKind, String turnId) {
+            this.id = id;
+            this.call = call;
+            this.state = state;
+            this.stateKind = stateKind;
+            this.turnId = turnId;
+        }
+
+        /** The call message carries the replay state; its result only the link. */
+        ChatMessage linkCall(ChatMessage message) {
+            return message.withToolLink(id, turnId, state, stateKind);
+        }
+
+        ChatMessage linkResult(ChatMessage message) {
+            return message.withToolLink(id, turnId, null, null);
+        }
+    }
+
+    /** Tells the model that a call beyond the per-response limit was not run, as that call's result. */
+    private void recordSkippedToolCall(String modelAuthor, TurnCall turnCall, int allowed) {
+        String toolName = turnCall.call.optString("tool", "tool");
+        JSONObject args = turnCall.call.optJSONObject("args");
+        String note = "Not executed: only " + allowed + " tool call" + (allowed == 1 ? " is" : "s are")
+                + " run per response. Call '" + toolName + "' again in a later response if it is still needed.";
+        ChatMessage modelCallMsg = turnCall.linkCall(new ChatMessage(modelAuthor, turnCall.call.toString(), false, ChatMessage.MessageType.TOOL_CALL, toolName, args));
+        ChatMessage toolResultMsg = turnCall.linkResult(new ChatMessage("System Tool", note, true, ChatMessage.MessageType.ERROR, toolName, null));
+        synchronized (ChatSession.this) {
+            mMessages.add(modelCallMsg);
+            mMessages.add(toolResultMsg);
+        }
+        postToolStatusMessage(note, ChatMessage.MessageType.ERROR, toolName, args);
+    }
+
+    /** Runs one prepared tool call: agent allow-list, workspace boundary, execution and history entries. */
+    private StepResult runToolCall(Context context, ToolExecutionManager.PreparedToolCall prep, TurnCall turnCall, String modelAuthor,
+                                   Agent activeAgent, AgentToolPolicy toolPolicy) {
+        JSONObject toolCallObj = prep.getToolCallObj();
+        String toolName = prep.getToolName();
+        JSONObject args = prep.getArgs();
+        String callText = toolCallObj.toString();
+
+        mLastToolName = toolName;
+
+        if (McpClientManager.isTaskCompleteTool(toolName)) {
+            String summary = args.optString("summary", "").trim();
+            if (summary.isEmpty()) {
+                finishLoading();
+            } else {
+                postAssistantResponse(modelAuthor, summary);
+            }
+            return StepResult.FINISHED;
+        }
+
+        // 1b. Active agent's tool allow-list
+        if (toolPolicy.isEnforced() && !McpClientManager.isMetaTool(toolName) && !toolPolicy.isAllowed(toolName)) {
+            String blockedMsg = "Error: Tool '" + toolName + "' is not permitted for agent '" + activeAgent.getName()
+                    + "' (restricted by its 'tools' list). Use only permitted tools or answer without it.";
+            recordBlockedToolCall(modelAuthor, turnCall, callText, toolName, args, blockedMsg);
+            return StepResult.CONTINUE;
+        }
+
+        // 2. Boundary Guard Check & Permission Escalation
+        if (mWorkspacePath != null && !mWorkspacePath.isEmpty()) {
+            List<String> targetPaths = WorkspaceBoundaryGuard.getToolTargetPaths(toolName, args);
+            for (String targetPath : targetPaths) {
+                boolean insideWorkspace = WorkspaceBoundaryGuard.isWithinWorkspace(targetPath, mWorkspacePath);
+                if (!insideWorkspace) {
+                    boolean granted = PermissionPromptManager.getInstance().requestPermissionSync(context, toolName, targetPath);
+                    if (!granted) {
+                        recordBlockedToolCall(modelAuthor, turnCall, callText, toolName, args,
+                                "Error: Access denied to path outside workspace boundary (" + targetPath + ").");
+                        return StepResult.CONTINUE;
                     }
                 }
             }
-
-            String requestMsg = prep.getFormattedText() != null ? prep.getFormattedText().toString() : rawReply;
-            LogViewerService.getInstance().i(TAG, "Executing tool call requested by AI: " + toolName + " | Args: " + args.toString());
-
-            postToolStatusMessage(requestMsg, ChatMessage.MessageType.TOOL_CALL, toolName, args);
-
-            // Execute tool with context pass-through
-            ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
-
-            // Record assistant call and system tool result in conversation history (for LLM context)
-            ChatMessage modelCallMsg = new ChatMessage("Assistant", rawReply, false, ChatMessage.MessageType.TOOL_CALL, toolName, args);
-            ChatMessage toolResultMsg = new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
-                    toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT, toolName, null);
-
-            synchronized (ChatSession.this) {
-                mMessages.add(modelCallMsg);
-                mMessages.add(toolResultMsg);
-            }
-
-            // If execution caused an error, notify UI
-            if (toolResult.isError()) {
-                postToolStatusMessage(toolResult.getFormattedOutput(), ChatMessage.MessageType.ERROR, toolName, null);
-            }
-
-            if (mStopRequested) {
-                postAssistantResponse("⏹️ Operation stopped by user.");
-                return;
-            }
-
-            LogViewerService.getInstance().i(TAG, "Tool execution completed for " + toolName + ". Continuing agent execution loop...");
-
-            // Continuous execution loop without arbitrary depth limit
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    processUserRequest(context);
-                }
-            }).start();
-            return;
         }
 
-        // Final normal assistant text response
-        postAssistantResponse(rawReply);
+        String requestMsg = prep.getFormattedText() != null ? prep.getFormattedText().toString() : callText;
+        LogViewerService.getInstance().i(TAG, "Executing tool call requested by AI: " + toolName + " | Args: " + args.toString());
+
+        postToolStatusMessage(requestMsg, ChatMessage.MessageType.TOOL_CALL, toolName, args);
+
+        // Execute tool with context pass-through
+        mAgentLoop.setState(AgentLoopController.State.EXECUTING_TOOL);
+        ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
+
+        // Record assistant call and system tool result in conversation history (for LLM context)
+        ChatMessage modelCallMsg = turnCall.linkCall(new ChatMessage(modelAuthor, callText, false, ChatMessage.MessageType.TOOL_CALL, toolName, args));
+        ChatMessage toolResultMsg = turnCall.linkResult(new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
+                toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT, toolName, null));
+
+        synchronized (ChatSession.this) {
+            mMessages.add(modelCallMsg);
+            mMessages.add(toolResultMsg);
+        }
+
+        // If execution caused an error, notify UI
+        if (toolResult.isError()) {
+            postToolStatusMessage(toolResult.getFormattedOutput(), ChatMessage.MessageType.ERROR, toolName, null);
+        }
+
+        if (mStopRequested) {
+            postAssistantResponse("⏹️ Operation stopped by user.");
+            return StepResult.FINISHED;
+        }
+
+        LogViewerService.getInstance().i(TAG, "Tool execution completed for " + toolName + ". Continuing agent execution loop...");
+
+        return StepResult.CONTINUE;
+    }
+
+    private void recordBlockedToolCall(String modelAuthor, TurnCall turnCall, String callText, String toolName, JSONObject args, String blockedMsg) {
+        postToolStatusMessage(blockedMsg, ChatMessage.MessageType.ERROR, toolName, args);
+
+        ChatMessage modelCallMsg = turnCall.linkCall(new ChatMessage(modelAuthor, callText, false, ChatMessage.MessageType.TOOL_CALL, toolName, args));
+        ChatMessage toolResultMsg = turnCall.linkResult(new ChatMessage("System Tool", blockedMsg, true, ChatMessage.MessageType.ERROR, toolName, null));
+        synchronized (ChatSession.this) {
+            mMessages.add(modelCallMsg);
+            mMessages.add(toolResultMsg);
+        }
     }
 
     private static String buildActiveAgentSection(Agent agent) {
@@ -449,6 +588,15 @@ public class ChatSession {
         return sb.toString();
     }
 
+    private void postReasoningMessage(final String sender, final String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        ChatMessage msg = new ChatMessage(sender, text, false, ChatMessage.MessageType.REASONING);
+        synchronized (this) {
+            mMessages.add(msg);
+        }
+        notifyMessageAdded(msg);
+    }
+
     private void postToolStatusMessage(final String summaryText, final ChatMessage.MessageType type, final String toolName, final JSONObject toolArgs) {
         mMainHandler.post(new Runnable() {
             @Override
@@ -461,11 +609,37 @@ public class ChatSession {
         });
     }
 
-    private void postAssistantResponse(final String reply) {
+    /** Builds the sender label, e.g. "GitHub Copilot gpt-4o"; falls back to whichever part is known. */
+    static String resolveModelAuthor(String providerName, String modelName) {
+        String provider = providerName != null ? providerName.trim() : "";
+        String model = modelName != null ? modelName.trim() : "";
+        if (!provider.isEmpty() && !model.isEmpty()) return provider + " " + model;
+        if (!model.isEmpty()) return model;
+        if (!provider.isEmpty()) return provider;
+        return GENERIC_ASSISTANT_SENDER;
+    }
+
+    private void finishLoading() {
         mMainHandler.post(new Runnable() {
             @Override
             public void run() {
-                ChatMessage assistantMsg = new ChatMessage("Assistant", reply, false);
+                synchronized (ChatSession.this) {
+                    mIsLoading = false;
+                    notifyLoading(false);
+                }
+            }
+        });
+    }
+
+    private void postAssistantResponse(final String reply) {
+        postAssistantResponse(GENERIC_ASSISTANT_SENDER, reply);
+    }
+
+    private void postAssistantResponse(final String sender, final String reply) {
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                ChatMessage assistantMsg = new ChatMessage(sender, reply, false);
                 synchronized (ChatSession.this) {
                     mMessages.add(assistantMsg);
                     mIsLoading = false;
@@ -492,30 +666,40 @@ public class ChatSession {
     }
 
     private void notifyMessageAdded(final ChatMessage message) {
-        List<OnChatMessageListener> listeners;
-        synchronized (mListeners) {
-            listeners = new ArrayList<>(mListeners);
-        }
-        for (OnChatMessageListener l : listeners) {
-            try {
-                l.onMessageAdded(message);
-            } catch (Exception e) {
-                LogViewerService.getInstance().e(TAG, "Error notifying message listener", e);
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                List<OnChatMessageListener> listeners;
+                synchronized (mListeners) {
+                    listeners = new ArrayList<>(mListeners);
+                }
+                for (OnChatMessageListener l : listeners) {
+                    try {
+                        l.onMessageAdded(message);
+                    } catch (Exception e) {
+                        LogViewerService.getInstance().e(TAG, "Error notifying message listener", e);
+                    }
+                }
             }
-        }
+        });
     }
 
     private void notifyLoading(final boolean isLoading) {
-        List<OnChatMessageListener> listeners;
-        synchronized (mListeners) {
-            listeners = new ArrayList<>(mListeners);
-        }
-        for (OnChatMessageListener l : listeners) {
-            try {
-                l.onResponseLoading(isLoading);
-            } catch (Exception e) {
-                LogViewerService.getInstance().e(TAG, "Error notifying loading listener", e);
+        mMainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                List<OnChatMessageListener> listeners;
+                synchronized (mListeners) {
+                    listeners = new ArrayList<>(mListeners);
+                }
+                for (OnChatMessageListener l : listeners) {
+                    try {
+                        l.onResponseLoading(isLoading);
+                    } catch (Exception e) {
+                        LogViewerService.getInstance().e(TAG, "Error notifying loading listener", e);
+                    }
+                }
             }
-        }
+        });
     }
 }

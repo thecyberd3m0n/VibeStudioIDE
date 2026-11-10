@@ -786,6 +786,20 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     private void addChatMessageUI(Context context, ChatMessage msg) {
         if (context == null || mChatContainer == null) return;
 
+        if (ToolMessageFactory.isReasoningMessage(msg)) {
+            int childCount = mChatContainer.getChildCount();
+            if (childCount > 0) {
+                View lastChild = mChatContainer.getChildAt(childCount - 1);
+                if (lastChild instanceof com.vibestudio.app.view.ReasoningToolMessage) {
+                    ((com.vibestudio.app.view.ReasoningToolMessage) lastChild).appendToolMessage(msg);
+                    return;
+                }
+            }
+            com.vibestudio.app.view.ReasoningToolMessage reasoningView = ToolMessageFactory.createReasoningMessageView(context, msg);
+            mChatContainer.addView(reasoningView);
+            return;
+        }
+
         // Centralized SOLID check and view creation via ToolMessageFactory
         if (ToolMessageFactory.isToolMessage(msg)) {
             int childCount = mChatContainer.getChildCount();
@@ -944,19 +958,35 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     }
 
     @Override
-    public void onMessageAdded(ChatMessage message) {
-        Context context = getContext();
-        if (context != null) {
-            addChatMessageUI(context, message);
-            updateChangesetBar(context);
-            scrollToBottom();
+    public void onMessageAdded(final ChatMessage message) {
+        android.app.Activity activity = getActivity();
+        if (activity != null) {
+            activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Context context = getContext();
+                    if (context != null) {
+                        addChatMessageUI(context, message);
+                        updateChangesetBar(context);
+                        scrollToBottom();
+                    }
+                }
+            });
         }
     }
 
     @Override
-    public void onResponseLoading(boolean isLoading) {
-        updateLoadingUI(isLoading);
-            Context context = getContext();
-            if (context != null) updateChangesetBar(context);
+    public void onResponseLoading(final boolean isLoading) {
+        android.app.Activity activity = getActivity();
+        if (activity != null) {
+            activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    updateLoadingUI(isLoading);
+                    Context context = getContext();
+                    if (context != null) updateChangesetBar(context);
+                }
+            });
+        }
     }
 }

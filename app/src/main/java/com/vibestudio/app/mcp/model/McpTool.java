@@ -31,6 +31,13 @@ public class McpTool {
         return properties;
     }
 
+    /** Returns a copy of this tool with one extra optional property appended. */
+    public McpTool withOptionalProperty(String propName, PropertyType type, String propDescription) {
+        List<ToolProperty> extended = new ArrayList<>(properties);
+        extended.add(new ToolProperty(propName, type, propDescription, false));
+        return new McpTool(name, description, extended);
+    }
+
     public JSONObject toJsonSchema() {
         JSONObject toolObj = new JSONObject();
         try {
