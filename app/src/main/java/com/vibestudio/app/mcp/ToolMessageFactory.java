@@ -5,6 +5,7 @@ import android.content.Context;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.view.BaseToolMessageView;
 import com.vibestudio.app.view.CustomStatusToolMessage;
+import com.vibestudio.app.view.ReasoningToolMessage;
 
 public class ToolMessageFactory {
 
@@ -25,6 +26,10 @@ public class ToolMessageFactory {
         return msg != null && (msg.getType() == ChatMessage.MessageType.TOOL_CALL || msg.getType() == ChatMessage.MessageType.TOOL_RESULT);
     }
 
+    public static boolean isReasoningMessage(ChatMessage msg) {
+        return msg != null && msg.getType() == ChatMessage.MessageType.REASONING;
+    }
+
     public static BaseToolMessageView createToolMessageView(Context context, ChatMessage msg) {
         String toolName = msg != null ? msg.getToolName() : "";
         McpServer server = getClientManager().findServerForTool(toolName);
@@ -38,6 +43,12 @@ public class ToolMessageFactory {
             view = new CustomStatusToolMessage(context);
         }
 
+        view.bind(msg);
+        return view;
+    }
+
+    public static ReasoningToolMessage createReasoningMessageView(Context context, ChatMessage msg) {
+        ReasoningToolMessage view = new ReasoningToolMessage(context);
         view.bind(msg);
         return view;
     }

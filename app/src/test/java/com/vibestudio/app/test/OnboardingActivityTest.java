@@ -53,11 +53,11 @@ public class OnboardingActivityTest {
         Button btnBack = activity.findViewById(R.id.btn_back);
         Button btnConfigGitUser = activity.findViewById(R.id.btn_config_git_user);
         Button btnConfigSshKeys = activity.findViewById(R.id.btn_config_ssh_keys);
-        View step4Layout = activity.findViewById(R.id.step4_layout);
+        View vcsStepLayout = activity.findViewById(R.id.step3_layout);
 
         Assert.assertNotNull("btn_config_git_user should exist", btnConfigGitUser);
         Assert.assertNotNull("btn_config_ssh_keys should exist", btnConfigSshKeys);
-        Assert.assertNotNull("step4_layout should exist", step4Layout);
+        Assert.assertNotNull("step3_layout (hosts Version Control controls) should exist", vcsStepLayout);
 
         // Navigate step 1 -> step 2
         btnNext.performClick();

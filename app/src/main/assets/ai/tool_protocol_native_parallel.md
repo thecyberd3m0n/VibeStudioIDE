@@ -1,0 +1,1 @@
+You may call several tools in one response when the calls are independent (for example reading several files). They run in the order given, and none of them sees another's result. Do not batch calls that depend on each other's results, and do not combine a destructive call with the reads that decide whether it is needed.

@@ -118,15 +118,19 @@ public class OpenAiProvider extends AbstractAiProvider {
             conn.setDoOutput(true);
 
             JSONArray messagesArray = new JSONArray();
+            boolean isReasoningModel = targetModel.startsWith("o1") || targetModel.startsWith("o3");
             if (systemInstruction != null && !systemInstruction.trim().isEmpty()) {
                 JSONObject sysMsg = new JSONObject();
-                sysMsg.put("role", "system");
+                sysMsg.put("role", isReasoningModel ? "developer" : "system");
                 sysMsg.put("content", systemInstruction);
                 messagesArray.put(sysMsg);
             }
 
             if (history != null) {
                 for (ChatMessage msg : history) {
+                    if (msg != null && msg.getType() == ChatMessage.MessageType.REASONING) {
+                        continue;
+                    }
                     JSONObject chatMsg = new JSONObject();
                     chatMsg.put("role", msg.isUser() ? "user" : "assistant");
                     chatMsg.put("content", msg.getText());
@@ -176,11 +180,21 @@ public class OpenAiProvider extends AbstractAiProvider {
                 if (choices.length() > 0) {
                     JSONObject choice = choices.getJSONObject(0);
                     JSONObject msg = choice.getJSONObject("message");
-                    String resContent = msg.getString("content");
+                    String resContent = msg.optString("content", "");
+                    String reasoningContent = msg.optString("reasoning_content", null);
+                    if (reasoningContent == null || reasoningContent.trim().isEmpty()) {
+                        reasoningContent = msg.optString("thinking", null);
+                    }
+
+                    if (resContent.trim().isEmpty() && reasoningContent != null && !reasoningContent.trim().isEmpty()) {
+                        resContent = reasoningContent;
+                        reasoningContent = null;
+                    }
+
                     if (tokensUsed <= 0) {
                         tokensUsed = calculateTokenUsage(systemInstruction, history, resContent);
                     }
-                    return AiResponse.success(resContent, tokensUsed);
+                    return AiResponse.success(resContent, reasoningContent, tokensUsed);
                 }
                 return AiResponse.success("No content returned.", tokensUsed);
             } else {

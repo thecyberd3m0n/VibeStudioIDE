@@ -13,6 +13,9 @@ import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class ToolExecutionManager {
 
     private static final String TAG = "ToolExecutionManager";
@@ -53,27 +56,81 @@ public class ToolExecutionManager {
         this.mMcpClientManager = mcpClientManager;
     }
 
-    private static JSONObject parseToolCallInternal(String rawText) {
-        if (rawText == null || rawText.trim().isEmpty()) return null;
+    /**
+     * Every tool call in a reply, in order: JSON blocks with a "tool" key, found with string-aware brace matching.
+     * Falls back to the malformed "call:name{...}" form (single call) when no block is found.
+     */
+    public static List<JSONObject> parseToolCalls(String rawText) {
+        List<JSONObject> calls = new ArrayList<>();
+        if (rawText == null || rawText.trim().isEmpty()) return calls;
 
-        // 1. Standard JSON format: {"planned_delay_ms": 0, "tool": "tool_name", "args": {...}}
         if (rawText.contains("{") && rawText.contains("\"tool\"")) {
-            try {
-                int jsonStart = rawText.indexOf("{");
-                int jsonEnd = rawText.lastIndexOf("}");
-                if (jsonStart != -1 && jsonEnd > jsonStart) {
-                    String jsonBlock = rawText.substring(jsonStart, jsonEnd + 1).trim();
-                    JSONObject toolCallObj = new JSONObject(jsonBlock);
-                    String toolName = toolCallObj.optString("tool", "");
-                    if (!toolName.isEmpty()) {
-                        return toolCallObj;
-                    }
+            int len = rawText.length();
+            int i = 0;
+            while (i < len) {
+                if (rawText.charAt(i) != '{') {
+                    i++;
+                    continue;
                 }
-            } catch (Exception e) {
-                LogViewerService.getInstance().w(TAG, "Failed parsing standard JSON tool call: " + e.getMessage());
+                int end = matchingBrace(rawText, i);
+                if (end < 0) {
+                    i++;
+                    continue;
+                }
+                try {
+                    JSONObject obj = new JSONObject(rawText.substring(i, end + 1).trim());
+                    if (obj.has("tool") && !obj.optString("tool", "").isEmpty()) {
+                        calls.add(obj);
+                        i = end + 1;
+                        continue;
+                    }
+                } catch (Exception ignored) {}
+                i++;
             }
+            if (!calls.isEmpty()) return calls;
         }
 
+        JSONObject recovered = parseMalformedCall(rawText);
+        if (recovered != null) calls.add(recovered);
+        return calls;
+    }
+
+    /** Index of the brace closing the one at {@code start}, ignoring braces inside JSON strings; -1 if unbalanced. */
+    private static int matchingBrace(String text, int start) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int j = start; j < text.length(); j++) {
+            char c = text.charAt(j);
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (c == '\\' && inString) {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                inString = !inString;
+                continue;
+            }
+            if (inString) continue;
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) return j;
+            }
+        }
+        return -1;
+    }
+
+    private static JSONObject parseToolCallInternal(String rawText) {
+        List<JSONObject> calls = parseToolCalls(rawText);
+        return calls.isEmpty() ? null : calls.get(0);
+    }
+
+    private static JSONObject parseMalformedCall(String rawText) {
         // 2. Malformed function call fallback: e.g. "call:editor:editor_read_file{"path":"..."}" or "call:file_list_directory{"path":"..."}"
         if (rawText.contains("call:") && rawText.contains("{")) {
             try {
@@ -113,6 +170,11 @@ public class ToolExecutionManager {
         if (toolCallObj == null) {
             return null;
         }
+        return prepareToolCall(context, toolCallObj, workspacePath, tracker);
+    }
+
+    /** Canonicalizes paths and builds the UI text for one already parsed tool call. */
+    public PreparedToolCall prepareToolCall(Context context, JSONObject toolCallObj, String workspacePath, WorkspaceChangesetTracker tracker) throws Exception {
 
         String toolName = toolCallObj.optString("tool", "unknown");
         JSONObject args = toolCallObj.optJSONObject("args");
@@ -155,6 +217,12 @@ public class ToolExecutionManager {
         long plannedDelayMs = Math.max(0L, toolCallObj.optLong("planned_delay_ms", 0L));
         if (plannedDelayMs > 0 && !mMcpClientManager.supportsPlannedDelay(toolName)) {
             LogViewerService.getInstance().i(TAG, "Reducing planned delay to 0ms for simple/synchronous tool: " + toolName);
+            plannedDelayMs = 0L;
+        }
+
+        if (plannedDelayMs > 0 && mMcpClientManager.plannedDelayBeforeExecution(toolName)) {
+            LogViewerService.getInstance().i(TAG, "Executing planned delay of " + plannedDelayMs + " ms before reading with tool: " + toolName);
+            performDelay(plannedDelayMs);
             plannedDelayMs = 0L;
         }
 

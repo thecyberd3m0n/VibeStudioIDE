@@ -11,6 +11,7 @@ import android.content.Context;
 import android.os.Looper;
 
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.chat.router.AiRouter;
 import com.vibestudio.app.chat.session.ChatSession;
 import com.vibestudio.app.chat.skills.Skill;
 import com.vibestudio.app.db.DatabaseHelper;
@@ -328,5 +329,50 @@ public class AgentAndInstructionScenarioTest {
         assertTrue(last.isError());
         assertTrue(last.getText().contains("API Key is not configured"));
         assertEquals(0, mProvider.requestCount());
+    }
+
+    // ---- Message attribution ----
+
+    @Test
+    public void assistantRepliesAreAttributedToTheModelThatProducedThem() throws Exception {
+        AiRouter router = ScriptedProvider.newRouter(mProvider);
+        mSession = new ChatSession(mWorkspace.getAbsolutePath(), router);
+        mProvider.reply("first").reply("second");
+
+        router.saveActiveSelection(mContext, mProvider.getName(), "model-a");
+        send("hi");
+        assertEquals(mProvider.getName() + " model-a", lastMessage().getSender());
+
+        router.saveActiveSelection(mContext, mProvider.getName(), "model-b");
+        send("hi again");
+        assertEquals(mProvider.getName() + " model-b", lastMessage().getSender());
+
+        // Earlier replies keep their original author after the switch.
+        List<ChatMessage> messages = mSession.getMessages();
+        assertEquals(mProvider.getName() + " model-a", messages.get(2).getSender());
+        assertEquals("Assistant", messages.get(0).getSender());
+    }
+
+    @Test
+    public void toolCallEchoesAreAttributedToTheActiveModel() throws Exception {
+        AiRouter router = ScriptedProvider.newRouter(mProvider);
+        mSession = new ChatSession(mWorkspace.getAbsolutePath(), router);
+        router.saveActiveSelection(mContext, mProvider.getName(), "tool-model");
+        write("note.txt", "x");
+        mProvider
+                .reply("{\"tool\":\"file_list_directory\",\"args\":{\"path\":\"" + mWorkspace.getAbsolutePath() + "\"}}")
+                .reply("done");
+
+        send("list");
+
+        boolean sawToolCall = false;
+        for (ChatMessage m : mSession.getMessages()) {
+            if (m.getType() == ChatMessage.MessageType.TOOL_CALL && !m.isUser()) {
+                sawToolCall = true;
+                assertEquals(mProvider.getName() + " tool-model", m.getSender());
+            }
+        }
+        assertTrue(sawToolCall);
+        assertEquals(mProvider.getName() + " tool-model", lastMessage().getSender());
     }
 }

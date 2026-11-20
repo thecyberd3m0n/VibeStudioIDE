@@ -4,6 +4,7 @@ import android.content.Context;
 
 import com.vibestudio.app.chat.model.AiResponse;
 import com.vibestudio.app.chat.model.ChatMessage;
+import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.service.LogViewerService;
 
 import org.json.JSONArray;
@@ -19,8 +20,10 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 public class GeminiAiProvider extends AbstractAiProvider {
 
@@ -34,9 +37,49 @@ public class GeminiAiProvider extends AbstractAiProvider {
             "gemini-pro-latest"
     );
 
+    private static final Pattern SNAPSHOT_SUFFIX = Pattern.compile("-\\d{3}$");
+
+    /** Id fragments of specialized models that are not general text/agent models. */
+    private static final List<String> EXCLUDED_ID_PARTS = Arrays.asList(
+            "live", "tuning", "vision",
+            "tts", "transcribe", "audio",
+            "image", "nano-banana", "omni",
+            "embedding", "robotics", "computer-use"
+    );
+
+    /**
+     * Keeps only models usable in VibeStudio's agent workflow: the Gemini family (this excludes Gemma and
+     * Deep Research), without live-streaming, tuning, vision, speech, image-generation, omni, robotics,
+     * computer-use or embedding variants, and without pinned numeric snapshots such as "-001" (the
+     * unpinned id is kept).
+     */
+    static boolean isIdeCompatibleModel(String modelId) {
+        if (modelId == null || !modelId.startsWith("gemini-") || SNAPSHOT_SUFFIX.matcher(modelId).find()) {
+            return false;
+        }
+        for (String part : EXCLUDED_ID_PARTS) {
+            if (modelId.contains(part)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Override
     public String getName() {
         return "Gemini";
+    }
+
+    /** Gemini models can return several functionCall parts in one reply. */
+    @Override
+    public boolean supportsParallelToolCalls() {
+        return true;
+    }
+
+    /** The model list is filtered to general Gemini models (see isIdeCompatibleModel), all of which support function calling. */
+    @Override
+    public boolean supportsNativeTools() {
+        return true;
     }
 
     @Override
@@ -89,7 +132,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
                         supportsGen = true;
                     }
 
-                    if (supportsGen && !rawName.isEmpty()) {
+                    if (supportsGen && isIdeCompatibleModel(rawName)) {
                         modelsList.add(rawName);
                     }
                 }
@@ -116,6 +159,11 @@ public class GeminiAiProvider extends AbstractAiProvider {
 
     @Override
     public AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history) {
+        return generateContent(context, apiKey, selectedModel, systemInstruction, history, null);
+    }
+
+    @Override
+    public AiResponse generateContent(Context context, String apiKey, String selectedModel, String systemInstruction, List<ChatMessage> history, List<McpTool> tools) {
         if (apiKey == null || apiKey.isEmpty()) {
             return AiResponse.error(401, "Error: Gemini API Key is missing or empty.");
         }
@@ -128,7 +176,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
             targetModel = targetModel.substring(7);
         }
 
-        String rawResponse = executeHttpRequest(apiKey, targetModel, systemInstruction, history);
+        String rawResponse = executeHttpRequest(apiKey, targetModel, systemInstruction, history, tools);
         int statusCode = extractStatusCode(rawResponse);
 
         // Fallback try if target model returns 404 or 400 model-not-found
@@ -138,7 +186,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
                 for (String fallbackModel : FALLBACK_MODELS) {
                     if (!fallbackModel.equalsIgnoreCase(targetModel)) {
                         LogViewerService.getInstance().w(TAG, "Model " + targetModel + " failed (" + statusCode + "), attempting fallback model " + fallbackModel);
-                        rawResponse = executeHttpRequest(apiKey, fallbackModel, systemInstruction, history);
+                        rawResponse = executeHttpRequest(apiKey, fallbackModel, systemInstruction, history, tools);
                         statusCode = extractStatusCode(rawResponse);
                         if (statusCode >= 200 && statusCode < 300) {
                             break;
@@ -163,7 +211,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
             if (tokensUsed <= 0) {
                 tokensUsed = calculateTokenUsage(systemInstruction, history, content);
             }
-            return AiResponse.success(content, tokensUsed);
+            return AiResponse.success(content, parseThoughts(rawResponse), tokensUsed).withToolCalls(parseToolCalls(rawResponse));
         } else {
             String errorMessage = "Error (" + statusCode + "): " + parseErrorResponse(extractBody(rawResponse), statusCode);
             return AiResponse.error(statusCode, errorMessage);
@@ -229,7 +277,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
         }
     }
 
-    private String executeHttpRequest(String apiKey, String modelName, String systemInstruction, List<ChatMessage> history) {
+    private String executeHttpRequest(String apiKey, String modelName, String systemInstruction, List<ChatMessage> history, List<McpTool> tools) {
         HttpURLConnection conn = null;
         try {
             String cleanModel = (modelName != null && modelName.startsWith("models/")) ? modelName.substring(7) : modelName;
@@ -243,49 +291,7 @@ public class GeminiAiProvider extends AbstractAiProvider {
             conn.setReadTimeout(30000);
             conn.setDoOutput(true);
 
-            JSONArray contentsArray = new JSONArray();
-            if (history != null && !history.isEmpty()) {
-                String lastRole = null;
-                JSONObject currentContentObj = null;
-                JSONArray currentParts = null;
-                StringBuilder currentText = null;
-
-                for (ChatMessage msg : history) {
-                    if (msg == null || msg.getText() == null || msg.getText().trim().isEmpty()) {
-                        continue;
-                    }
-                    String role = msg.isUser() ? "user" : "model";
-                    String text = msg.getText();
-
-                    if (role.equals(lastRole) && currentParts != null) {
-                        currentText.append("\n\n").append(text);
-                        currentParts.getJSONObject(0).put("text", currentText.toString());
-                    } else {
-                        lastRole = role;
-                        currentText = new StringBuilder(text);
-
-                        JSONObject textPart = new JSONObject();
-                        textPart.put("text", text);
-
-                        currentParts = new JSONArray();
-                        currentParts.put(textPart);
-
-                        currentContentObj = new JSONObject();
-                        currentContentObj.put("role", role);
-                        currentContentObj.put("parts", currentParts);
-
-                        contentsArray.put(currentContentObj);
-                    }
-                }
-
-                // Gemini API requires first content turn to be "user"
-                if (contentsArray.length() > 0) {
-                    JSONObject first = contentsArray.getJSONObject(0);
-                    if (!"user".equals(first.optString("role"))) {
-                        first.put("role", "user");
-                    }
-                }
-            }
+            JSONArray contentsArray = buildContents(history, tools != null && !tools.isEmpty());
 
             JSONObject payload = new JSONObject();
 
@@ -303,6 +309,26 @@ public class GeminiAiProvider extends AbstractAiProvider {
             }
 
             payload.put("contents", contentsArray);
+
+            if (tools != null && !tools.isEmpty()) {
+                JSONArray declarations = new JSONArray();
+                for (McpTool tool : tools) {
+                    JSONObject declaration = new JSONObject();
+                    declaration.put("name", tool.getName());
+                    declaration.put("description", tool.getDescription());
+                    JSONObject parameters = toolParameters(tool);
+                    if (parameters != null) {
+                        declaration.put("parameters", parameters);
+                    }
+                    declarations.put(declaration);
+                }
+                payload.put("tools", new JSONArray().put(new JSONObject().put("functionDeclarations", declarations)));
+            }
+
+            if (supportsThoughts(cleanModel)) {
+                payload.put("generationConfig", new JSONObject()
+                        .put("thinkingConfig", new JSONObject().put("includeThoughts", true)));
+            }
 
             String requestBody = payload.toString();
 
@@ -343,6 +369,138 @@ public class GeminiAiProvider extends AbstractAiProvider {
         }
     }
 
+    static final String STATE_KIND = "gemini";
+
+    /**
+     * The request's {@code contents}. With native tools, calls this provider produced go back as functionCall parts
+     * (exactly as received, so thought signatures survive) answered by functionResponse parts; consecutive turns of
+     * one role are merged, as the API expects alternating turns.
+     */
+    static JSONArray buildContents(List<ChatMessage> history, boolean nativeTools) throws Exception {
+        JSONArray contents = new JSONArray();
+        JSONObject current = null;
+        Map<String, String> callApiIds = new HashMap<>();
+
+        for (NativeHistory.Item item : NativeHistory.project(history, nativeTools, STATE_KIND)) {
+            switch (item.kind) {
+                case USER:
+                case ASSISTANT: {
+                    if (item.text == null || item.text.trim().isEmpty()) break;
+                    String role = item.kind == NativeHistory.Item.Kind.USER ? "user" : "model";
+                    JSONObject last = lastPart(current, role);
+                    if (last != null && last.has("text")) {
+                        last.put("text", last.getString("text") + "\n\n" + item.text);
+                    } else {
+                        current = contentFor(contents, current, role);
+                        current.getJSONArray("parts").put(new JSONObject().put("text", item.text));
+                    }
+                    break;
+                }
+                case ASSISTANT_CALLS: {
+                    current = new JSONObject().put("role", "model").put("parts", new JSONArray());
+                    contents.put(current);
+                    for (NativeHistory.Call call : item.calls) {
+                        JSONObject part = new JSONObject(call.state);
+                        JSONObject functionCall = part.optJSONObject("functionCall");
+                        String apiId = functionCall != null ? functionCall.optString("id", "") : "";
+                        if (!apiId.isEmpty()) callApiIds.put(call.id, apiId);
+                        current.getJSONArray("parts").put(part);
+                    }
+                    break;
+                }
+                default: {
+                    JSONObject response = new JSONObject().put(item.error ? "error" : "result", item.text);
+                    JSONObject functionResponse = new JSONObject().put("name", item.call.name).put("response", response);
+                    String apiId = callApiIds.get(item.call.id);
+                    if (apiId != null) functionResponse.put("id", apiId);
+                    current = contentFor(contents, current, "user");
+                    current.getJSONArray("parts").put(new JSONObject().put("functionResponse", functionResponse));
+                    break;
+                }
+            }
+        }
+
+        // Gemini API requires first content turn to be "user"
+        if (contents.length() > 0) {
+            JSONObject first = contents.getJSONObject(0);
+            if (!"user".equals(first.optString("role"))) {
+                first.put("role", "user");
+            }
+        }
+        return contents;
+    }
+
+    /** The last part of {@code current} when it belongs to {@code role}, else null. */
+    private static JSONObject lastPart(JSONObject current, String role) {
+        if (current == null || !role.equals(current.optString("role"))) return null;
+        JSONArray parts = current.optJSONArray("parts");
+        return parts != null && parts.length() > 0 ? parts.optJSONObject(parts.length() - 1) : null;
+    }
+
+    /** {@code current} if it is a turn of {@code role}, else a new turn appended to {@code contents}. */
+    private static JSONObject contentFor(JSONArray contents, JSONObject current, String role) throws Exception {
+        if (current != null && role.equals(current.optString("role"))) return current;
+        JSONObject created = new JSONObject().put("role", role).put("parts", new JSONArray());
+        contents.put(created);
+        return created;
+    }
+
+    /** The function calls of the first candidate with the raw part each came in (it may carry a thought signature). */
+    private List<AiResponse.ToolCall> parseToolCalls(String rawResult) {
+        List<AiResponse.ToolCall> calls = new ArrayList<>();
+        try {
+            JSONArray candidates = new JSONObject(extractBody(rawResult)).optJSONArray("candidates");
+            JSONObject content = candidates != null && candidates.length() > 0
+                    ? candidates.getJSONObject(0).optJSONObject("content") : null;
+            JSONArray parts = content != null ? content.optJSONArray("parts") : null;
+            for (int i = 0; parts != null && i < parts.length(); i++) {
+                JSONObject part = parts.getJSONObject(i);
+                JSONObject functionCall = part.optJSONObject("functionCall");
+                if (functionCall == null) continue;
+                String id = functionCall.optString("id", "");
+                calls.add(new AiResponse.ToolCall(id.isEmpty() ? newCallId() : id,
+                        toolCallObject(functionCall.optString("name"), functionCall.optJSONObject("args")),
+                        part.toString(), STATE_KIND));
+            }
+        } catch (Exception e) {
+            LogViewerService.getInstance().w(TAG, "Could not read structured function calls: " + e.getMessage());
+        }
+        return calls;
+    }
+
+    /** Only these models accept thinkingConfig; others reject it with HTTP 400. */
+    static boolean supportsThoughts(String model) {
+        if (model == null) return false;
+        String name = model.toLowerCase(java.util.Locale.ROOT);
+        if (name.contains("gemini-flash-latest") || name.contains("gemini-pro-latest")) return true; // aliases of current thinking models
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("gemini-(\\d+)(?:\\.(\\d+))?").matcher(name);
+        if (!m.find()) return false;
+        int major = Integer.parseInt(m.group(1));
+        int minor = m.group(2) != null ? Integer.parseInt(m.group(2)) : 0;
+        return major > 2 || (major == 2 && minor >= 5);
+    }
+
+    /** The thought-summary parts of the first candidate, or null when there are none. */
+    private String parseThoughts(String rawResult) {
+        try {
+            JSONArray candidates = new JSONObject(extractBody(rawResult)).optJSONArray("candidates");
+            JSONObject content = candidates != null && candidates.length() > 0
+                    ? candidates.getJSONObject(0).optJSONObject("content") : null;
+            JSONArray parts = content != null ? content.optJSONArray("parts") : null;
+            StringBuilder thoughts = new StringBuilder();
+            for (int i = 0; parts != null && i < parts.length(); i++) {
+                JSONObject part = parts.getJSONObject(i);
+                if (part.optBoolean("thought", false) && !part.optString("text", "").isEmpty()) {
+                    if (thoughts.length() > 0) thoughts.append('\n');
+                    thoughts.append(part.getString("text"));
+                }
+            }
+            return thoughts.length() > 0 ? thoughts.toString().trim() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private String parseGeminiResponse(String rawResult) {
         try {
             String rawJson = extractBody(rawResult);
@@ -355,17 +513,31 @@ public class GeminiAiProvider extends AbstractAiProvider {
                     JSONObject content = firstCand.optJSONObject("content");
                     if (content != null) {
                         JSONArray parts = content.optJSONArray("parts");
-                        if (parts != null && parts.length() > 0) {
-                            JSONObject firstPart = parts.getJSONObject(0);
-                            String text = firstPart.optString("text", "");
-                            if (!text.trim().isEmpty()) {
-                                return text;
+                        if (parts != null) {
+                            StringBuilder text = new StringBuilder();
+                            StringBuilder calls = new StringBuilder();
+                            for (int i = 0; i < parts.length(); i++) {
+                                JSONObject part = parts.getJSONObject(i);
+                                if (part.optBoolean("thought", false)) continue;
+                                text.append(part.optString("text", ""));
+                                JSONObject functionCall = part.optJSONObject("functionCall");
+                                if (functionCall != null) {
+                                    if (calls.length() > 0) calls.append('\n');
+                                    calls.append(toolCallContent(functionCall.optString("name"), functionCall.optJSONObject("args")));
+                                }
+                            }
+                            String reply = text.toString().trim();
+                            if (calls.length() > 0) {
+                                return reply.isEmpty() ? calls.toString() : reply + "\n" + calls;
+                            }
+                            if (!reply.isEmpty()) {
+                                return reply;
                             }
                         }
                     }
                 }
 
-                // Fallback if parts[0].text is empty
+                // Fallback if no text or function call was returned
                 String finishReason = firstCand.optString("finishReason", "");
                 String finishMessage = firstCand.optString("finishMessage", "");
 

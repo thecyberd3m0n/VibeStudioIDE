@@ -109,6 +109,9 @@ public class ClaudeAiProvider extends AbstractAiProvider {
             JSONArray messagesArray = new JSONArray();
             if (history != null) {
                 for (ChatMessage msg : history) {
+                    if (msg != null && msg.getType() == ChatMessage.MessageType.REASONING) {
+                        continue;
+                    }
                     JSONObject chatMsg = new JSONObject();
                     chatMsg.put("role", msg.isUser() ? "user" : "assistant");
                     chatMsg.put("content", msg.getText());
