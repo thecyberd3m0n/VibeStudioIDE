@@ -72,6 +72,7 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
     /** Per model id, from /models. Absent means unknown (the family defaults in {@link CopilotApi} apply). */
     private final Map<String, ModelInfo> mModels = new ConcurrentHashMap<>();
 
+    private String mCachedGithubOAuthToken = null;
     private String mCachedCopilotToken = null;
     private long mCopilotTokenExpiresAt = 0;
     private String mCachedCopilotEndpoint = "https://api.individual.githubcopilot.com";
@@ -276,7 +277,17 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
         }).start();
     }
 
+    private int mCurrentPollSessionId = 0;
+
+    public synchronized void cancelPendingPoll() {
+        mCurrentPollSessionId++;
+    }
+
     public void pollAccessToken(final String deviceCode, final int intervalSeconds, final TokenPollCallback callback) {
+        final int sessionId;
+        synchronized (this) {
+            sessionId = ++mCurrentPollSessionId;
+        }
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -285,6 +296,11 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
                 int pollInterval = Math.max(2, intervalSeconds) * 1000;
 
                 while (System.currentTimeMillis() - startTime < maxDuration) {
+                    synchronized (GithubCopilotAiProvider.this) {
+                        if (sessionId != mCurrentPollSessionId) {
+                            return;
+                        }
+                    }
                     try {
                         Thread.sleep(pollInterval);
 
@@ -363,8 +379,15 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
 
     private synchronized String getOrFetchCopilotToken(String githubOAuthToken) throws Exception {
         long nowSeconds = System.currentTimeMillis() / 1000;
-        if (mCachedCopilotToken != null && nowSeconds < (mCopilotTokenExpiresAt - 60)) {
+        boolean sameOAuthToken = githubOAuthToken != null && githubOAuthToken.equals(mCachedGithubOAuthToken);
+        if (sameOAuthToken && mCachedCopilotToken != null && nowSeconds < (mCopilotTokenExpiresAt - 60)) {
             return mCachedCopilotToken;
+        }
+        if (!sameOAuthToken) {
+            mCachedGithubOAuthToken = githubOAuthToken;
+            mCachedCopilotToken = null;
+            mCopilotTokenExpiresAt = 0;
+            mCachedCopilotEndpoint = "https://api.individual.githubcopilot.com";
         }
 
         URL url = new URL("https://api.github.com/copilot_internal/v2/token");

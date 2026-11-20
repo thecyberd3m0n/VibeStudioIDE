@@ -496,17 +496,12 @@ public class ModelsFragment extends Fragment {
         errorTextView.setVisibility(View.GONE);
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle(providerName.equalsIgnoreCase("GitHub Copilot") ? "GitHub Copilot Login 🚀" : "Configure " + providerName + " API Key 🔑");
+        builder.setTitle(providerName + " Login");
 
         if (providerObj instanceof GithubCopilotAiProvider) {
             final GithubCopilotAiProvider copilotProvider = (GithubCopilotAiProvider) providerObj;
 
-            TextView instructions = new TextView(context);
-            instructions.setText("Login via GitHub Browser flow (Device Code) or paste an existing GitHub OAuth Token below.");
-            instructions.setTextColor(Color.parseColor("#BB86FC"));
-            instructions.setTextSize(13);
-            instructions.setPadding(0, 0, 0, 16);
-            layout.addView(instructions);
+
 
             final Button btnLoginGithub = new Button(context);
             btnLoginGithub.setText("🔐 Login with GitHub");
@@ -515,7 +510,7 @@ public class ModelsFragment extends Fragment {
             btnLoginGithub.setTypeface(null, Typeface.BOLD);
 
             GradientDrawable btnBg = new GradientDrawable();
-            btnBg.setColor(Color.parseColor("#238636"));
+            btnBg.setColor(Color.parseColor("#2A2D3E"));
             btnBg.setCornerRadius(12f);
             btnLoginGithub.setBackground(btnBg);
             btnLoginGithub.setPadding(24, 16, 24, 16);
@@ -582,11 +577,18 @@ public class ModelsFragment extends Fragment {
             builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
+                    copilotProvider.cancelPendingPoll();
                     dialog.cancel();
                 }
             });
 
             final AlertDialog dialog = builder.create();
+            dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+                @Override
+                public void onDismiss(DialogInterface dialogInterface) {
+                    copilotProvider.cancelPendingPoll();
+                }
+            });
             dialog.show();
 
             final Button positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
@@ -594,6 +596,7 @@ public class ModelsFragment extends Fragment {
             btnLoginGithub.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
+                    copilotProvider.cancelPendingPoll();
                     btnLoginGithub.setEnabled(false);
                     progressBar.setVisibility(View.VISIBLE);
                     errorTextView.setVisibility(View.GONE);
