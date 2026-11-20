@@ -120,7 +120,7 @@ public class GitManager {
     }
 
     public void runGitCommandAsync(Context context, String gitArgs, File repoDir, GitCallback callback) {
-        runGitCommandAsync(context, gitArgs, repoDir, 10000, callback);
+        runGitCommandAsync(context, gitArgs, repoDir, 60000, callback);
     }
 
     public void runGitCommandAsync(Context context, String gitArgs, File repoDir, int timeoutMs, GitCallback callback) {

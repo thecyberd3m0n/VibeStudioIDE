@@ -37,6 +37,7 @@ public class ChatSession {
 
     private static final String TAG = "ChatSession";
     private static final String GENERIC_ASSISTANT_SENDER = "Assistant";
+    public static final int MAX_INPUT_CHARS = 10000;
 
     public interface OnChatMessageListener {
         void onMessageAdded(ChatMessage message);
@@ -219,6 +220,9 @@ public class ChatSession {
 
         mStopRequested = false;
         String messageToStore = userText;
+        if (messageToStore.length() > MAX_INPUT_CHARS) {
+            messageToStore = messageToStore.substring(0, MAX_INPUT_CHARS);
+        }
         Agent newActiveAgent = null;
         String trimmed = userText.trim();
         if (trimmed.startsWith("/")) {

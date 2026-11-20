@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0]
+
+### Added
+- **Chat Input Character Limit & Counter**: Introduced single message character limit (`10,000` chars benchmark matching VS Code) and a real-time character counter label below the input area with status color indicators.
+
+### Changed
+- **Git Sync Improvements**: Increased default Git async operation timeout from 10s to 60s in `GitManager` and added visual state indicators (`"Syncing..."` / disabled button) in `GitStatusView`.
+
+### Removed
+- **`planned_delay_ms` Cleanup**: Removed `planned_delay_ms` parameter across tools, providers, MCP servers, and prompt specifications.
+
 ## [0.1.6]
 
 ### Added
@@ -84,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.4]
 
 ### Added
-- **Command Execution Differentiation**: Split terminal command execution into `execute_command` (synchronous, zero planned delay, instant return) and `execute_command_async` (asynchronous background execution supporting `planned_delay_ms` for long-running processes or dev servers).
+- **Command Execution Differentiation**: Split terminal command execution into `execute_command` (synchronous, instant return) and `execute_command_async` (asynchronous background execution for long-running processes or dev servers).
 - **Tool Prioritization Tier Hierarchy**: Categorized tools into Tier 1 (lightweight tools: `file`, `editor`) and Tier 2 (heavyweight tools: `terminal`, `browser`) to optimize tool selection and context window usage.
 - **Lazy & Batch Skill Schema Loading**: Added dynamic skill catalog sorting (`is_loaded` state) and batch skill schema loading via `get_skill_schema` meta-tool.
 - **Shared Path Resolver**: Introduced `PathResolver` utility for consistent path resolution (`~`, relative to workspace home, absolute) across all file and editor tools.
@@ -93,7 +104,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **System Instructions & Tool Prompts**: Updated system instructions (`system_instruction.md`) and skill guidelines (`terminal_tool.md`) to reflect priority tiers, zero-delay rules, and `execute_command` vs `execute_command_async` execution modes.
-- **Zero-Delay Overhead for Synchronous Tools**: Automatically override `planned_delay_ms` to 0 for synchronous operations (Tier 1 tools, meta-tools, and `execute_command`).
 
 ### Fixed / Refactored
 - **MCP Plugin Architecture**: Fully decoupled MCP servers (`TerminalMcpServer`, `BrowserMcpServer`, `FileMcpServer`, `EditorMcpServer`) from core chat engine components (`ChatSession`, `ToolExecutionManager`, `ToolMessageFactory`).

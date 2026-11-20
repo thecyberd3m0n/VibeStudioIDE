@@ -19,7 +19,7 @@ public class ToolCallParsingTest {
     public void findsEveryCallInOrderAroundProse() throws Exception {
         String reply = "First I look around.\n"
                 + "{\"tool\":\"file_list_directory\",\"args\":{\"path\":\"a\"}}\n"
-                + "{\"planned_delay_ms\":0,\"tool\":\"editor_read_file\",\"args\":{\"path\":\"b\"}}";
+                + "{\"tool\":\"editor_read_file\",\"args\":{\"path\":\"b\"}}";
 
         List<JSONObject> calls = ToolExecutionManager.parseToolCalls(reply);
 

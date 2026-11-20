@@ -25,29 +25,17 @@ final class NativeHistory {
         final JSONObject args;
         final String state;
         final String stateKind;
-        final long plannedDelayMs;
-
-        Call(String id, String name, JSONObject args, long plannedDelayMs, String state, String stateKind) {
+        
+        Call(String id, String name, JSONObject args, String state, String stateKind) {
             this.id = id;
             this.name = name;
             this.args = args;
-            this.plannedDelayMs = plannedDelayMs;
-            this.state = state;
+                        this.state = state;
             this.stateKind = stateKind;
         }
 
-        /** The arguments as the model produced them: a requested delay goes back in as the declared argument. */
         JSONObject nativeArgs() {
-            JSONObject copy;
-            try {
-                copy = new JSONObject(args.toString());
-                if (plannedDelayMs > 0) {
-                    copy.put(McpClientManager.PLANNED_DELAY_FIELD, plannedDelayMs);
-                }
-            } catch (Exception e) {
-                return args;
-            }
-            return copy;
+            return args;
         }
     }
 
@@ -163,8 +151,7 @@ final class NativeHistory {
             if (name == null || name.isEmpty()) return null;
             JSONObject args = json.optJSONObject("args");
             return new Call(msg.getCallId(), name, args != null ? args : new JSONObject(),
-                    Math.max(0L, json.optLong(McpClientManager.PLANNED_DELAY_FIELD, 0L)),
-                    msg.getCallState(), msg.getCallStateKind());
+                                        msg.getCallState(), msg.getCallStateKind());
         } catch (Exception e) {
             return null;
         }

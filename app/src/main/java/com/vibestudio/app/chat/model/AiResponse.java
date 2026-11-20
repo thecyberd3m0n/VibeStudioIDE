@@ -17,7 +17,7 @@ public class AiResponse {
 
         /**
          * @param id        the API's id for the call (generated when the API has none)
-         * @param call      {"planned_delay_ms", "tool", "args"} as ToolExecutionManager expects it
+         * @param call      {"tool", "args"} as ToolExecutionManager expects it
          * @param state     data the provider needs to replay this call later, or null
          * @param stateKind which API produced {@code state}
          */

@@ -43,28 +43,6 @@ public interface McpServer {
         return 1;
     }
 
-    /**
-     * Indicates whether tools under this server support/require async planned delays.
-     * Synchronous Tier 1 servers default to false (0 delay overhead).
-     */
-    default boolean supportsPlannedDelay() {
-        return getPriority() > 1;
-    }
-
-    /**
-     * Indicates whether a specific tool handled by this server supports/requires async planned delays.
-     */
-    default boolean supportsPlannedDelay(String toolName) {
-        return supportsPlannedDelay();
-    }
-
-    /**
-     * Whether the planned delay must elapse before the tool runs (read-style tools that observe state which
-     * needs time to change) instead of after it (tools that start work and then snapshot it).
-     */
-    default boolean plannedDelayBeforeExecution(String toolName) {
-        return false;
-    }
 
     /**
      * Creates a tool message view for chat UI for tools handled by this McpServer.

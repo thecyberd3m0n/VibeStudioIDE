@@ -149,8 +149,7 @@ public class ToolExecutionManager {
                         JSONObject argsObj = new JSONObject(argsJsonStr);
 
                         JSONObject result = new JSONObject();
-                        result.put("planned_delay_ms", 0);
-                        result.put("tool", toolName);
+                                                result.put("tool", toolName);
                         result.put("args", argsObj);
 
                         LogViewerService.getInstance().i(TAG, "Successfully recovered malformed function call for tool: " + toolName);
@@ -214,17 +213,7 @@ public class ToolExecutionManager {
         JSONObject args = toolCallObj.optJSONObject("args");
         if (args == null) args = new JSONObject();
 
-        long plannedDelayMs = Math.max(0L, toolCallObj.optLong("planned_delay_ms", 0L));
-        if (plannedDelayMs > 0 && !mMcpClientManager.supportsPlannedDelay(toolName)) {
-            LogViewerService.getInstance().i(TAG, "Reducing planned delay to 0ms for simple/synchronous tool: " + toolName);
-            plannedDelayMs = 0L;
-        }
 
-        if (plannedDelayMs > 0 && mMcpClientManager.plannedDelayBeforeExecution(toolName)) {
-            LogViewerService.getInstance().i(TAG, "Executing planned delay of " + plannedDelayMs + " ms before reading with tool: " + toolName);
-            performDelay(plannedDelayMs);
-            plannedDelayMs = 0L;
-        }
 
         JSONObject resultObj;
         try {
@@ -243,11 +232,7 @@ public class ToolExecutionManager {
             }
         }
 
-        // Perform planned delay AFTER executing tool call if supported & requested
-        if (plannedDelayMs > 0) {
-            LogViewerService.getInstance().i(TAG, "Executing planned delay of " + plannedDelayMs + " ms after dispatching tool: " + toolName);
-            performDelay(plannedDelayMs);
-        }
+
 
         try {
             resultObj = mMcpClientManager.onToolCallCompleted(toolName, args, context, resultObj);

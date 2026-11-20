@@ -52,7 +52,7 @@ public class AgentLoopController {
             + "If it is finished, or you need input from the user, call 'task_complete'.";
 
     public static final String TERMINAL_NUDGE_MESSAGE = "A terminal command may still be running. Do not reply with text: "
-            + "call 'read_terminal_output' (set planned_delay_ms to wait for progress) to check it, and keep working "
+            + "call 'read_terminal_output' to check it, and keep working "
             + "until the task is done. When it is finished, or you need input from the user, call 'task_complete'.";
 
     /** The nudge to send after a text-only reply, given the last tool the model called. */

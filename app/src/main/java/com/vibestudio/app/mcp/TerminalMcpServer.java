@@ -51,15 +51,6 @@ public class TerminalMcpServer implements McpServer {
     private final List<McpTool> mTools;
     private final ThreadLocal<TerminalSession> mPendingTerminalSessions = new ThreadLocal<>();
 
-    @Override
-    public boolean supportsPlannedDelay(String toolName) {
-        return "execute_command_async".equalsIgnoreCase(toolName) || "read_terminal_output".equalsIgnoreCase(toolName);
-    }
-
-    @Override
-    public boolean plannedDelayBeforeExecution(String toolName) {
-        return "read_terminal_output".equalsIgnoreCase(toolName);
-    }
 
     public TerminalMcpServer() {
         mTools = new ArrayList<>();
@@ -75,7 +66,7 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 1b: execute_command_async
-        mTools.add(McpTool.builder("execute_command_async", "Execute a long-running, background, or server bash shell command in a terminal session asynchronously. Use non-interactive flags (e.g. --yes, CI=true) and answer 'n' to telemetry prompts with send_keystroke; set planned_delay_ms to wait before the snapshot.")
+        mTools.add(McpTool.builder("execute_command_async", "Execute a long-running, background, or server bash shell command in a terminal session asynchronously. Use non-interactive flags (e.g. --yes, CI=true) and answer 'n' to telemetry prompts with send_keystroke.")
                 .addProperty("command", PropertyType.STRING, "The shell command string to execute.", true)
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
@@ -88,7 +79,7 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 3: read_terminal_output
-        mTools.add(McpTool.builder("read_terminal_output", "Read a paginated or filtered output fragment from a terminal session screen buffer. While a command is still running, call this with planned_delay_ms (it waits, then reads) instead of replying with text.")
+        mTools.add(McpTool.builder("read_terminal_output", "Read a paginated or filtered output fragment from a terminal session screen buffer. While a command is still running, call this instead of replying with text.")
                 .addProperty("max_lines", PropertyType.INTEGER, "Maximum number of lines to return (default: 30 to conserve tokens).", false)
                 .addProperty("start_line", PropertyType.INTEGER, "Start line index for pagination (default: 0).", false)
                 .addProperty("tail_only", PropertyType.BOOLEAN, "If true, returns only the latest trailing lines (default: true).", false)

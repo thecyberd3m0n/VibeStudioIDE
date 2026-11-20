@@ -80,6 +80,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
     private EditText mMsgInput;
     private FrameLayout mBtnActionButton;
     private TextView mTvActionIcon;
+    private TextView mTvCharCounter;
     private Markwon mMarkwon;
     private ProgressBar mProgressBar;
     private LinearLayout mChangesetBar;
@@ -193,11 +194,28 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
                     }
                     return null;
                 }
-            }
+            },
+            new InputFilter.LengthFilter(ChatSession.MAX_INPUT_CHARS)
         });
 
-        LinearLayout.LayoutParams inParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
+        LinearLayout inputWrapper = new LinearLayout(context);
+        inputWrapper.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams inWrapperParams = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.0f);
+        inputWrapper.setLayoutParams(inWrapperParams);
+
+        LinearLayout.LayoutParams inParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
         mMsgInput.setLayoutParams(inParams);
+        inputWrapper.addView(mMsgInput);
+
+        mTvCharCounter = new TextView(context);
+        mTvCharCounter.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        mTvCharCounter.setTextColor(Color.parseColor("#707070"));
+        LinearLayout.LayoutParams counterParams = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+        counterParams.gravity = Gravity.END;
+        counterParams.setMargins(0, 4, 4, 0);
+        mTvCharCounter.setLayoutParams(counterParams);
+        inputWrapper.addView(mTvCharCounter);
+        updateCharCounter();
 
         // Round action button container (48dp circle)
         int buttonSizePx = dpToPx(context, 48);
@@ -227,6 +245,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
+                updateCharCounter();
                 updateActionButtonState();
                 checkAndShowSkillAutocomplete(context, s != null ? s.toString() : "");
             }
@@ -267,7 +286,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             }
         });
 
-        inputRow.addView(mMsgInput);
+        inputRow.addView(inputWrapper);
         inputRow.addView(mBtnActionButton);
 
                 // Scope Topbar Header
@@ -709,6 +728,19 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             mMsgInput.setText("");
             mChatSession.sendMessage(context, text);
             updateActionButtonState();
+        }
+    }
+
+    private void updateCharCounter() {
+        if (mTvCharCounter == null || mMsgInput == null) return;
+        int currentLength = mMsgInput.getText() != null ? mMsgInput.getText().length() : 0;
+        mTvCharCounter.setText(currentLength + "/" + ChatSession.MAX_INPUT_CHARS + " characters");
+        if (currentLength >= ChatSession.MAX_INPUT_CHARS) {
+            mTvCharCounter.setTextColor(Color.parseColor("#FF5252"));
+        } else if (currentLength >= (int)(ChatSession.MAX_INPUT_CHARS * 0.9)) {
+            mTvCharCounter.setTextColor(Color.parseColor("#FF9800"));
+        } else {
+            mTvCharCounter.setTextColor(Color.parseColor("#707070"));
         }
     }
 

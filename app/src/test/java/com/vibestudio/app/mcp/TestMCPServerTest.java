@@ -174,7 +174,6 @@ public class TestMCPServerTest {
             if (userText.contains("switch on") || userText.contains("turn on")) {
                 // LLM response requesting tool call to turn on the light
                 String toolCallResponse = "{\n" +
-                        "  \"planned_delay_ms\": 0,\n" +
                         "  \"tool\": \"light_turn_on\",\n" +
                         "  \"args\": {}\n" +
                         "}";
@@ -182,7 +181,6 @@ public class TestMCPServerTest {
             } else if (userText.contains("switch off") || userText.contains("turn off")) {
                 // LLM response requesting tool call to turn off the light
                 String toolCallResponse = "{\n" +
-                        "  \"planned_delay_ms\": 0,\n" +
                         "  \"tool\": \"light_turn_off\",\n" +
                         "  \"args\": {}\n" +
                         "}";

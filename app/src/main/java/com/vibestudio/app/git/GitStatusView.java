@@ -68,6 +68,7 @@ public class GitStatusView extends LinearLayout implements GitStateChangeListene
     private File mRepoDir;
     private OnCloseListener mCloseListener;
     private GitRepositoryState mLastState;
+    private boolean mIsSyncing = false;
     private FileObserver mGitDirObserver;
     private final Runnable mRefreshRunnable = this::refreshStatus;
 
@@ -1125,7 +1126,12 @@ public class GitStatusView extends LinearLayout implements GitStateChangeListene
             blockedText = capitalize(mLastState.operationInProgress) + " in progress";
         }
 
-        if (mBtnAction != null && blockedText != null) {
+        if (mBtnAction != null && mIsSyncing) {
+            mBtnAction.setText("Syncing...");
+            mBtnAction.setBackgroundColor(Color.parseColor("#3A3A4A"));
+            mBtnAction.setEnabled(false);
+            mBtnAction.setAlpha(0.5f);
+        } else if (mBtnAction != null && blockedText != null) {
             mBtnAction.setText(blockedText);
             mBtnAction.setBackgroundColor(Color.parseColor("#3A3A4A"));
             mBtnAction.setEnabled(false);
@@ -1438,12 +1444,20 @@ public class GitStatusView extends LinearLayout implements GitStateChangeListene
     }
 
     private void syncChanges() {
-        if (mRepoDir == null || getContext() == null) return;
+        if (mIsSyncing) return;
+        mIsSyncing = true;
+        updateButtonStates();
+        if (mRepoDir == null || getContext() == null) {
+            mIsSyncing = false;
+            updateButtonStates();
+            return;
+        }
         Toast.makeText(getContext(), "Syncing changes...", Toast.LENGTH_SHORT).show();
         String currentBranch = (mLastState != null && mLastState.branchName != null) ? mLastState.branchName : "HEAD";
 
         GitManager.getInstance().syncRepository(getContext(), mRepoDir, (success, output) -> {
             post(() -> {
+                mIsSyncing = false;
                 if (success) {
                     Toast.makeText(getContext(), "Sync successful", Toast.LENGTH_SHORT).show();
                     refreshStatus();

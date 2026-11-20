@@ -32,9 +32,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class McpClientManager {
 
     private static final String TAG = "McpClientManager";
-    public static final String PLANNED_DELAY_FIELD = "planned_delay_ms";
-    private static final String PLANNED_DELAY_DESCRIPTION = "Optional. Milliseconds to wait after dispatching, before the result is read back "
-            + "(e.g. 5000 to start a dev server, 15000 for dependency installs). Omit or 0 for instant operations.";
     public static final String META_TOOL_GET_SKILL_SCHEMA = "get_skill_schema";
 
     public static final String TOOL_TASK_COMPLETE = "task_complete";
@@ -108,22 +105,6 @@ public class McpClientManager {
             }
         }
         return null;
-    }
-
-    public boolean supportsPlannedDelay(String toolName) {
-        if (toolName == null || isMetaTool(toolName)) {
-            return false;
-        }
-        McpServer server = findServerForTool(toolName);
-        return server != null && server.supportsPlannedDelay(toolName);
-    }
-
-    public boolean plannedDelayBeforeExecution(String toolName) {
-        if (toolName == null || isMetaTool(toolName)) {
-            return false;
-        }
-        McpServer server = findServerForTool(toolName);
-        return server != null && server.plannedDelayBeforeExecution(toolName);
     }
 
     public CharSequence formatToolCall(String toolName, JSONObject args) {
@@ -281,9 +262,7 @@ public class McpClientManager {
                 .build());
         for (McpServer server : getSortedServers()) {
             for (McpTool tool : server.getTools()) {
-                tools.add(server.supportsPlannedDelay(tool.getName())
-                        ? tool.withOptionalProperty(PLANNED_DELAY_FIELD, PropertyType.INTEGER, PLANNED_DELAY_DESCRIPTION)
-                        : tool);
+                tools.add(tool);
             }
         }
         return tools;

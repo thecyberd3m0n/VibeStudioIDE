@@ -32,16 +32,11 @@ public class NativeHistoryTest {
     }
 
     private static ChatMessage call(String id, String turn, String tool, String args, String state, String kind) {
-        String json = "{\"planned_delay_ms\":0,\"tool\":\"" + tool + "\",\"args\":" + args + "}";
+        String json = "{\"tool\":\"" + tool + "\",\"args\":" + args + "}";
         return new ChatMessage("Model", json, false, ChatMessage.MessageType.TOOL_CALL, tool, null)
                 .withToolLink(id, turn, state, kind);
     }
 
-    private static ChatMessage delayedCall(String id, String turn) {
-        String json = "{\"planned_delay_ms\":5000,\"tool\":\"execute_command_async\",\"args\":{\"command\":\"npm i\"}}";
-        return new ChatMessage("Model", json, false, ChatMessage.MessageType.TOOL_CALL, "execute_command_async", null)
-                .withToolLink(id, turn, null, null);
-    }
 
     private static ChatMessage result(String id, String turn, String tool, String text, boolean error) {
         return new ChatMessage("System Tool", text, true,
@@ -129,17 +124,6 @@ public class NativeHistoryTest {
         assertEquals(6, none.size());
         assertEquals(5, own.size());
         assertEquals(NativeHistory.Item.Kind.ASSISTANT_CALLS, own.get(1).kind);
-    }
-
-    @Test
-    public void aRequestedDelayGoesBackIntoTheNativeArguments() throws Exception {
-        List<ChatMessage> history = new ArrayList<>(Arrays.asList(user("go"), delayedCall("c1", "t1")));
-
-        NativeHistory.Call call = NativeHistory.project(history, true, null).get(1).calls.get(0);
-
-        assertEquals(5000, call.nativeArgs().getLong("planned_delay_ms"));
-        assertEquals("npm i", call.nativeArgs().getString("command"));
-        assertFalse(call.args.has("planned_delay_ms"));
     }
 
     // ---- Copilot chat completions ----

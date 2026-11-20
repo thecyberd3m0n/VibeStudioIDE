@@ -228,16 +228,13 @@ public abstract class AbstractAiProvider implements AiProvider {
     }
 
     /**
-     * A native tool call in the {"planned_delay_ms", "tool", "args"} form that ToolExecutionManager parses. A
-     * model-supplied planned_delay_ms (only declared on async tools) is lifted out of the args to the top level.
+     * A native tool call in the {"tool", "args"} form that ToolExecutionManager parses.
      */
     protected static JSONObject toolCallObject(String name, JSONObject args) {
         try {
             JSONObject toolArgs = args != null ? new JSONObject(args.toString()) : new JSONObject();
-            long delayMs = Math.max(0L, toolArgs.optLong(McpClientManager.PLANNED_DELAY_FIELD, 0L));
-            toolArgs.remove(McpClientManager.PLANNED_DELAY_FIELD);
+            
             JSONObject call = new JSONObject();
-            call.put(McpClientManager.PLANNED_DELAY_FIELD, delayMs);
             call.put("tool", name);
             call.put("args", toolArgs);
             return call;

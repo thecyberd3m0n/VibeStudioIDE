@@ -91,21 +91,13 @@ public class GithubCopilotAiProviderTest {
     }
 
     @Test
-    public void toolCallContentLiftsPlannedDelayOutOfArgs() throws Exception {
-        org.json.JSONObject args = new org.json.JSONObject().put("command", "npm run dev").put("planned_delay_ms", 5000);
+    public void toolCallContentFormatsToolAndArgs() throws Exception {
+        org.json.JSONObject args = new org.json.JSONObject().put("command", "npm run dev");
 
         org.json.JSONObject call = new org.json.JSONObject(AbstractAiProvider.toolCallContent("execute_command_async", args));
 
-        assertEquals(5000, call.getLong("planned_delay_ms"));
         assertEquals("execute_command_async", call.getString("tool"));
         assertEquals("npm run dev", call.getJSONObject("args").getString("command"));
-        assertTrue(!call.getJSONObject("args").has("planned_delay_ms"));
-    }
-
-    @Test
-    public void toolCallContentDefaultsToZeroDelay() throws Exception {
-        org.json.JSONObject call = new org.json.JSONObject(AbstractAiProvider.toolCallContent("file", null));
-        assertEquals(0, call.getLong("planned_delay_ms"));
     }
 
     @Test

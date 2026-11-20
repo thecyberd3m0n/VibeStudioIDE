@@ -88,7 +88,7 @@ public class NativeToolsScenarioTest {
     }
 
     private String listCall(String path) {
-        return "{\"planned_delay_ms\":0,\"tool\":\"file_list_directory\",\"args\":{\"path\":\"" + path + "\"}}";
+        return "{\"tool\":\"file_list_directory\",\"args\":{\"path\":\"" + path + "\"}}";
     }
 
     private int count(ChatMessage.MessageType type) {
