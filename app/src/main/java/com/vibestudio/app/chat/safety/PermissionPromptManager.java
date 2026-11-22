@@ -20,6 +20,7 @@ public class PermissionPromptManager {
 
     private final Set<String> mGrantedPaths = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
+
     public static PermissionPromptManager getInstance() {
         return sInstance;
     }
@@ -41,13 +42,21 @@ public class PermissionPromptManager {
     }
 
     public boolean requestPermissionSync(Context context, String toolName, String targetPath) {
-        if (context == null) {
-            LogViewerService.getInstance().w(TAG, "Null context provided for permission prompt. Denying access to: " + targetPath);
-            return false;
-        }
-
         if (isPathGranted(targetPath)) {
             return true;
+        }
+        return promptSync(context, "⚠️ Workspace Boundary Warning",
+                "The AI Agent is requesting access to a path outside the assigned workspace scope:\n\n"
+                        + targetPath + "\n\nDo you want to allow this action?",
+                "Allow Access", () -> grantPath(targetPath));
+    }
+
+    /** Shows a blocking Allow/Block dialog; {@code onAllow} runs on Allow. Callers own how long a grant lasts. */
+    public boolean promptSync(Context context, String title, String message, String allowLabel, Runnable onAllow) {
+
+        if (context == null) {
+            LogViewerService.getInstance().w(TAG, "Null context provided for permission prompt. Denying: " + title);
+            return false;
         }
 
         final CountDownLatch latch = new CountDownLatch(1);
@@ -56,26 +65,18 @@ public class PermissionPromptManager {
         new Handler(Looper.getMainLooper()).post(() -> {
             try {
                 new AlertDialog.Builder(context)
-                        .setTitle("⚠️ Workspace Boundary Warning")
-                        .setMessage("The AI Agent is requesting access to a path outside the assigned workspace scope:\n\n"
-                                + targetPath + "\n\nDo you want to allow this action?")
-                        .setPositiveButton("Allow Access", (dialog, which) -> {
-                            grantPath(targetPath);
+                        .setTitle(title)
+                        .setMessage(message)
+                        .setPositiveButton(allowLabel, (dialog, which) -> {
+                            onAllow.run();
                             result.set(true);
                             latch.countDown();
                         })
-                        .setNegativeButton("Block", (dialog, which) -> {
-                            result.set(false);
-                            latch.countDown();
-                        })
-                        .setOnCancelListener(dialog -> {
-                            result.set(false);
-                            latch.countDown();
-                        })
+                        .setNegativeButton("Block", (dialog, which) -> latch.countDown())
+                        .setOnCancelListener(dialog -> latch.countDown())
                         .show();
             } catch (Exception e) {
                 LogViewerService.getInstance().e(TAG, "Failed to show permission dialog", e);
-                result.set(false);
                 latch.countDown();
             }
         });
