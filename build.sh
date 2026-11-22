@@ -94,12 +94,23 @@ mkdir -p build
 MANIFEST=build/AndroidManifest.xml
 sed "s#\${applicationId}#${APP_ID}#g" app/src/main/AndroidManifest.xml > "$MANIFEST"
 RENAME_OPTS=""
-[ "$APP_ID" != "com.vibestudio.app" ] && RENAME_OPTS="--rename-manifest-package $APP_ID --custom-package com.vibestudio.app"
+RES_DIR=app/src/main/res
+if [ "$APP_ID" != "com.vibestudio.app" ]; then
+    RENAME_OPTS="--rename-manifest-package $APP_ID --custom-package com.vibestudio.app"
+    # Non-default builds are visibly distinct: "VibeStudio IDE Debug" label and an orange (instead of cyan) icon.
+    RES_DIR=build/res_variant
+    rm -rf "$RES_DIR" && cp -r app/src/main/res "$RES_DIR"
+    sed -i 's/#1ECFBA/#FF8A1E/g' "$RES_DIR"/drawable/ic_launcher*.xml
+    sed -i 's#<string name="app_name">VibeStudio IDE</string>#<string name="app_name">VibeStudio IDE Debug</string>#' "$RES_DIR"/values/strings.xml
+    sed -i 's#android:label="VibeStudio IDE"#android:label="VibeStudio IDE Debug"#g' "$MANIFEST"
+    sed -i 's#<application #<application android:debuggable="true" #' "$MANIFEST"
+fi
+
 
 AAR_RES="drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4 editor-0.24.6"
 
 if aapt2 version > /dev/null 2>&1; then
-    aapt2 compile --dir app/src/main/res -o compiled_res/
+    aapt2 compile --dir "$RES_DIR" -o compiled_res/
 
     # Compile selected AAR resources safely
     for aar_name in $AAR_RES; do
@@ -132,7 +143,7 @@ else
         fi
 
     done
-    AAPT_CMD="$AAPT_CMD -S app/src/main/res"
+    AAPT_CMD="$AAPT_CMD -S $RES_DIR"
     if [ -d "app/src/main/assets" ]; then
         AAPT_CMD="$AAPT_CMD -A app/src/main/assets"
     fi

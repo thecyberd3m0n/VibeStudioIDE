@@ -9,9 +9,17 @@ import com.vibestudio.app.service.McpService;
 
 public class VibeApplication extends Application {
 
+    private static VibeApplication sInstance;
+
+    public static VibeApplication getInstance() {
+        return sInstance;
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
+        sInstance = this;
+
         CrashHandler.getInstance().init(this);
         LogViewerService.getInstance().startLogcatCapture();
         GithubCopilotAiProvider.initEditorVersion(this);

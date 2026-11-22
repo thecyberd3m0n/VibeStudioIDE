@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
+    <uses-permission android:name="dev.vibestudio.permission.BIND_AUTOMATOR" />
+    <queries><package android:name="dev.vibestudio.automator" /></queries>
     <application 
         android:name=".VibeApplication"
         android:label="VibeStudio IDE" 
