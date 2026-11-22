@@ -805,6 +805,39 @@ public class TerminalSessionManager {
         return new CommandResult(exitCode, cleanOutput.toString().trim());
     }
 
+
+    /**
+     * Waits for a pattern to appear in terminal transcript output or until session completes / times out.
+     */
+    public String waitForTerminalOutput(TerminalSession session, String pattern, int timeoutS) {
+        if (session == null || !session.isRunning()) {
+            return "Terminal session is not running.";
+        }
+
+        long deadline = System.currentTimeMillis() + (timeoutS * 1000L);
+        boolean hasPattern = pattern != null && !pattern.trim().isEmpty();
+
+        while (System.currentTimeMillis() < deadline && session.isRunning()) {
+            synchronized (session) {
+                try {
+                    session.wait(200);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+
+            if (hasPattern) {
+                String currentTranscript = readTerminalOutput(session, 100, 0, true, null);
+                if (currentTranscript != null && currentTranscript.contains(pattern)) {
+                    return readTerminalOutput(session, 30, 0, true, null);
+                }
+            }
+        }
+
+        return readTerminalOutput(session, 30, 0, true, null);
+    }
+
     public String getSessionOutput(TerminalSession session) {
         if (session == null || !session.isRunning()) {
             return "(Managed session is inactive)";

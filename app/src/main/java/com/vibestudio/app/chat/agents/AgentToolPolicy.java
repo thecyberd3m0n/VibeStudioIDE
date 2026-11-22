@@ -17,7 +17,7 @@ public final class AgentToolPolicy {
             "editor_replace_lines", "editor_search_replace", "editor_insert_lines", "editor_save",
             "file_create_file", "file_create_directory", "file_delete", "file_move", "file_copy");
     private static final List<String> EXECUTE_TOOLS = Arrays.asList(
-            "terminal_open_tab", "execute_command", "execute_command_async", "send_keystroke", "read_terminal_output");
+            "terminal_open_tab", "execute_command", "execute_command_async", "send_keystroke", "read_terminal_output", "terminal_wait");
     private static final String BROWSER_PREFIX = "browser_";
 
     private final boolean mEnforced;

@@ -57,7 +57,7 @@ public class AgentLoopController {
 
     /** The nudge to send after a text-only reply, given the last tool the model called. */
     public static String nudgeFor(String lastToolName) {
-        if ("execute_command_async".equals(lastToolName) || "read_terminal_output".equals(lastToolName)
+        if ("execute_command_async".equals(lastToolName) || "read_terminal_output".equals(lastToolName) || "terminal_wait".equals(lastToolName)
                 || "send_keystroke".equals(lastToolName)) {
             return TERMINAL_NUDGE_MESSAGE;
         }
