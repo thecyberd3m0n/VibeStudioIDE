@@ -75,7 +75,8 @@ fi
 
 # 5. Packaging resources and generating R classes (aapt2, or legacy aapt when aapt2 cannot run)
 echo "=== Packaging resources ==="
-rm -rf bin obj compiled_res gen_r
+rm -rf obj compiled_res gen_r
+rm -f bin/app_classes.jar bin/app.unsigned.apk bin/app.aligned.apk bin/*.dex
 mkdir -p bin obj compiled_res gen_r
 
 # Remove existing stale app R.java if present in app/src/main/java
