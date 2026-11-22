@@ -11,6 +11,7 @@ import com.vibestudio.app.chat.agents.AgentToolPolicy;
 import com.vibestudio.app.chat.compressor.HistoryCompressor;
 import com.vibestudio.app.chat.instructions.InstructionsLoader;
 import com.vibestudio.app.chat.model.AiResponse;
+import com.vibestudio.app.chat.model.ChatAttachment;
 import com.vibestudio.app.chat.model.ChatMessage;
 import org.json.JSONObject;
 import com.vibestudio.app.chat.model.ToolResult;
@@ -191,7 +192,11 @@ public class ChatSession {
     }
 
     public void sendMessage(final Context context, final String userText) {
-        addUserMessage(context, userText);
+        addUserMessage(context, userText, null);
+    }
+
+    public void sendMessage(final Context context, final String userText, final List<ChatAttachment> attachments) {
+        addUserMessage(context, userText, attachments);
     }
 
     public void retry(final Context context) {
@@ -216,6 +221,10 @@ public class ChatSession {
     }
 
     public void addUserMessage(final Context context, final String userText) {
+        addUserMessage(context, userText, null);
+    }
+
+    public void addUserMessage(final Context context, final String userText, final List<ChatAttachment> attachments) {
         if (userText == null || userText.trim().isEmpty()) return;
 
         mStopRequested = false;
@@ -243,7 +252,7 @@ public class ChatSession {
         }
         mActiveAgent = newActiveAgent;
 
-        ChatMessage userMsg = new ChatMessage("User", messageToStore, true);
+        ChatMessage userMsg = (attachments != null && !attachments.isEmpty()) ? new ChatMessage("User", messageToStore, true, attachments) : new ChatMessage("User", messageToStore, true);
 
         synchronized (this) {
             mMessages.add(userMsg);

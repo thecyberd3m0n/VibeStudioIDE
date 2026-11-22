@@ -3,6 +3,7 @@ package com.vibestudio.app.chat.provider;
 import android.content.Context;
 
 import com.vibestudio.app.chat.model.AiResponse;
+import com.vibestudio.app.chat.model.ChatAttachment;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.service.LogViewerService;
@@ -722,7 +723,33 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
                 case USER:
                 case ASSISTANT:
                     message.put("role", item.kind == NativeHistory.Item.Kind.USER ? "user" : "assistant");
-                    message.put("content", item.text);
+                    if (item.sourceMessage != null && item.sourceMessage.hasAttachments()) {
+                        JSONArray contentArr = new JSONArray();
+                        if (item.text != null && !item.text.trim().isEmpty()) {
+                            JSONObject textObj = new JSONObject();
+                            textObj.put("type", "text");
+                            textObj.put("text", item.text);
+                            contentArr.put(textObj);
+                        }
+                        for (ChatAttachment att : item.sourceMessage.getAttachments()) {
+                            if (att.getMimeType() != null && att.getMimeType().startsWith("image/") && att.getBase64Data() != null) {
+                                JSONObject imgObj = new JSONObject();
+                                imgObj.put("type", "image_url");
+                                JSONObject imageUrlObj = new JSONObject();
+                                imageUrlObj.put("url", "data:" + att.getMimeType() + ";base64," + att.getBase64Data());
+                                imgObj.put("image_url", imageUrlObj);
+                                contentArr.put(imgObj);
+                            } else if (att.getBase64Data() != null) {
+                                JSONObject textObj = new JSONObject();
+                                textObj.put("type", "text");
+                                textObj.put("text", "[Attachment: " + att.getName() + " (" + att.getMimeType() + ")]");
+                                contentArr.put(textObj);
+                            }
+                        }
+                        message.put("content", contentArr);
+                    } else {
+                        message.put("content", item.text);
+                    }
                     break;
                 case ASSISTANT_CALLS: {
                     JSONArray calls = new JSONArray();

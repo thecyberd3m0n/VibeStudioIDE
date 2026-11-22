@@ -3,6 +3,7 @@ package com.vibestudio.app.chat.provider;
 import android.content.Context;
 
 import com.vibestudio.app.chat.model.AiResponse;
+import com.vibestudio.app.chat.model.ChatAttachment;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.service.LogViewerService;
 
@@ -114,7 +115,36 @@ public class ClaudeAiProvider extends AbstractAiProvider {
                     }
                     JSONObject chatMsg = new JSONObject();
                     chatMsg.put("role", msg.isUser() ? "user" : "assistant");
-                    chatMsg.put("content", msg.getText());
+
+                    if (msg.hasAttachments()) {
+                        JSONArray contentArr = new JSONArray();
+                        if (msg.getText() != null && !msg.getText().trim().isEmpty()) {
+                            JSONObject textObj = new JSONObject();
+                            textObj.put("type", "text");
+                            textObj.put("text", msg.getText());
+                            contentArr.put(textObj);
+                        }
+                        for (ChatAttachment att : msg.getAttachments()) {
+                            if (att.getMimeType() != null && att.getMimeType().startsWith("image/") && att.getBase64Data() != null) {
+                                JSONObject imgObj = new JSONObject();
+                                imgObj.put("type", "image");
+                                JSONObject sourceObj = new JSONObject();
+                                sourceObj.put("type", "base64");
+                                sourceObj.put("media_type", att.getMimeType());
+                                sourceObj.put("data", att.getBase64Data());
+                                imgObj.put("source", sourceObj);
+                                contentArr.put(imgObj);
+                            } else if (att.getBase64Data() != null) {
+                                JSONObject textObj = new JSONObject();
+                                textObj.put("type", "text");
+                                textObj.put("text", "[Attachment: " + att.getName() + " (" + att.getMimeType() + ")]");
+                                contentArr.put(textObj);
+                            }
+                        }
+                        chatMsg.put("content", contentArr);
+                    } else {
+                        chatMsg.put("content", msg.getText());
+                    }
                     messagesArray.put(chatMsg);
                 }
             }

@@ -1,6 +1,9 @@
 package com.vibestudio.app.chat.model;
 
 import org.json.JSONObject;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 public class ChatMessage {
 
@@ -22,6 +25,7 @@ public class ChatMessage {
     private final String turnId;
     private final String callState;
     private final String callStateKind;
+    private final List<ChatAttachment> attachments;
 
     public ChatMessage(String sender, String text, boolean isUser) {
         this(sender, text, isUser, MessageType.NORMAL);
@@ -32,11 +36,20 @@ public class ChatMessage {
     }
 
     public ChatMessage(String sender, String text, boolean isUser, MessageType type, String toolName, JSONObject toolArgs) {
-        this(sender, text, isUser, type, toolName, toolArgs, null, null, null, null);
+        this(sender, text, isUser, type, toolName, toolArgs, null, null, null, null, null);
+    }
+
+    public ChatMessage(String sender, String text, boolean isUser, List<ChatAttachment> attachments) {
+        this(sender, text, isUser, MessageType.NORMAL, null, null, null, null, null, null, attachments);
     }
 
     private ChatMessage(String sender, String text, boolean isUser, MessageType type, String toolName, JSONObject toolArgs,
                         String callId, String turnId, String callState, String callStateKind) {
+        this(sender, text, isUser, type, toolName, toolArgs, callId, turnId, callState, callStateKind, null);
+    }
+
+    private ChatMessage(String sender, String text, boolean isUser, MessageType type, String toolName, JSONObject toolArgs,
+                        String callId, String turnId, String callState, String callStateKind, List<ChatAttachment> attachments) {
         this.sender = sender;
         this.text = text;
         this.isUser = isUser;
@@ -47,20 +60,15 @@ public class ChatMessage {
         this.turnId = turnId;
         this.callState = callState;
         this.callStateKind = callStateKind;
+        this.attachments = attachments != null ? new ArrayList<>(attachments) : Collections.<ChatAttachment>emptyList();
     }
 
     /**
      * A copy of this tool call or tool result message tied to its counterpart, so providers can send the history
      * in their native function-calling format instead of as text.
-     *
-     * @param callId        id shared by a call and its result
-     * @param turnId        id shared by all calls that came from one model reply
-     * @param state         provider-specific data needed to replay the call (a Gemini function-call part, Responses
-     *                      reasoning items), or null
-     * @param callStateKind which API produced {@code state}, so only that API replays it
      */
     public ChatMessage withToolLink(String callId, String turnId, String state, String callStateKind) {
-        return new ChatMessage(sender, text, isUser, type, toolName, toolArgs, callId, turnId, state, callStateKind);
+        return new ChatMessage(sender, text, isUser, type, toolName, toolArgs, callId, turnId, state, callStateKind, attachments);
     }
 
     public String getSender() {
@@ -107,5 +115,13 @@ public class ChatMessage {
 
     public String getCallStateKind() {
         return callStateKind;
+    }
+
+    public List<ChatAttachment> getAttachments() {
+        return Collections.unmodifiableList(attachments);
+    }
+
+    public boolean hasAttachments() {
+        return !attachments.isEmpty();
     }
 }
