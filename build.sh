@@ -221,6 +221,11 @@ jarsigner -keystore debug.keystore -storepass android -keypass android bin/app.u
 rm -f bin/app.aligned.apk
 zipalign -v -p 4 bin/app.unsigned.apk bin/app.aligned.apk > /dev/null
 
-apksigner sign --ks debug.keystore --ks-pass pass:android --min-sdk-version 26 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out bin/VibeStudio.apk bin/app.aligned.apk
+APK_NAME="VibeStudio.apk"
+if [ "$APP_ID" != "com.vibestudio.app" ]; then
+    APK_NAME="VibeStudio-Dev.apk"
+fi
 
-echo "=== VibeStudio Build Complete! APK generated at bin/VibeStudio.apk ==="
+apksigner sign --ks debug.keystore --ks-pass pass:android --min-sdk-version 26 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out bin/$APK_NAME bin/app.aligned.apk
+
+echo "=== VibeStudio Build Complete! APK generated at bin/$APK_NAME ==="
