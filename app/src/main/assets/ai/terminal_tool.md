@@ -2,7 +2,8 @@
 
 The `terminal` skill provides control over the active shared terminal session in VibeStudio IDE.
 
-
+## Temporary Files & Directories
+- **Use `$TMPDIR` for Temporary Files**: `/tmp` is read-only on Termux/Android. Always use `$TMPDIR` (e.g. `mktemp -p "$TMPDIR"` or `$TMPDIR/filename`), which points to VibeStudio's writable temporary directory.
 
 ## Blocking Wait (`terminal_wait`)
 - **`terminal_wait` (Wait for completion or pattern)**: Use `terminal_wait(pattern?, timeout_s, session_id?)` to block execution until a background command finishes or until a specific pattern (e.g. `Build successful`, `Listening on port`) appears in the terminal output. This eliminates polling loops with `read_terminal_output`.
