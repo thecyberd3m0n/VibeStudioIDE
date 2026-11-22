@@ -106,4 +106,22 @@ This document outlines the strict architectural principles, code rules, and desi
 ## 📐 Verification & Build Standards
 
 - **Clean Builds**: Always verify code changes by executing `./build.sh` and ensuring `bin/VibeStudio.apk` compiles cleanly without errors.
-- **No Residual Dependencies**: When refactoring or moving logic, strip out all unused domain imports and verify code quality using static analysis (`analyze_file`).
+
+---
+
+## 🧪 Self-Hosted Testing (VibeStudio inside VibeStudio)
+
+To build and test VibeStudio from inside another VibeStudio instance, build a dev variant with a different package id so both install side by side. No source patching is needed:
+
+```
+APP_ID=com.vibestudio.dev ./build.sh        # Termux build
+./gradlew assembleDebug -PappId=com.vibestudio.dev   # Gradle build
+```
+
+- Default (no `APP_ID`/`appId`) is unchanged: `com.vibestudio.app`. CI is unaffected.
+- `APP_ID` must have the **same length** as `com.vibestudio.app` (termux paths are byte-patched in `OnboardingActivity`).
+- Java packages/`namespace` stay `com.vibestudio.app`; `build.sh` uses `--rename-manifest-package` + `--custom-package`. FileProvider authority is `${applicationId}.fileprovider`.
+- Runtime paths derive from `getPackageName()` (Java) / `$APP_PKG` (bootstrap script); never hardcode the package id.
+- `build_test_apk.sh` and `test-shizuku.sh` also honor `APP_ID`.
+- Verify: `aapt dump badging bin/VibeStudio.apk | head -1`.
+- Logs: `/tmp` is not writable inside the IDE; write to `$HOME`. `build.sh` sets `ANDROID_DATA`/`ANDROID_ROOT` so the legacy `aapt` fallback works when `aapt2` is broken.

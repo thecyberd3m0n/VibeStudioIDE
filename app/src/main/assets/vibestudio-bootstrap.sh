@@ -31,13 +31,14 @@ if [ -f "$PREFIX/bin/pkg" ]; then
 fi
 chmod -R 755 "$PREFIX/bin" "$PREFIX/libexec" "$PREFIX/lib/apt/methods" 2>/dev/null || true
 
+APP_PKG=$(basename "$(dirname "$(dirname "$PREFIX")")")
 # Ensure termux and vibestudio compatibility path symlinks exist so dpkg extracts packages directly into $PREFIX
-mkdir -p "$PREFIX/data/data/com.vibestudio.app/files"
-mkdir -p "$PREFIX/data/user/0/com.vibestudio.app/files"
+mkdir -p "$PREFIX/data/data/$APP_PKG/files"
+mkdir -p "$PREFIX/data/user/0/$APP_PKG/files"
 mkdir -p "$PREFIX/data/data/com.termux/files"
 
-[ ! -e "$PREFIX/data/data/com.vibestudio.app/files/usr" ] && ln -sf "$PREFIX" "$PREFIX/data/data/com.vibestudio.app/files/usr" 2>/dev/null || true
-[ ! -e "$PREFIX/data/user/0/com.vibestudio.app/files/usr" ] && ln -sf "$PREFIX" "$PREFIX/data/user/0/com.vibestudio.app/files/usr" 2>/dev/null || true
+[ ! -e "$PREFIX/data/data/$APP_PKG/files/usr" ] && ln -sf "$PREFIX" "$PREFIX/data/data/$APP_PKG/files/usr" 2>/dev/null || true
+[ ! -e "$PREFIX/data/user/0/$APP_PKG/files/usr" ] && ln -sf "$PREFIX" "$PREFIX/data/user/0/$APP_PKG/files/usr" 2>/dev/null || true
 [ ! -e "$PREFIX/data/data/com.termux/files/usr" ] && ln -sf "$PREFIX" "$PREFIX/data/data/com.termux/files/usr" 2>/dev/null || true
 
 

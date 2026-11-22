@@ -12,10 +12,11 @@ fi
 mkdir -p bin obj_test_apk gen_test_r compiled_test_res
 
 # 3. Create Manifest for Test APK
-cat << 'MANIFEST' > bin/TestAndroidManifest.xml
+APP_ID=${APP_ID:-com.vibestudio.app}
+cat << MANIFEST > bin/TestAndroidManifest.xml
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.vibestudio.app.test">
+    package="${APP_ID}.test">
 
     <application>
         <uses-library android:name="android.test.runner" />
@@ -37,7 +38,7 @@ cat << 'MANIFEST' > bin/TestAndroidManifest.xml
 
     <instrumentation
         android:name="androidx.test.runner.AndroidJUnitRunner"
-        android:targetPackage="com.vibestudio.app"
+        android:targetPackage="${APP_ID}"
         android:label="VibeStudio Android Instrumentation Tests" />
 </manifest>
 MANIFEST

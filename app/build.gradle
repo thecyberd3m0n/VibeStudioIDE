@@ -23,7 +23,7 @@ android {
     ndkVersion "28.2.13676358"
 
     defaultConfig {
-        applicationId "com.vibestudio.app"
+        applicationId (project.findProperty("appId") ?: "com.vibestudio.app")
         minSdk 26
         targetSdk 28
         versionCode 11

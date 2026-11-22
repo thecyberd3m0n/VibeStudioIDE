@@ -86,6 +86,16 @@ VERSION_NAME=$(grep -E 'versionName\s+"[^"]+"' app/build.gradle | head -n 1 | cu
 VERSION_CODE=${VERSION_CODE:-5}
 VERSION_NAME=${VERSION_NAME:-"0.1.1"}
 
+# APP_ID overrides the package id (e.g. APP_ID=com.vibestudio.dev ./build.sh) so a dev build installs beside the main app.
+# Must keep the same length as com.vibestudio.app (byte-patched termux paths). Default build is unchanged.
+export ANDROID_DATA=${ANDROID_DATA:-/data} ANDROID_ROOT=${ANDROID_ROOT:-/system}
+APP_ID=${APP_ID:-com.vibestudio.app}
+mkdir -p build
+MANIFEST=build/AndroidManifest.xml
+sed "s#\${applicationId}#${APP_ID}#g" app/src/main/AndroidManifest.xml > "$MANIFEST"
+RENAME_OPTS=""
+[ "$APP_ID" != "com.vibestudio.app" ] && RENAME_OPTS="--rename-manifest-package $APP_ID --custom-package com.vibestudio.app"
+
 AAR_RES="drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4 editor-0.24.6"
 
 if aapt2 version > /dev/null 2>&1; then
@@ -98,7 +108,7 @@ if aapt2 version > /dev/null 2>&1; then
         fi
     done
 
-    AAPT2_LINK_CMD="aapt2 link -o bin/app.unsigned.apk -I libs/android.jar --manifest app/src/main/AndroidManifest.xml --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --replace-version --java gen_r --auto-add-overlay"
+    AAPT2_LINK_CMD="aapt2 link $RENAME_OPTS -o bin/app.unsigned.apk -I libs/android.jar --manifest $MANIFEST --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --replace-version --java gen_r --auto-add-overlay"
     if [ -d "app/src/main/assets" ]; then
         AAPT2_LINK_CMD="$AAPT2_LINK_CMD -A app/src/main/assets"
     fi
@@ -110,7 +120,7 @@ if aapt2 version > /dev/null 2>&1; then
 else
     echo "=== aapt2 unusable on this system, falling back to legacy aapt ==="
     # Later -S dirs override earlier ones: AAR resources first, app resources last.
-    AAPT_CMD="aapt package -f -m -J gen_r -M app/src/main/AndroidManifest.xml -I libs/android.jar -F bin/app.unsigned.apk --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --auto-add-overlay"
+    AAPT_CMD="aapt package -f -m $RENAME_OPTS -J gen_r -M $MANIFEST -I libs/android.jar -F bin/app.unsigned.apk --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --auto-add-overlay"
     for aar_name in $AAR_RES; do
         if [ -d "build/extracted_aars/${aar_name}/res" ]; then
             # Legacy aapt rejects the <id name="x"/> shorthand; rewrite it to <item type="id" name="x"/> in a copy.
