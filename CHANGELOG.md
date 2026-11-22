@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Stateless Git Execution**: Refactored `GitManager` to operate statelessly and clear stale repository status when navigating away or switching directory contexts.
 - **MCP Session ID Resolution**: Fixed session ID tracking for browser tabs and MCP tools in `ToolSessionManager` and `BrowserMcpServer`.
 - **Notification Priority & Icons**: Restored proper notification icons and set default channel importance and priority for background terminal services.
-- **Code Hygiene Guidelines**: Added the Anti-Slop Rule to `CODE_QUALITY.md` enforcing net code deletion preference for bugfixes.
+- **Code Hygiene Guidelines**: Added the Anti-Slop Rule to `AGENTS.md` enforcing net code deletion preference for bugfixes.
 
 ## [0.1.0]
 
@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Lazy & Batch Skill Schema Loading**: Added dynamic skill catalog sorting (`is_loaded` state) and batch skill schema loading via `get_skill_schema` meta-tool.
 - **Shared Path Resolver**: Introduced `PathResolver` utility for consistent path resolution (`~`, relative to workspace home, absolute) across all file and editor tools.
 - **Robolectric Unit Tests**: Added `TestMCPServerTest` to test custom MCP server registration, tool execution, and LLM provider integration.
-- **Architectural Guidelines**: Created `CODE_QUALITY.md` documenting plugin architecture, self-containment, and zero-delay execution rules.
+- **Architectural Guidelines**: Created `AGENTS.md` documenting plugin architecture, self-containment, and zero-delay execution rules.
 
 ### Changed
 - **System Instructions & Tool Prompts**: Updated system instructions (`system_instruction.md`) and skill guidelines (`terminal_tool.md`) to reflect priority tiers, zero-delay rules, and `execute_command` vs `execute_command_async` execution modes.

@@ -55,33 +55,28 @@ for j in libs/deps/*.jar; do
     CLASSPATH="$CLASSPATH:$j"
 done
 
-# 4. Compile LibTermux Kotlin sources
-echo "=== Compiling LibTermux Kotlin sources ==="
-rm -rf libtermux_classes
-mkdir -p libtermux_classes
+# 4. Compile LibTermux Kotlin sources (skipped when libs/libtermux.jar is newer than every source)
+if [ -f libs/libtermux.jar ] && [ -z "$(find libtermux-android -name '*.kt' -newer libs/libtermux.jar | head -n 1)" ]; then
+    echo "=== LibTermux up to date, skipping Kotlin compile ==="
+else
+    echo "=== Compiling LibTermux Kotlin sources ==="
+    rm -rf libtermux_classes
+    mkdir -p libtermux_classes
 
-kotlinc -d libtermux_classes \
-  -classpath "$CLASSPATH" \
-  $(find libtermux-android/core/src/main/kotlin -name "*.kt") \
-  $(find libtermux-android/terminal-view/src/main/kotlin -name "*.kt")
+    kotlinc -d libtermux_classes \
+      -classpath "$CLASSPATH" \
+      $(find libtermux-android/core/src/main/kotlin -name "*.kt") \
+      $(find libtermux-android/terminal-view/src/main/kotlin -name "*.kt")
 
-jar cvf libs/libtermux.jar -C libtermux_classes . > /dev/null
-echo "=== LibTermux Compiled Successfully ==="
+    jar cvf libs/libtermux.jar -C libtermux_classes . > /dev/null
+    echo "=== LibTermux Compiled Successfully ==="
+fi
 
-# 5. Packaging resources with AAPT2 and generating R classes
-echo "=== Packaging resources with AAPT2 ==="
+
+# 5. Packaging resources and generating R classes (aapt2, or legacy aapt when aapt2 cannot run)
+echo "=== Packaging resources ==="
 rm -rf bin obj compiled_res gen_r
 mkdir -p bin obj compiled_res gen_r
-
-# Compile app res
-aapt2 compile --dir app/src/main/res -o compiled_res/
-
-# Compile selected AAR resources safely
-for aar_name in drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4 editor-0.24.6; do
-    if [ -d "build/extracted_aars/${aar_name}/res" ]; then
-        aapt2 compile --dir "build/extracted_aars/${aar_name}/res" -o compiled_res/ 2>/dev/null || true
-    fi
-done
 
 # Remove existing stale app R.java if present in app/src/main/java
 rm -f app/src/main/java/com/vibestudio/app/R.java
@@ -91,15 +86,53 @@ VERSION_NAME=$(grep -E 'versionName\s+"[^"]+"' app/build.gradle | head -n 1 | cu
 VERSION_CODE=${VERSION_CODE:-5}
 VERSION_NAME=${VERSION_NAME:-"0.1.1"}
 
-AAPT2_LINK_CMD="aapt2 link -o bin/app.unsigned.apk -I libs/android.jar --manifest app/src/main/AndroidManifest.xml --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --replace-version --java gen_r --auto-add-overlay"
-if [ -d "app/src/main/assets" ]; then
-    AAPT2_LINK_CMD="$AAPT2_LINK_CMD -A app/src/main/assets"
-fi
-if [ -n "$EXTRA_PKGS" ]; then
-    AAPT2_LINK_CMD="$AAPT2_LINK_CMD --extra-packages $EXTRA_PKGS"
+AAR_RES="drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4 editor-0.24.6"
+
+if aapt2 version > /dev/null 2>&1; then
+    aapt2 compile --dir app/src/main/res -o compiled_res/
+
+    # Compile selected AAR resources safely
+    for aar_name in $AAR_RES; do
+        if [ -d "build/extracted_aars/${aar_name}/res" ]; then
+            aapt2 compile --dir "build/extracted_aars/${aar_name}/res" -o compiled_res/ 2>/dev/null || true
+        fi
+    done
+
+    AAPT2_LINK_CMD="aapt2 link -o bin/app.unsigned.apk -I libs/android.jar --manifest app/src/main/AndroidManifest.xml --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --replace-version --java gen_r --auto-add-overlay"
+    if [ -d "app/src/main/assets" ]; then
+        AAPT2_LINK_CMD="$AAPT2_LINK_CMD -A app/src/main/assets"
+    fi
+    if [ -n "$EXTRA_PKGS" ]; then
+        AAPT2_LINK_CMD="$AAPT2_LINK_CMD --extra-packages $EXTRA_PKGS"
+    fi
+
+    $AAPT2_LINK_CMD compiled_res/*.flat
+else
+    echo "=== aapt2 unusable on this system, falling back to legacy aapt ==="
+    # Later -S dirs override earlier ones: AAR resources first, app resources last.
+    AAPT_CMD="aapt package -f -m -J gen_r -M app/src/main/AndroidManifest.xml -I libs/android.jar -F bin/app.unsigned.apk --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --auto-add-overlay"
+    for aar_name in $AAR_RES; do
+        if [ -d "build/extracted_aars/${aar_name}/res" ]; then
+            # Legacy aapt rejects the <id name="x"/> shorthand; rewrite it to <item type="id" name="x"/> in a copy.
+            rm -rf "build/aapt_res/${aar_name}"
+            mkdir -p build/aapt_res
+            cp -r "build/extracted_aars/${aar_name}/res" "build/aapt_res/${aar_name}"
+            find "build/aapt_res/${aar_name}" -path '*/values*/*.xml' -exec sed -i 's#<id name="\([^"]*\)" */>#<item type="id" name="\1"/>#g' {} +
+            AAPT_CMD="$AAPT_CMD -S build/aapt_res/${aar_name}"
+        fi
+
+    done
+    AAPT_CMD="$AAPT_CMD -S app/src/main/res"
+    if [ -d "app/src/main/assets" ]; then
+        AAPT_CMD="$AAPT_CMD -A app/src/main/assets"
+    fi
+    if [ -n "$EXTRA_PKGS" ]; then
+        AAPT_CMD="$AAPT_CMD --extra-packages $EXTRA_PKGS"
+    fi
+
+    $AAPT_CMD
 fi
 
-$AAPT2_LINK_CMD compiled_res/*.flat
 
 # 6. Compiling VibeStudio Java sources (including generated R.java files)
 APP_CLASSPATH="$CLASSPATH:libs/libtermux.jar"

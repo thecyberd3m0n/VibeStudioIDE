@@ -87,7 +87,7 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
     lint {
-        // targetSdk 28 is intentional (W^X exec restrictions on API 29+, see PROOT_FOR_SDK_29.md)
+        // targetSdk 28 is intentional (W^X exec restrictions on API 29+, see docs/PROOT_FOR_SDK_29.md)
         disable 'ExpiredTargetSdkVersion'
     }
     testOptions {

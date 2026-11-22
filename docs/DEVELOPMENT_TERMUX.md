@@ -1,4 +1,4 @@
-# DEVELOPMENT_TERMUX.MD - VibeStudio Termux Development & Debugging Guide
+# DEVELOPMENT_TERMUX - VibeStudio Termux Development & Debugging Guide
 
 This guide explains how to build, test, and run VibeStudio on Android via Termux in the simplest way.
 

@@ -1,4 +1,16 @@
-# VibeStudio IDE - Code Quality & Architectural Guidelines
+# VibeStudio IDE - Agent Instructions (AGENTS.md)
+
+
+## Project Map & Docs
+
+- `README.md` - project overview for humans.
+- `docs/DEVELOPMENT_TERMUX.md` - build/test/run via Termux (`./build.sh`, `./test.sh`, `./test-shizuku.sh`).
+- `docs/PROOT_FOR_SDK_29.md` - why targetSdk is 28 and the proot runtime design (read before touching targetSdk or the Linux runtime).
+- `CHANGELOG.md` - release notes (release procedure: `.github/skills/vibestudio-upgrade/SKILL.md`).
+- `app/src/main/assets/ai/*.md` - runtime prompts bundled into the app (NOT agent docs; do not move).
+- `libtermux-android/README.md` - terminal library docs.
+
+---
 
 This document outlines the strict architectural principles, code rules, and design patterns established for VibeStudio IDE. All future sessions, developers, and AI agents MUST adhere to these guidelines to ensure clean plugin isolation, decoupling, concurrency safety, and maintainability.
 
