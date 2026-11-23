@@ -125,3 +125,17 @@ APP_ID=com.vibestudio.dev ./build.sh        # Termux build
 - `build_test_apk.sh` and `test-shizuku.sh` also honor `APP_ID`.
 - Verify: `aapt dump badging bin/VibeStudio.apk | head -1`.
 - Logs: `/tmp` is not writable inside the IDE; write to `$HOME`. `build.sh` sets `ANDROID_DATA`/`ANDROID_ROOT` so the legacy `aapt` fallback works when `aapt2` is broken.
+
+---
+
+## 🤖 Android Tooling Workflow (Automator)
+
+Full details: `docs/DEVELOPMENT_TERMUX.md` section "Android Tooling Workflow". Summary:
+
+1. `android_status` first; check the allowlist and driver mode.
+2. Build the dev variant: `APP_ID=com.vibestudio.dev ./build.sh`. Never test against `com.vibestudio.app` (the IDE you run in).
+3. Install with `android_install_apk` (PackageInstaller via Automator, no Shizuku required), then `android_launch_app com.vibestudio.dev`.
+4. Test: prefer `android_dump_ui_tree` + `android_tap_node`; take `android_screenshot` only when the tree lacks info. Ids are valid per dump only.
+5. Diagnose: `android_logcat` for the tested app's logs; `android_force_stop` to close it before a clean relaunch.
+6. Fix the code, rebuild, reinstall, force-stop, relaunch and re-verify. Repeat until the behavior is correct.
+7. Do not loop re-reading the same files or stale terminal buffers; if the result is unchanged, change approach.

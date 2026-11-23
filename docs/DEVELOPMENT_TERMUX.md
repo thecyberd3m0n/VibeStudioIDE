@@ -69,3 +69,19 @@ When Android Package Installer throws generic errors like *"Pakiet wygląda na n
 
 - **Changelog Updates**: Before releasing a new version, document all notable changes, new features, and bug fixes in `CHANGELOG.md` following Semantic Versioning conventions.
 - **Tone & Language**: Write changelog entries in business-oriented, user-centric language rather than overly technical jargon so non-technical stakeholders and end users can understand the value delivered.
+
+---
+
+## 6. Android Tooling Workflow (Automator): install, test, fix, redeploy
+
+Debug build is `com.vibestudio.dev` (`APP_ID=com.vibestudio.dev ./build.sh`); the chat IDE is `com.vibestudio.app`. Never test the instance you are running in.
+
+1. **Status**: `android_status` first (mode, allowlist). Only allowlisted packages can be tapped/typed into.
+2. **Build**: build the dev APK in the terminal (`./build.sh` with `APP_ID=com.vibestudio.dev`), check for `BUILD OK`.
+3. **Install**: `android_install_apk` with the APK path. The Automator installs via PackageInstaller (no Shizuku needed); the user may have to confirm the system dialog.
+4. **Launch**: `android_launch_app` with `com.vibestudio.dev`.
+5. **Inspect**: prefer `android_dump_ui_tree` (ids are valid per dump only; re-dump after each action). Use `android_screenshot` only when the tree lacks info; the Automator compresses screenshots to <=64 KB.
+6. **Interact**: `android_tap_node`; if it returns `ok:false`, fall back to `android_tap` with coordinates.
+7. **Fix and redeploy**: edit the code, rebuild, reinstall (same signing key, otherwise `INSTALL_FAILED_UPDATE_INCOMPATIBLE`), relaunch, re-verify with a fresh dump.
+8. **Stop conditions**: error 10 (paused) or 15 (stopped by user): do not retry.
+9. **Avoid loops**: do not re-read the same files repeatedly; the terminal buffer can be stale, so verify via file tools.

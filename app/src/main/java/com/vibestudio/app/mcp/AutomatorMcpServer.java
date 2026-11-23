@@ -78,11 +78,14 @@ public class AutomatorMcpServer implements McpServer {
         mTools.add(McpTool.builder("android_launch_app", "Launch an app by package name (must be in the Automator allowlist).")
                 .addProperty("package", PropertyType.STRING, "Package name.", true).build());
         mTools.add(McpTool.builder("android_screenshot", "Capture a <=64KB WebP/JPEG screenshot as JSON with base64, scaleFactor.").build());
-        mTools.add(McpTool.builder("android_logcat", "Shizuku only: logcat -d -t 100.").build());
-        mTools.add(McpTool.builder("android_force_stop", "Shizuku only: am force-stop a package.")
+        mTools.add(McpTool.builder("android_logcat", "Read recent logcat lines (logcat -d -t N). Without Shizuku only the Automator's own log is readable; with Shizuku the whole device log.")
+                .addProperty("lines", PropertyType.INTEGER, "Number of trailing lines (default 200).", false).build());
+        mTools.add(McpTool.builder("android_force_stop", "Close a tested app (allowlisted package). Uses am force-stop with Shizuku, otherwise killBackgroundProcesses.")
                 .addProperty("package", PropertyType.STRING, "Package name.", true).build());
-        mTools.add(McpTool.builder("android_install_apk", "Shizuku only: pm install an APK path.")
-                .addProperty("path", PropertyType.STRING, "APK path.", true).build());
+
+        mTools.add(McpTool.builder("android_install_apk", "Install an APK via the Automator (PackageInstaller; Shizuku not required, the user may have to confirm the system dialog).")
+                .addProperty("path", PropertyType.STRING, "APK path readable by the Automator (e.g. /sdcard/...).", true).build());
+
         mTools.add(McpTool.builder("android_emergency_stop", "Immediately stop the Automator agent session.").build());
     }
 
