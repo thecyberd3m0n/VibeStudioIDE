@@ -226,6 +226,18 @@ public class AutomatorMcpServer implements McpServer {
     /** Called by the IDE when the agent loop ends (task_complete / stop / error): hides the Automator frame + bubble. Fire-and-forget. */
     private static volatile AutomatorMcpServer sLast;
     public static void endSessionIfActive() { AutomatorMcpServer s = sLast; if (s != null) s.endSession(); }
+    /** Called when the user starts a new agent run: clears a previous STOP so the Automator accepts commands again. */
+    public static void resumeIfActive() {
+        final AutomatorMcpServer s = sLast;
+        if (s == null) return;
+        new Thread(() -> {
+            try {
+                IAutomatorService svc = s.mService;
+                if (svc != null && svc.asBinder().isBinderAlive()) svc.resume();
+            } catch (Throwable ignored) {}
+        }, "automator-resume").start();
+    }
+
     public void endSession() {
         final IAutomatorService s = mService;
         if (s == null) return;

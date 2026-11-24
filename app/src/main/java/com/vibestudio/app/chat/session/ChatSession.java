@@ -212,6 +212,8 @@ public class ChatSession {
             }
         }
         mIsLoading = true;
+        com.vibestudio.app.mcp.AutomatorMcpServer.resumeIfActive();
+
         mStopRequested = false;
         mMainHandler.post(new Runnable() {
             @Override
@@ -230,6 +232,8 @@ public class ChatSession {
         if (userText == null || userText.trim().isEmpty()) return;
 
         mStopRequested = false;
+        com.vibestudio.app.mcp.AutomatorMcpServer.resumeIfActive();
+
         String messageToStore = userText;
         if (messageToStore.length() > MAX_INPUT_CHARS) {
             messageToStore = messageToStore.substring(0, MAX_INPUT_CHARS);
@@ -579,7 +583,7 @@ public class ChatSession {
                 byte[] imgBytes = android.util.Base64.decode(imageBase64, android.util.Base64.DEFAULT);
                 android.graphics.Bitmap thumb = android.graphics.BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.length);
                 shot.add(new ChatAttachment(toolName + ".jpg", imageMime, imageBase64, ChatAttachment.AttachmentType.PHOTO, thumb));
-                imageMsg = new ChatMessage("User", "Image returned by " + toolName + ":", true, shot);
+                imageMsg = ChatMessage.toolImage(toolName, "Image returned by " + toolName + ":", shot);
                 mMessages.add(imageMsg);
             }
         }
@@ -589,7 +593,11 @@ public class ChatSession {
         // If execution caused an error, notify UI
         if (toolResult.isError()) {
             postToolStatusMessage(toolResult.getFormattedOutput(), ChatMessage.MessageType.ERROR, toolName, null);
+            // User pressed STOP in the Automator bubble: stop the agent loop like the chat stop button.
+            String errOut = toolResult.getFormattedOutput();
+            if (errOut != null && errOut.contains("Error 15:")) mStopRequested = true;
         }
+
 
         if (mStopRequested) {
             postAssistantResponse("⏹️ Operation stopped by user.");

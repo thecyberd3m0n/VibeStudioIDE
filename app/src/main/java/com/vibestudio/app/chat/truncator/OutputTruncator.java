@@ -10,6 +10,7 @@ public class OutputTruncator {
 
     public static JSONObject truncateOutput(JSONObject toolResultObj) {
         if (toolResultObj == null) return new JSONObject();
+        if (toolResultObj.has("image_base64")) return toolResultObj;
 
         try {
             String jsonString = toolResultObj.toString(2);

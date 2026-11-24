@@ -1172,6 +1172,12 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             return;
         }
 
+        if (msg.getType() == ChatMessage.MessageType.TOOL_IMAGE) {
+            mChatContainer.addView(new com.vibestudio.app.view.ToolImageMessage(context, msg, this::openAttachmentInImageViewer));
+            return;
+        }
+
+
         // Centralized SOLID check and view creation via ToolMessageFactory
         if (ToolMessageFactory.isToolMessage(msg)) {
             int childCount = mChatContainer.getChildCount();

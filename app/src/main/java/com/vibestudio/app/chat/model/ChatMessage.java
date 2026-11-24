@@ -12,7 +12,8 @@ public class ChatMessage {
         TOOL_CALL,
         TOOL_RESULT,
         ERROR,
-        REASONING
+        REASONING,
+        TOOL_IMAGE
     }
 
     private final String sender;
@@ -42,6 +43,12 @@ public class ChatMessage {
     public ChatMessage(String sender, String text, boolean isUser, List<ChatAttachment> attachments) {
         this(sender, text, isUser, MessageType.NORMAL, null, null, null, null, null, null, attachments);
     }
+    /** Image returned by a tool (e.g. screenshot): sent to the model as a user image, shown in the chat as a tool message. */
+    public static ChatMessage toolImage(String toolName, String text, List<ChatAttachment> attachments) {
+        return new ChatMessage("System Tool", text, true, MessageType.TOOL_IMAGE, toolName, null, null, null, null, null, attachments);
+    }
+
+
 
     private ChatMessage(String sender, String text, boolean isUser, MessageType type, String toolName, JSONObject toolArgs,
                         String callId, String turnId, String callState, String callStateKind) {
