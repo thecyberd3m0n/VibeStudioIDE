@@ -79,8 +79,11 @@ public class AutomatorMcpServer implements McpServer {
                 .addProperty("package", PropertyType.STRING, "Package name.", true)
                 .addProperty("quarter", PropertyType.STRING, "Optional: top_left|top_right|bottom_left|bottom_right. Launches the app in a floating window covering that quarter of the screen (needs freeform support).", false).build());
         mTools.add(McpTool.builder("android_screenshot", "Capture a <=64KB WebP/JPEG screenshot as JSON with base64, scaleFactor.").build());
-        mTools.add(McpTool.builder("android_logcat", "Read recent logcat lines (logcat -d -t N). Without Shizuku only the Automator's own log is readable; with Shizuku the whole device log.")
-                .addProperty("lines", PropertyType.INTEGER, "Number of trailing lines (default 200).", false).build());
+        mTools.add(McpTool.builder("android_logcat", "Read recent logcat lines (logcat -d -t N). Whole device log needs Shizuku or READ_LOGS granted via pm grant; otherwise only the Automator's own log is readable.")
+                .addProperty("lines", PropertyType.INTEGER, "Number of trailing lines (default 200).", false)
+                .addProperty("package", PropertyType.STRING, "Optional: only this running allowlisted package (--pid).", false)
+                .addProperty("level", PropertyType.STRING, "Optional minimum level: V|D|I|W|E|F.", false).build());
+
         mTools.add(McpTool.builder("android_force_stop", "Close a tested app (allowlisted package). Uses am force-stop with Shizuku, otherwise killBackgroundProcesses.")
                 .addProperty("package", PropertyType.STRING, "Package name.", true).build());
 

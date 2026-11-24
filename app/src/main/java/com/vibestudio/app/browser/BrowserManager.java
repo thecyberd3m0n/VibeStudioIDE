@@ -472,18 +472,7 @@ public class BrowserManager {
 
         final String urlToLoad = finalUrl;
         addBrowserLog("INFO", TAG, "Navigating to: " + urlToLoad);
-
-        try {
-            JSONObject params = new JSONObject();
-            params.put("url", urlToLoad);
-            String cdpResult = CdpLocalClient.executeCdp(webView, "Page.navigate", params);
-            if (cdpResult != null && !cdpResult.startsWith("Native CDP Error:")) {
-                return "Navigating via CDP to " + urlToLoad;
-            }
-        } catch (Exception e) {
-            addBrowserLog("DEBUG", TAG, "CDP Page.navigate fallback to webView.loadUrl: " + e.getMessage());
-        }
-
+        // loadUrl on the main handler: never block the caller (UI thread) on the CDP socket.
         mMainHandler.post(() -> webView.loadUrl(urlToLoad));
         return "Navigating to " + urlToLoad;
     }
