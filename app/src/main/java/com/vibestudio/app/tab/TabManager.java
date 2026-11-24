@@ -142,6 +142,15 @@ public class TabManager {
             } catch (InterruptedException ignored) {}
             return holder.tab;
         }
+        if (type.isSingleInstance()) {
+            TabItem existing = findTabByType(type);
+            if (existing != null) {
+                if (selectNewTab) selectTab(existing);
+                return existing;
+            }
+        }
+
+
 
         String icon = type.getDefaultIcon();
         Fragment tabFragment = fragment != null ? fragment : type.createDefaultFragment();
