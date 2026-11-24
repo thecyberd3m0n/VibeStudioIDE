@@ -659,11 +659,11 @@ public class BrowserManager {
                     fos.close();
                     filePath = file.getAbsolutePath();
                 }
-                result.put("mime", "image/jpeg");
+                result.put("image_mime", "image/jpeg");
 
 
                 result.put("status", "success");
-                result.put("base64", base64Image);
+                result.put("image_base64", base64Image);
                 result.put("file_path", filePath);
                 result.put("width", width);
                 result.put("height", height);

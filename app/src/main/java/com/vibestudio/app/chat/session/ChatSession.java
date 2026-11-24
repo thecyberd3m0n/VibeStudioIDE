@@ -557,6 +557,14 @@ public class ChatSession {
         mAgentLoop.setState(AgentLoopController.State.EXECUTING_TOOL);
         ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
 
+        // Tools may return a compressed image; move it out of the text result into a regular image attachment.
+        String imageBase64 = toolResult.getOutput().optString("image_base64", "");
+        String imageMime = toolResult.getOutput().optString("image_mime", "image/jpeg");
+        if (!imageBase64.isEmpty()) {
+            toolResult.getOutput().remove("image_base64");
+            toolResult.getOutput().remove("image_mime");
+        }
+
         // Record assistant call and system tool result in conversation history (for LLM context)
         ChatMessage modelCallMsg = turnCall.linkCall(new ChatMessage(modelAuthor, callText, false, ChatMessage.MessageType.TOOL_CALL, toolName, args));
         ChatMessage toolResultMsg = turnCall.linkResult(new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
@@ -565,7 +573,13 @@ public class ChatSession {
         synchronized (ChatSession.this) {
             mMessages.add(modelCallMsg);
             mMessages.add(toolResultMsg);
+            if (!imageBase64.isEmpty()) {
+                List<ChatAttachment> shot = new ArrayList<>();
+                shot.add(new ChatAttachment(toolName + ".jpg", imageMime, imageBase64, ChatAttachment.AttachmentType.PHOTO));
+                mMessages.add(new ChatMessage("User", "Image returned by " + toolName + ":", true, shot));
+            }
         }
+
 
         // If execution caused an error, notify UI
         if (toolResult.isError()) {

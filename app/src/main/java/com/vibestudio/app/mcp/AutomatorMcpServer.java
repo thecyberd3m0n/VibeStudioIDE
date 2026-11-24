@@ -207,7 +207,15 @@ public class AutomatorMcpServer implements McpServer {
             });
             if (!latch.await(CALL_TIMEOUT_S, TimeUnit.SECONDS)) return McpToolResult.error("Automator call timed out");
             if (err[0] != null) return McpToolResult.error(err[0]);
+            if (remote.endsWith("screenshot")) {
+                // Hand the already compressed (<=64KB) image to the chat as an attachment instead of text.
+                Map<String, Object> img = new java.util.HashMap<>();
+                img.put("image_base64", new JSONObject(ok[0]).optString("jpegBase64"));
+                img.put("image_mime", "image/jpeg");
+                return McpToolResult.success(img, toolName);
+            }
             return McpToolResult.success(ok[0], toolName);
+
         } catch (SecurityException e) {
             return McpToolResult.error("Automator rejected caller: " + e.getMessage());
         } catch (Exception e) {
