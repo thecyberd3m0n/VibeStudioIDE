@@ -46,7 +46,12 @@ public class AgentLoopController {
             + "Never output conversational updates alone while work remains. "
             + "When the task is finished, or you need input from the user, call the 'task_complete' tool "
             + "(text-protocol form: {\"tool\": \"task_complete\", \"args\": {\"summary\": \"...\"}}). "
-            + "A response without a tool call is treated as an unfinished turn.\n";
+            + "A response without a tool call is treated as an unfinished turn. "
+            + "Read every tool result before the next step: a result with \"status\":\"error\", \"ok\":false, "
+            + "'TOOL CALL FAILED', 'TIMEOUT' or 'SESSION ENDED' means the step did NOT succeed. "
+            + "Never continue as if it worked: state the failure, fix its cause (e.g. a session_id that no longer exists: "
+            + "run without session_id or open a new tab) and retry before doing anything that depends on it.\n";
+
 
     public static final String NUDGE_MESSAGE = "Continue: if the task is not finished, call the next tool now. "
             + "If it is finished, or you need input from the user, call 'task_complete'.";

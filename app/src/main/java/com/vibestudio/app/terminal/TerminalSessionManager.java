@@ -814,11 +814,13 @@ public class TerminalSessionManager {
      */
     public String waitForTerminalOutput(TerminalSession session, String pattern, int timeoutS) {
         if (session == null || !session.isRunning()) {
-            return "Terminal session is not running.";
+            return "ERROR: terminal session is not running.";
         }
 
         long deadline = System.currentTimeMillis() + (timeoutS * 1000L);
         boolean hasPattern = pattern != null && !pattern.trim().isEmpty();
+        // Occurrences already in the buffer (e.g. the echoed command line) must not count.
+        int baseline = hasPattern ? countOccurrences(getSessionOutput(session), pattern) : 0;
 
         while (System.currentTimeMillis() < deadline && session.isRunning()) {
             synchronized (session) {
@@ -830,16 +832,32 @@ public class TerminalSessionManager {
                 }
             }
 
-            if (hasPattern) {
-                String currentTranscript = readTerminalOutput(session, 100, 0, true, null);
-                if (currentTranscript != null && currentTranscript.contains(pattern)) {
-                    return readTerminalOutput(session, 30, 0, true, null);
-                }
+            if (hasPattern && countOccurrences(getSessionOutput(session), pattern) > baseline) {
+                return "PATTERN FOUND: '" + pattern + "'\n" + readTerminalOutput(session, 30, 0, true, null);
             }
         }
 
-        return readTerminalOutput(session, 30, 0, true, null);
+        String tail = readTerminalOutput(session, 30, 0, true, null);
+        if (!session.isRunning()) {
+            return "SESSION ENDED before " + (hasPattern ? "pattern '" + pattern + "' appeared" : "completion") + ".\n" + tail;
+        }
+        if (hasPattern) {
+            return "TIMEOUT after " + timeoutS + "s: pattern '" + pattern + "' did not appear in new output.\n" + tail;
+        }
+        return "TIMEOUT after " + timeoutS + "s: no pattern given, session still running.\n" + tail;
     }
+
+    private static int countOccurrences(String text, String pattern) {
+        if (text == null || pattern == null || pattern.isEmpty()) return 0;
+        int count = 0;
+        int idx = 0;
+        while ((idx = text.indexOf(pattern, idx)) >= 0) {
+            count++;
+            idx += pattern.length();
+        }
+        return count;
+    }
+
 
     public String getSessionOutput(TerminalSession session) {
         if (session == null || !session.isRunning()) {
