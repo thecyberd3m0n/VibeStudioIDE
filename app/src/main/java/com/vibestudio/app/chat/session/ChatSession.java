@@ -570,15 +570,20 @@ public class ChatSession {
         ChatMessage toolResultMsg = turnCall.linkResult(new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
                 toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT, toolName, null));
 
+        ChatMessage imageMsg = null;
         synchronized (ChatSession.this) {
             mMessages.add(modelCallMsg);
             mMessages.add(toolResultMsg);
             if (!imageBase64.isEmpty()) {
                 List<ChatAttachment> shot = new ArrayList<>();
-                shot.add(new ChatAttachment(toolName + ".jpg", imageMime, imageBase64, ChatAttachment.AttachmentType.PHOTO));
-                mMessages.add(new ChatMessage("User", "Image returned by " + toolName + ":", true, shot));
+                byte[] imgBytes = android.util.Base64.decode(imageBase64, android.util.Base64.DEFAULT);
+                android.graphics.Bitmap thumb = android.graphics.BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.length);
+                shot.add(new ChatAttachment(toolName + ".jpg", imageMime, imageBase64, ChatAttachment.AttachmentType.PHOTO, thumb));
+                imageMsg = new ChatMessage("User", "Image returned by " + toolName + ":", true, shot);
+                mMessages.add(imageMsg);
             }
         }
+        if (imageMsg != null) notifyMessageAdded(imageMsg);
 
 
         // If execution caused an error, notify UI
