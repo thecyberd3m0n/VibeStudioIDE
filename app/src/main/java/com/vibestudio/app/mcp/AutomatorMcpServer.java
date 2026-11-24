@@ -75,8 +75,9 @@ public class AutomatorMcpServer implements McpServer {
                 .addProperty("id", PropertyType.INTEGER, "Node id (optional).", false).build());
         mTools.add(McpTool.builder("android_global_action", "Perform BACK, HOME, RECENTS or NOTIFICATIONS.")
                 .addProperty("action", PropertyType.STRING, "BACK|HOME|RECENTS|NOTIFICATIONS", true).build());
-        mTools.add(McpTool.builder("android_launch_app", "Launch an app by package name (must be in the Automator allowlist).")
-                .addProperty("package", PropertyType.STRING, "Package name.", true).build());
+        mTools.add(McpTool.builder("android_launch_app", "Launch an app by package name (must be in the Automator allowlist). Optionally in a floating window on a screen quarter.")
+                .addProperty("package", PropertyType.STRING, "Package name.", true)
+                .addProperty("quarter", PropertyType.STRING, "Optional: top_left|top_right|bottom_left|bottom_right. Launches the app in a floating window covering that quarter of the screen (needs freeform support).", false).build());
         mTools.add(McpTool.builder("android_screenshot", "Capture a <=64KB WebP/JPEG screenshot as JSON with base64, scaleFactor.").build());
         mTools.add(McpTool.builder("android_logcat", "Read recent logcat lines (logcat -d -t N). Without Shizuku only the Automator's own log is readable; with Shizuku the whole device log.")
                 .addProperty("lines", PropertyType.INTEGER, "Number of trailing lines (default 200).", false).build());
