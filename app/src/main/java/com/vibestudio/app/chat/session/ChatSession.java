@@ -285,6 +285,17 @@ public class ChatSession {
         }).start();
     }
 
+    private static final int MAX_TIMEOUT_RETRIES = 3;
+
+    private static boolean isTimeout(AiResponse r) {
+        if (r == null || r.isSuccess()) return false;
+        String m = r.getErrorMessage();
+        if (m == null) return false;
+        m = m.toLowerCase();
+        return m.contains("timeout") || m.contains("timed out");
+    }
+
+
     private StepResult runTurn(final Context context) {
         if (mStopRequested) {
             postAssistantResponse("⏹️ Operation stopped by user.");
@@ -323,6 +334,22 @@ public class ChatSession {
         AiResponse response = mAiRouter.generateContent(context, apiKey,
                 buildSystemInstruction(context, nativeTools, parallelCalls, activeAgent), snapshot,
                 nativeTools ? declaredTools(toolPolicy) : null);
+
+        // Timeout: retry up to 3 times; if still failing, compress the history and try once more.
+        for (int attempt = 1; attempt <= MAX_TIMEOUT_RETRIES && isTimeout(response) && !mStopRequested; attempt++) {
+            LogViewerService.getInstance().w(TAG, "Request timed out; retry " + attempt + "/" + MAX_TIMEOUT_RETRIES);
+            response = mAiRouter.generateContent(context, apiKey,
+                    buildSystemInstruction(context, nativeTools, parallelCalls, activeAgent), snapshot,
+                    nativeTools ? declaredTools(toolPolicy) : null);
+        }
+        if (isTimeout(response) && !mStopRequested) {
+            LogViewerService.getInstance().w(TAG, "Still timing out after " + MAX_TIMEOUT_RETRIES + " retries; compressing context and continuing.");
+            snapshot = HistoryCompressor.compress(snapshot);
+            response = mAiRouter.generateContent(context, apiKey,
+                    buildSystemInstruction(context, nativeTools, parallelCalls, activeAgent), snapshot,
+                    nativeTools ? declaredTools(toolPolicy) : null);
+        }
+
 
         // The API refused the declared tools: ask again with the text protocol (prompt rebuilt with the schemas
         // and call format) and, if that works, remember to use it for this model.
