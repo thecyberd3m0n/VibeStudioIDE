@@ -108,7 +108,7 @@ if [ "$APP_ID" != "com.vibestudio.app" ]; then
 fi
 
 
-AAR_RES="drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4 editor-0.24.6"
+AAR_RES="drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4 editor-0.24.6 ext-tables-4.6.2"
 
 if aapt2 version > /dev/null 2>&1; then
     aapt2 compile --dir "$RES_DIR" -o compiled_res/

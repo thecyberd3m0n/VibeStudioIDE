@@ -84,7 +84,7 @@ public class AutomatorMcpServer implements McpServer {
                 .addProperty("package", PropertyType.STRING, "Package name.", true).build());
 
         mTools.add(McpTool.builder("android_install_apk", "Install an APK via the Automator (PackageInstaller; Shizuku not required, the user may have to confirm the system dialog).")
-                .addProperty("path", PropertyType.STRING, "APK path readable by the Automator (e.g. /sdcard/...).", true).build());
+                .addProperty("path", PropertyType.STRING, "Absolute path of an APK readable by the IDE (e.g. the IDE home build output); it is streamed to the Automator. Never copy the APK to /sdcard or shared storage.", true).build());
 
         mTools.add(McpTool.builder("android_emergency_stop", "Immediately stop the Automator agent session.").build());
     }
@@ -175,7 +175,26 @@ public class AutomatorMcpServer implements McpServer {
                 return McpToolResult.success(o.toString(), "Automator status");
             }
             String remote = toolName.substring(PREFIX.length());
-            if ("install_apk".equals(remote)) remote = "shell_install";
+            if ("install_apk".equals(remote)) {
+                // Hand the APK to the Automator as a file descriptor: no shared-storage path needed.
+                Object p = arguments == null ? null : arguments.get("path");
+                if (p == null) return McpToolResult.error("Missing 'path'");
+                java.io.File apk = new java.io.File(String.valueOf(p));
+                if (!apk.isAbsolute()) apk = new java.io.File(new java.io.File(context.getFilesDir(), "home"), apk.getPath());
+                if (!apk.canRead()) return McpToolResult.error("APK not readable: " + apk);
+                final String[] iok = new String[1], ierr = new String[1];
+                final CountDownLatch ilatch = new CountDownLatch(1);
+                try (android.os.ParcelFileDescriptor fd = android.os.ParcelFileDescriptor.open(apk, android.os.ParcelFileDescriptor.MODE_READ_ONLY)) {
+                    svc.installApk(fd, apk.length(), new IAutomatorCallback.Stub() {
+                        @Override public void onSuccess(String r) { iok[0] = r; ilatch.countDown(); }
+                        @Override public void onError(int code, String m) { ierr[0] = "Error " + code + ": " + m; ilatch.countDown(); }
+                    });
+                    if (!ilatch.await(CALL_TIMEOUT_S, TimeUnit.SECONDS)) return McpToolResult.error("Automator call timed out");
+                }
+                if (ierr[0] != null) return McpToolResult.error(ierr[0]);
+                return McpToolResult.success(iok[0], toolName);
+            }
+
             JSONObject args = new JSONObject();
             if (arguments != null) for (Map.Entry<String, Object> e : arguments.entrySet()) args.put(e.getKey(), e.getValue());
 

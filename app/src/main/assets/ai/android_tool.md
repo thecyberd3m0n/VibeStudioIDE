@@ -11,7 +11,7 @@ The `android` skill inspects, navigates and tests native Android apps on this de
 - `android_global_action`: BACK, HOME, RECENTS or NOTIFICATIONS.
 - `android_launch_app`: Launch an app by package name.
 - `android_screenshot`: JSON with `base64`, `width`, `height`, `scaleFactor`; the image is at most 64 KB.
-- `android_install_apk`: Installs an APK through the Automator's PackageInstaller (no Shizuku needed). The user may have to confirm the system install dialog; tap it via the UI tree. Pass a path readable by the Automator (e.g. shared storage), not the IDE's private home.
+- `android_install_apk`: Installs an APK through the Automator's PackageInstaller (no Shizuku needed). The user may have to confirm the system install dialog; tap it via the UI tree. Pass the absolute path of the APK inside the IDE home (e.g. ~/Project/bin/App.apk); the IDE streams it to the Automator via ParcelFileDescriptor. NEVER copy the APK to /sdcard or shared storage first: it is not available and will not work.
 - `android_logcat`, `android_force_stop`: Shizuku only.
 - `android_emergency_stop`: Stops the session immediately.
 

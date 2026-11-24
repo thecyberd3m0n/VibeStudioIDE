@@ -5,8 +5,10 @@ public interface IAutomatorService extends IInterface {
     String DESCRIPTOR = "dev.vibestudio.automator.ipc.IAutomatorService";
     int F = IBinder.FIRST_CALL_TRANSACTION;
     int TX_STATUS = F, TX_EXEC = F + 1, TX_STOP = F + 2, TX_PAUSE = F + 3, TX_RESUME = F + 4,
-        TX_STATE = F + 5, TX_REG = F + 6, TX_UNREG = F + 7, TX_LOGS = F + 8;
+        TX_STATE = F + 5, TX_REG = F + 6, TX_UNREG = F + 7, TX_LOGS = F + 8, TX_INSTALL = F + 9;
     String getDriverStatus() throws RemoteException;
+    void installApk(ParcelFileDescriptor apk, long size, IAutomatorCallback callback) throws RemoteException;
+
     void executeTool(String toolName, String argsJson, IAutomatorCallback callback) throws RemoteException;
     void emergencyStop() throws RemoteException;
     void pause() throws RemoteException;
@@ -27,7 +29,7 @@ public interface IAutomatorService extends IInterface {
         }
         @Override protected boolean onTransact(int code, Parcel d, Parcel r, int flags) throws RemoteException {
             if (code == INTERFACE_TRANSACTION) { r.writeString(DESCRIPTOR); return true; }
-            if (code < F || code > TX_LOGS) return super.onTransact(code, d, r, flags);
+            if (code < F || code > TX_INSTALL) return super.onTransact(code, d, r, flags);
             d.enforceInterface(DESCRIPTOR);
             switch (code) {
                 case TX_STATUS: { String s = getDriverStatus(); r.writeNoException(); r.writeString(s); return true; }
@@ -40,7 +42,11 @@ public interface IAutomatorService extends IInterface {
                 case TX_STATE: { String s = getState(); r.writeNoException(); r.writeString(s); return true; }
                 case TX_REG: registerLogListener(IAutomatorLogListener.Stub.asInterface(d.readStrongBinder())); r.writeNoException(); return true;
                 case TX_UNREG: unregisterLogListener(IAutomatorLogListener.Stub.asInterface(d.readStrongBinder())); r.writeNoException(); return true;
+                case TX_INSTALL: { ParcelFileDescriptor p = d.readInt() != 0 ? ParcelFileDescriptor.CREATOR.createFromParcel(d) : null;
+                    long sz = d.readLong(); IAutomatorCallback cb = IAutomatorCallback.Stub.asInterface(d.readStrongBinder());
+                    installApk(p, sz, cb); r.writeNoException(); return true; }
                 default: { String s = getLogs(); r.writeNoException(); r.writeString(s); return true; }
+
             }
         }
         private static class Proxy implements IAutomatorService {
@@ -71,6 +77,12 @@ public interface IAutomatorService extends IInterface {
             public void registerLogListener(IAutomatorLogListener l) throws RemoteException { callVoid(TX_REG, l == null ? null : l.asBinder()); }
             public void unregisterLogListener(IAutomatorLogListener l) throws RemoteException { callVoid(TX_UNREG, l == null ? null : l.asBinder()); }
             public String getLogs() throws RemoteException { return callStr(TX_LOGS); }
+            public void installApk(ParcelFileDescriptor apk, long size, IAutomatorCallback cb) throws RemoteException {
+                Parcel d = Parcel.obtain(), r = Parcel.obtain();
+                try { d.writeInterfaceToken(DESCRIPTOR); d.writeInt(1); apk.writeToParcel(d, 0); d.writeLong(size);
+                    d.writeStrongBinder(cb != null ? cb.asBinder() : null); b.transact(TX_INSTALL, d, r, 0); r.readException(); }
+                finally { r.recycle(); d.recycle(); }
+            }
         }
     }
 }
