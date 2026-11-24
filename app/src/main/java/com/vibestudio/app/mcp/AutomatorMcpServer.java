@@ -153,6 +153,7 @@ public class AutomatorMcpServer implements McpServer {
             return McpToolResult.error("VibeStudioAutomator is not installed; Android device tools are unavailable.");
         }
         boolean emergency = "android_emergency_stop".equals(toolName);
+        sLast = this;
         if (!emergency && !mSessionGranted && !PermissionPromptManager.getInstance().promptSync(context,
                 "🤖 Permission Required",
                 "The AI Agent wants to inspect and control apps on this device through VibeStudioAutomator "
@@ -193,5 +194,20 @@ public class AutomatorMcpServer implements McpServer {
         } catch (Exception e) {
             return McpToolResult.error("Automator: " + e.getMessage());
         }
+    }
+
+    /** Called by the IDE when the agent loop ends (task_complete / stop / error): hides the Automator frame + bubble. Fire-and-forget. */
+    private static volatile AutomatorMcpServer sLast;
+    public static void endSessionIfActive() { AutomatorMcpServer s = sLast; if (s != null) s.endSession(); }
+    public void endSession() {
+        final IAutomatorService s = mService;
+        if (s == null) return;
+        try {
+            if (!s.asBinder().isBinderAlive()) return;
+            s.executeTool("end_session", "{}", new IAutomatorCallback.Stub() {
+                @Override public void onSuccess(String r) {}
+                @Override public void onError(int code, String m) {}
+            });
+        } catch (Throwable ignored) {}
     }
 }

@@ -22,3 +22,5 @@ The `android` skill inspects, navigates and tests native Android apps on this de
 4. **Scope**: Only packages on the user's allowlist can be tapped or typed into. If an action fails, check `android_status` for the allowlist instead of retrying blindly.
 5. **Errors**: Error 10 = the user paused the agent; 15 = the user stopped it. Do not retry; tell the user and call `task_complete`.
 6. **Respect the user**: The user can pause or stop you from the Automator bubble at any time. Never work around this.
+7. **Permission / Settings screens**: If a tool error starts with `PERMISSION_REQUIRED` (or the Automator opened a system Settings screen), stop working immediately: do not tap or type in Settings or other system screens, press BACK once to leave them, then call `task_complete` asking the user to grant the permission manually and re-run the task.
+8. **Session**: The Automator frame and bubble stay visible for the whole task and are removed by the IDE when you call `task_complete`. Always finish with `task_complete`.

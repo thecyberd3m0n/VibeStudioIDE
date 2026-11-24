@@ -165,6 +165,8 @@ public class ChatSession {
 
     public void stopAgentExecution() {
         LogViewerService.getInstance().i(TAG, "Agent execution stop requested by user.");
+        new Thread(new Runnable() { @Override public void run() { com.vibestudio.app.mcp.AutomatorMcpServer.endSessionIfActive(); } }, "automator-end").start();
+
         mStopRequested = true;
         mMainHandler.post(new Runnable() {
             @Override
@@ -512,6 +514,8 @@ public class ChatSession {
 
         if (McpClientManager.isTaskCompleteTool(toolName)) {
             String summary = args.optString("summary", "").trim();
+            new Thread(new Runnable() { @Override public void run() { com.vibestudio.app.mcp.AutomatorMcpServer.endSessionIfActive(); } }, "automator-end").start();
+
             if (summary.isEmpty()) {
                 finishLoading();
             } else {
@@ -633,6 +637,8 @@ public class ChatSession {
     }
 
     private void finishLoading() {
+        // agent loop ended (task_complete / stop / error): drop the Automator frame + bubble
+        new Thread(new Runnable() { @Override public void run() { com.vibestudio.app.mcp.AutomatorMcpServer.endSessionIfActive(); } }, "automator-end").start();
         mMainHandler.post(new Runnable() {
             @Override
             public void run() {
@@ -643,6 +649,7 @@ public class ChatSession {
             }
         });
     }
+
 
     private void postAssistantResponse(final String reply) {
         postAssistantResponse(GENERIC_ASSISTANT_SENDER, reply);
