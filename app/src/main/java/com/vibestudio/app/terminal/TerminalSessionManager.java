@@ -640,13 +640,16 @@ public class TerminalSessionManager {
             String[] linesArray = transcriptText.split("\n");
             List<String> rawLines = Arrays.asList(linesArray);
 
+            int lastNonEmpty = rawLines.size() - 1;
+            while (lastNonEmpty >= 0 && rawLines.get(lastNonEmpty).trim().isEmpty()) lastNonEmpty--;
             List<String> filteredLines = new ArrayList<>();
-            for (String line : rawLines) {
-                String trimmedLine = line.trim();
+            for (int i = 0; i <= lastNonEmpty; i++) {
+                String trimmedLine = rawLines.get(i).trim();
                 if (grepPattern == null || grepPattern.trim().isEmpty() || trimmedLine.contains(grepPattern)) {
                     filteredLines.add(trimmedLine);
                 }
             }
+
 
             int totalFiltered = filteredLines.size();
             int fromIndex = 0;

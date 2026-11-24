@@ -287,8 +287,20 @@ public class TerminalMcpServer implements McpServer {
     private String captureTerminalSnapshot(TerminalSession termSession) {
         try {
             if (termSession != null && termSession.isRunning()) {
-                String snapshot = TerminalSessionManager.getInstance().readTerminalOutput(termSession, 30, 0, true, null);
-                return snapshot != null ? snapshot : "";
+                // Settle: wait until output stops changing (max ~1.5s) so we don't return a stale buffer.
+                String prev = null;
+                String snapshot = "";
+                long deadline = System.currentTimeMillis() + 1500;
+                try { Thread.sleep(250); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                while (true) {
+                    snapshot = TerminalSessionManager.getInstance().readTerminalOutput(termSession, 30, 0, true, null);
+                    if (snapshot == null) snapshot = "";
+                    if (snapshot.equals(prev) || System.currentTimeMillis() >= deadline) break;
+                    prev = snapshot;
+                    try { Thread.sleep(200); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                }
+                return snapshot;
+
             }
         } catch (Exception e) {
             LogViewerService.getInstance().w(TAG, "Failed to capture terminal snapshot: " + e.getMessage());
