@@ -47,14 +47,16 @@ import com.vibestudio.app.terminal.TerminalSessionManager;
 import com.vibestudio.app.git.GitManager;
 import com.vibestudio.app.util.IntentUtils;
 
+import com.vibestudio.app.ux.TaskbarComponent;
+import com.vibestudio.app.ux.TaskbarUiState;
+
 import java.io.File;
 import java.util.List;
 
 public class MainActivity extends FragmentActivity implements TabManager.TabListener, FilesFragment.FileSelectionListener {
 
-    private LinearLayout mTabStripContainer;
-    private android.widget.HorizontalScrollView mTabScrollView;
-    private TextView mTabOverflowBtn;
+    private TaskbarComponent mTaskbar;
+
     private View mBtnLauncherContainer;
     private TabManager mTabManager;
     private LauncherFragment mLauncherFragment;
@@ -66,33 +68,18 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         LogViewerService.getInstance().i("MainActivity", "MainActivity created with Tabbed Layout");
 
-        mTabStripContainer = findViewById(R.id.tab_strip_container);
-        mTabScrollView = findViewById(R.id.tab_scroll_view);
-        mTabOverflowBtn = findViewById(R.id.btn_tab_overflow);
-        ((View) mTabScrollView.getParent()).addOnLayoutChangeListener((v, l, t, r, bt, ol, ot, or, ob) -> {
-            if (r - l != or - ol) fitTabs();
-        });
-        mTabOverflowBtn.setOnClickListener(v -> {
-            LinearLayout list = new LinearLayout(this);
-            list.setOrientation(LinearLayout.VERTICAL);
-            list.setBackgroundColor(Color.parseColor("#2D2D2D"));
-            android.widget.PopupWindow popup = new android.widget.PopupWindow(list,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT, true);
-            popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.parseColor("#2D2D2D")));
-            List<TabItem> tabs = mTabManager.getTabs();
-            TabItem active = mTabManager.getActiveTab();
-            for (int i = 0; i < mTabStripContainer.getChildCount() && i < tabs.size(); i++) {
-                if (mTabStripContainer.getChildAt(i).getVisibility() != View.GONE) continue;
-                TabItem t = tabs.get(i);
-                View row = LayoutInflater.from(this).inflate(R.layout.tab_item_view, list, false);
-                bindTabView(row, t, active != null && active.getId().equals(t.getId()), popup::dismiss);
-                row.setMinimumHeight((int) (44 * getResources().getDisplayMetrics().density));
-                list.addView(row);
+        mTaskbar = new TaskbarComponent(findViewById(android.R.id.content), new TaskbarComponent.Listener() {
+            @Override
+            public void onTabSelected(String tabId) {
+                mTabManager.selectTabById(tabId);
             }
-            list.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-            popup.showAsDropDown(mTabOverflowBtn, mTabOverflowBtn.getWidth() - list.getMeasuredWidth(),
-                    -mTabOverflowBtn.getHeight() - list.getMeasuredHeight());
+
+            @Override
+            public void onTabCloseRequested(String tabId) {
+                mTabManager.closeTabById(tabId);
+            }
         });
+
         mBtnLauncherContainer = findViewById(R.id.btn_launcher_container);
 
         mTabManager = TabManager.getInstance();
@@ -487,105 +474,17 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         ft.commitAllowingStateLoss();
     }
 
+    /** Derives the taskbar uiState from TabManager and pushes it to the (purely visual) component. */
     private void renderTabs() {
-        mTabStripContainer.removeAllViews();
-        List<TabItem> tabs = mTabManager.getTabs();
         TabItem activeTab = mTabManager.getActiveTab();
-
-        LayoutInflater inflater = LayoutInflater.from(this);
-
-        for (final TabItem tab : tabs) {
-            View tabView = inflater.inflate(R.layout.tab_item_view, mTabStripContainer, false);
-
-            bindTabView(tabView, tab, activeTab != null && activeTab.getId().equals(tab.getId()), null);
-            mTabStripContainer.addView(tabView);
+        List<TaskbarUiState.Item> items = new java.util.ArrayList<>();
+        for (TabItem tab : mTabManager.getTabs()) {
+            items.add(new TaskbarUiState.Item(tab.getId(), tab.getTitle(), tab.getIcon(), tab.getIconResId(),
+                    tab.getFavicon(), tab.isCloseable(), activeTab != null && activeTab.getId().equals(tab.getId())));
         }
-        mTabStripContainer.post(this::fitTabs);
+        mTaskbar.render(new TaskbarUiState(items));
     }
 
-    /** Binds icon + title + close button of a tab; shared by the taskbar strip and the overflow popup. */
-    private void bindTabView(View tabView, final TabItem tab, boolean active, Runnable afterAction) {
-        TextView tvIcon = tabView.findViewById(R.id.tab_icon);
-        ImageView ivFavicon = tabView.findViewById(R.id.tab_favicon);
-        TextView tvTitle = tabView.findViewById(R.id.tab_title);
-        TextView tvClose = tabView.findViewById(R.id.tab_close_btn);
-
-        if (tab.getFavicon() != null) {
-            ivFavicon.setImageBitmap(tab.getFavicon());
-            ivFavicon.setVisibility(View.VISIBLE);
-            tvIcon.setVisibility(View.GONE);
-        } else if (tab.getIconResId() != null) {
-            ivFavicon.setImageResource(tab.getIconResId());
-            ivFavicon.setVisibility(View.VISIBLE);
-            tvIcon.setVisibility(View.GONE);
-        } else {
-            tvIcon.setText(tab.getIcon());
-            tvIcon.setVisibility(View.VISIBLE);
-            ivFavicon.setVisibility(View.GONE);
-        }
-        String shownTitle = tab.getTitle();
-        tvTitle.setText(shownTitle != null && shownTitle.length() > 15 ? shownTitle.substring(0, 15) + "…" : shownTitle);
-
-        if (active) {
-            tabView.setBackgroundColor(Color.parseColor("#1E1E1E"));
-            tvTitle.setTextColor(Color.parseColor("#FFFFFF"));
-            tvIcon.setTextColor(Color.parseColor("#FFFFFF"));
-        } else {
-            tabView.setBackgroundColor(Color.parseColor("#2D2D2D"));
-            tvTitle.setTextColor(Color.parseColor("#969696"));
-            tvIcon.setTextColor(Color.parseColor("#969696"));
-        }
-
-        if (!tab.isCloseable()) {
-            tvClose.setVisibility(View.GONE);
-        } else {
-            tvClose.setVisibility(View.VISIBLE);
-            tvClose.setOnClickListener(v -> {
-                if (afterAction != null) afterAction.run();
-                mTabManager.closeTab(tab);
-            });
-        }
-
-        tabView.setOnClickListener(v -> {
-            if (afterAction != null) afterAction.run();
-            mTabManager.selectTab(tab);
-        });
-    }
-
-    /** Shows only the tabs that fit (active one always); the rest go to the overflow menu. */
-    private void fitTabs() {
-        int n = mTabStripContainer.getChildCount();
-        int[] w = new int[n];
-        int total = 0;
-        for (int i = 0; i < n; i++) {
-            View c = mTabStripContainer.getChildAt(i);
-            c.setVisibility(View.VISIBLE);
-            c.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-            w[i] = c.getMeasuredWidth();
-            total += w[i];
-        }
-        int avail = ((View) mTabScrollView.getParent()).getWidth() - mTabScrollView.getLeft();
-        boolean overflow = total > avail;
-        if (overflow) avail -= (int) (32 * getResources().getDisplayMetrics().density);
-        List<TabItem> tabs = mTabManager.getTabs();
-        TabItem active = mTabManager.getActiveTab();
-        int used = 0;
-        boolean[] show = new boolean[n];
-        for (int i = 0; i < n && i < tabs.size(); i++) {
-            if (active != null && tabs.get(i).getId().equals(active.getId())) { show[i] = true; used += w[i]; }
-        }
-        int hidden = 0;
-        for (int i = 0; i < n; i++) {
-            // A tab is shown when at least half of it fits; the strip stays scrollable for the rest.
-            if (!show[i] && (!overflow || used + w[i] / 2 <= avail)) { show[i] = true; used += w[i]; }
-        }
-        for (int i = 0; i < n; i++) {
-            mTabStripContainer.getChildAt(i).setVisibility(show[i] ? View.VISIBLE : View.GONE);
-            if (!show[i]) hidden++;
-        }
-        mTabOverflowBtn.setText((hidden > 0 ? hidden + " " : "") + "⌃");
-        mTabOverflowBtn.setVisibility(overflow ? View.VISIBLE : View.GONE);
-    }
 
     @Override
     protected void onNewIntent(Intent intent) {
