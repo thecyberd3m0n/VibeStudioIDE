@@ -79,7 +79,7 @@ Debug build is `com.vibestudio.dev` (`APP_ID=com.vibestudio.dev ./build.sh`); th
 1. **Status**: `android_status` first (mode, allowlist). Only allowlisted packages can be tapped/typed into.
 2. **Build**: build the dev APK in the terminal (`./build.sh` with `APP_ID=com.vibestudio.dev`), check for `BUILD OK`.
 3. **Install**: `android_install_apk` with the APK path. The Automator installs via PackageInstaller (no Shizuku needed); the user may have to confirm the system dialog.
-4. **Launch**: `android_launch_app` with `com.vibestudio.dev`.
+4. **Launch**: `android_launch_app` with `com.vibestudio.dev` and `quarter: "top_right"` (floating quarter window; the chat stays visible). Never install `com.vibestudio.app` over the running IDE.
 5. **Inspect**: prefer `android_dump_ui_tree` (ids are valid per dump only; re-dump after each action). Use `android_screenshot` only when the tree lacks info; the Automator compresses screenshots to <=64 KB.
 6. **Interact**: `android_tap_node`; if it returns `ok:false`, fall back to `android_tap` with coordinates.
 7. **Fix and redeploy**: edit the code, rebuild, reinstall (same signing key, otherwise `INSTALL_FAILED_UPDATE_INCOMPATIBLE`), relaunch, re-verify with a fresh dump.
