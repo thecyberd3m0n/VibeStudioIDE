@@ -523,7 +523,8 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
             tvIcon.setVisibility(View.VISIBLE);
             ivFavicon.setVisibility(View.GONE);
         }
-        tvTitle.setText(tab.getTitle());
+        String shownTitle = tab.getTitle();
+        tvTitle.setText(shownTitle != null && shownTitle.length() > 15 ? shownTitle.substring(0, 15) + "…" : shownTitle);
 
         if (active) {
             tabView.setBackgroundColor(Color.parseColor("#1E1E1E"));
