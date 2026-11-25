@@ -574,12 +574,16 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         for (int i = 0; i < n && i < tabs.size(); i++) {
             if (active != null && tabs.get(i).getId().equals(active.getId())) { show[i] = true; used += w[i]; }
         }
+        int hidden = 0;
         for (int i = 0; i < n; i++) {
-            if (!show[i] && (!overflow || used + w[i] <= avail)) { show[i] = true; used += w[i]; }
+            // A tab is shown when at least half of it fits; the strip stays scrollable for the rest.
+            if (!show[i] && (!overflow || used + w[i] / 2 <= avail)) { show[i] = true; used += w[i]; }
         }
         for (int i = 0; i < n; i++) {
             mTabStripContainer.getChildAt(i).setVisibility(show[i] ? View.VISIBLE : View.GONE);
+            if (!show[i]) hidden++;
         }
+        mTabOverflowBtn.setText((hidden > 0 ? hidden + " " : "") + "⌃");
         mTabOverflowBtn.setVisibility(overflow ? View.VISIBLE : View.GONE);
     }
 
