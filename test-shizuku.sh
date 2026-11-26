@@ -1,4 +1,5 @@
 #!/bin/bash
+APP_ID=${APP_ID:-com.vibestudio.app}
 set -e
 
 echo "=== VibeStudio Android Instrumentation Test Suite (Shizuku) ==="
@@ -78,8 +79,8 @@ shk_run "wm dismiss-keyguard"
 
 # Reset app data if requested
 if [ "$RESET_DATA" = true ]; then
-    echo "=== Resetting App Data (pm clear com.vibestudio.app) ==="
-    shk_run "pm clear com.vibestudio.app"
+    echo "=== Resetting App Data (pm clear ${APP_ID}) ==="
+    shk_run "pm clear ${APP_ID}"
 fi
 
 # 2. Build Target APK and Instrumentation Test APK
@@ -102,7 +103,7 @@ fi
 
 # 4. Execute Instrumentation Tests via Android Framework (am instrument)
 echo "=== Step 4: Launching Android Framework Instrumentation Tests ==="
-TEST_RUNNER="com.vibestudio.app.test/androidx.test.runner.AndroidJUnitRunner"
+TEST_RUNNER="${APP_ID}.test/androidx.test.runner.AndroidJUnitRunner"
 
 EXTRA_TEST_ARGS=""
 if [ -n "$TEST_CLASS" ] && [ -n "$TEST_METHOD" ]; then

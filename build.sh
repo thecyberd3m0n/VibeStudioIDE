@@ -55,33 +55,29 @@ for j in libs/deps/*.jar; do
     CLASSPATH="$CLASSPATH:$j"
 done
 
-# 4. Compile LibTermux Kotlin sources
-echo "=== Compiling LibTermux Kotlin sources ==="
-rm -rf libtermux_classes
-mkdir -p libtermux_classes
+# 4. Compile LibTermux Kotlin sources (skipped when libs/libtermux.jar is newer than every source)
+if [ -f libs/libtermux.jar ] && [ -z "$(find libtermux-android -name '*.kt' -newer libs/libtermux.jar | head -n 1)" ]; then
+    echo "=== LibTermux up to date, skipping Kotlin compile ==="
+else
+    echo "=== Compiling LibTermux Kotlin sources ==="
+    rm -rf libtermux_classes
+    mkdir -p libtermux_classes
 
-kotlinc -d libtermux_classes \
-  -classpath "$CLASSPATH" \
-  $(find libtermux-android/core/src/main/kotlin -name "*.kt") \
-  $(find libtermux-android/terminal-view/src/main/kotlin -name "*.kt")
+    kotlinc -d libtermux_classes \
+      -classpath "$CLASSPATH" \
+      $(find libtermux-android/core/src/main/kotlin -name "*.kt") \
+      $(find libtermux-android/terminal-view/src/main/kotlin -name "*.kt")
 
-jar cvf libs/libtermux.jar -C libtermux_classes . > /dev/null
-echo "=== LibTermux Compiled Successfully ==="
+    jar cvf libs/libtermux.jar -C libtermux_classes . > /dev/null
+    echo "=== LibTermux Compiled Successfully ==="
+fi
 
-# 5. Packaging resources with AAPT2 and generating R classes
-echo "=== Packaging resources with AAPT2 ==="
-rm -rf bin obj compiled_res gen_r
+
+# 5. Packaging resources and generating R classes (aapt2, or legacy aapt when aapt2 cannot run)
+echo "=== Packaging resources ==="
+rm -rf obj compiled_res gen_r
+rm -f bin/app_classes.jar bin/app.unsigned.apk bin/app.aligned.apk bin/*.dex
 mkdir -p bin obj compiled_res gen_r
-
-# Compile app res
-aapt2 compile --dir app/src/main/res -o compiled_res/
-
-# Compile selected AAR resources safely
-for aar_name in drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4 editor-0.24.6; do
-    if [ -d "build/extracted_aars/${aar_name}/res" ]; then
-        aapt2 compile --dir "build/extracted_aars/${aar_name}/res" -o compiled_res/ 2>/dev/null || true
-    fi
-done
 
 # Remove existing stale app R.java if present in app/src/main/java
 rm -f app/src/main/java/com/vibestudio/app/R.java
@@ -91,15 +87,74 @@ VERSION_NAME=$(grep -E 'versionName\s+"[^"]+"' app/build.gradle | head -n 1 | cu
 VERSION_CODE=${VERSION_CODE:-5}
 VERSION_NAME=${VERSION_NAME:-"0.1.1"}
 
-AAPT2_LINK_CMD="aapt2 link -o bin/app.unsigned.apk -I libs/android.jar --manifest app/src/main/AndroidManifest.xml --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --replace-version --java gen_r --auto-add-overlay"
-if [ -d "app/src/main/assets" ]; then
-    AAPT2_LINK_CMD="$AAPT2_LINK_CMD -A app/src/main/assets"
-fi
-if [ -n "$EXTRA_PKGS" ]; then
-    AAPT2_LINK_CMD="$AAPT2_LINK_CMD --extra-packages $EXTRA_PKGS"
+# APP_ID overrides the package id (e.g. APP_ID=com.vibestudio.dev ./build.sh) so a dev build installs beside the main app.
+# Must keep the same length as com.vibestudio.app (byte-patched termux paths). Default build is unchanged.
+export ANDROID_DATA=${ANDROID_DATA:-/data} ANDROID_ROOT=${ANDROID_ROOT:-/system}
+APP_ID=${APP_ID:-com.vibestudio.app}
+mkdir -p build
+MANIFEST=build/AndroidManifest.xml
+sed "s#\${applicationId}#${APP_ID}#g" app/src/main/AndroidManifest.xml > "$MANIFEST"
+RENAME_OPTS=""
+RES_DIR=app/src/main/res
+if [ "$APP_ID" != "com.vibestudio.app" ]; then
+    RENAME_OPTS="--rename-manifest-package $APP_ID --custom-package com.vibestudio.app"
+    # Non-default builds are visibly distinct: "VibeStudio IDE Debug" label and an orange (instead of cyan) icon.
+    RES_DIR=build/res_variant
+    rm -rf "$RES_DIR" && cp -r app/src/main/res "$RES_DIR"
+    sed -i 's/#1ECFBA/#FF8A1E/g' "$RES_DIR"/drawable/ic_launcher*.xml
+    sed -i 's#<string name="app_name">VibeStudio IDE</string>#<string name="app_name">VibeStudio IDE Debug</string>#' "$RES_DIR"/values/strings.xml
+    sed -i 's#android:label="VibeStudio IDE"#android:label="VibeStudio IDE Debug"#g' "$MANIFEST"
+    sed -i 's#<application #<application android:debuggable="true" #' "$MANIFEST"
 fi
 
-$AAPT2_LINK_CMD compiled_res/*.flat
+
+AAR_RES="drawerlayout-1.2.0 lifecycle-runtime-2.3.1 fragment-1.3.6 activity-1.2.4 editor-0.24.6 ext-tables-4.6.2"
+
+if aapt2 version > /dev/null 2>&1; then
+    aapt2 compile --dir "$RES_DIR" -o compiled_res/
+
+    # Compile selected AAR resources safely
+    for aar_name in $AAR_RES; do
+        if [ -d "build/extracted_aars/${aar_name}/res" ]; then
+            aapt2 compile --dir "build/extracted_aars/${aar_name}/res" -o compiled_res/ 2>/dev/null || true
+        fi
+    done
+
+    AAPT2_LINK_CMD="aapt2 link $RENAME_OPTS -o bin/app.unsigned.apk -I libs/android.jar --manifest $MANIFEST --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --replace-version --java gen_r --auto-add-overlay"
+    if [ -d "app/src/main/assets" ]; then
+        AAPT2_LINK_CMD="$AAPT2_LINK_CMD -A app/src/main/assets"
+    fi
+    if [ -n "$EXTRA_PKGS" ]; then
+        AAPT2_LINK_CMD="$AAPT2_LINK_CMD --extra-packages $EXTRA_PKGS"
+    fi
+
+    $AAPT2_LINK_CMD compiled_res/*.flat
+else
+    echo "=== aapt2 unusable on this system, falling back to legacy aapt ==="
+    # Later -S dirs override earlier ones: AAR resources first, app resources last.
+    AAPT_CMD="aapt package -f -m $RENAME_OPTS -J gen_r -M $MANIFEST -I libs/android.jar -F bin/app.unsigned.apk --min-sdk-version 26 --target-sdk-version 28 --version-code ${VERSION_CODE} --version-name ${VERSION_NAME} --auto-add-overlay"
+    for aar_name in $AAR_RES; do
+        if [ -d "build/extracted_aars/${aar_name}/res" ]; then
+            # Legacy aapt rejects the <id name="x"/> shorthand; rewrite it to <item type="id" name="x"/> in a copy.
+            rm -rf "build/aapt_res/${aar_name}"
+            mkdir -p build/aapt_res
+            cp -r "build/extracted_aars/${aar_name}/res" "build/aapt_res/${aar_name}"
+            find "build/aapt_res/${aar_name}" -path '*/values*/*.xml' -exec sed -i 's#<id name="\([^"]*\)" */>#<item type="id" name="\1"/>#g' {} +
+            AAPT_CMD="$AAPT_CMD -S build/aapt_res/${aar_name}"
+        fi
+
+    done
+    AAPT_CMD="$AAPT_CMD -S $RES_DIR"
+    if [ -d "app/src/main/assets" ]; then
+        AAPT_CMD="$AAPT_CMD -A app/src/main/assets"
+    fi
+    if [ -n "$EXTRA_PKGS" ]; then
+        AAPT_CMD="$AAPT_CMD --extra-packages $EXTRA_PKGS"
+    fi
+
+    $AAPT_CMD
+fi
+
 
 # 6. Compiling VibeStudio Java sources (including generated R.java files)
 APP_CLASSPATH="$CLASSPATH:libs/libtermux.jar"
@@ -167,6 +222,11 @@ jarsigner -keystore debug.keystore -storepass android -keypass android bin/app.u
 rm -f bin/app.aligned.apk
 zipalign -v -p 4 bin/app.unsigned.apk bin/app.aligned.apk > /dev/null
 
-apksigner sign --ks debug.keystore --ks-pass pass:android --min-sdk-version 26 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out bin/VibeStudio.apk bin/app.aligned.apk
+APK_NAME="VibeStudio.apk"
+if [ "$APP_ID" != "com.vibestudio.app" ]; then
+    APK_NAME="VibeStudio-Dev.apk"
+fi
 
-echo "=== VibeStudio Build Complete! APK generated at bin/VibeStudio.apk ==="
+apksigner sign --ks debug.keystore --ks-pass pass:android --min-sdk-version 26 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out bin/$APK_NAME bin/app.aligned.apk
+
+echo "=== VibeStudio Build Complete! APK generated at bin/$APK_NAME ==="

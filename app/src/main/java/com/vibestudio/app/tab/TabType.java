@@ -12,24 +12,32 @@ import com.vibestudio.app.fragments.SettingsFragment;
 import com.vibestudio.app.fragments.TerminalFragment;
 
 public enum TabType {
-    LAUNCHER("Launcher", "📱", LauncherFragment.class),
-    FILES("Files", "📁", FilesFragment.class),
-    CHAT("Assistant Chat", "💬", ChatFragment.class),
-    BROWSER("Browser", "🌐", BrowserFragment.class),
-    TERMINAL("Terminal", "💻", TerminalFragment.class),
-    EDITOR("Editor", "📝", EditorFragment.class),
-    IMAGE("Image Viewer", "🖼️", ImageViewerFragment.class),
-    SETTINGS("Settings", "⚙️", SettingsFragment.class);
+    LAUNCHER("Launcher", "📱", LauncherFragment.class, false),
+    FILES("Files", "📁", FilesFragment.class, true),
+    CHAT("Assistant Chat", "💬", ChatFragment.class, false),
+    BROWSER("Browser", "🌐", BrowserFragment.class, false),
+    TERMINAL("Terminal", "💻", TerminalFragment.class, false),
+    EDITOR("Editor", "📝", EditorFragment.class, false),
+    IMAGE("Image Viewer", "🖼️", ImageViewerFragment.class, false),
+    SETTINGS("Settings", "⚙️", SettingsFragment.class, true);
 
     private final String defaultTitle;
     private final String defaultIcon;
     private final Class<? extends Fragment> fragmentClass;
+    private final boolean singleInstance;
 
-    TabType(String defaultTitle, String defaultIcon, Class<? extends Fragment> fragmentClass) {
+    TabType(String defaultTitle, String defaultIcon, Class<? extends Fragment> fragmentClass, boolean singleInstance) {
         this.defaultTitle = defaultTitle;
         this.defaultIcon = defaultIcon;
         this.fragmentClass = fragmentClass;
+        this.singleInstance = singleInstance;
     }
+
+    /** Single-instance types reuse (and re-select) their already open tab instead of opening another. */
+    public boolean isSingleInstance() {
+        return singleInstance;
+    }
+
 
     public String getDefaultTitle() {
         return defaultTitle;

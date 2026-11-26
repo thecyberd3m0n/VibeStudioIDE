@@ -3,6 +3,7 @@ package com.vibestudio.app.chat.provider;
 import android.content.Context;
 
 import com.vibestudio.app.chat.model.AiResponse;
+import com.vibestudio.app.chat.model.ChatAttachment;
 import com.vibestudio.app.chat.model.ChatMessage;
 import com.vibestudio.app.mcp.model.McpTool;
 import com.vibestudio.app.service.LogViewerService;
@@ -385,14 +386,31 @@ public class GeminiAiProvider extends AbstractAiProvider {
             switch (item.kind) {
                 case USER:
                 case ASSISTANT: {
-                    if (item.text == null || item.text.trim().isEmpty()) break;
                     String role = item.kind == NativeHistory.Item.Kind.USER ? "user" : "model";
-                    JSONObject last = lastPart(current, role);
-                    if (last != null && last.has("text")) {
-                        last.put("text", last.getString("text") + "\n\n" + item.text);
-                    } else {
+                    if (item.sourceMessage != null && item.sourceMessage.hasAttachments()) {
                         current = contentFor(contents, current, role);
-                        current.getJSONArray("parts").put(new JSONObject().put("text", item.text));
+                        JSONArray partsArr = current.getJSONArray("parts");
+                        if (item.text != null && !item.text.trim().isEmpty()) {
+                            partsArr.put(new JSONObject().put("text", item.text));
+                        }
+                        for (ChatAttachment att : item.sourceMessage.getAttachments()) {
+                            if (att.getMimeType() != null && att.getMimeType().startsWith("image/") && att.getBase64Data() != null) {
+                                JSONObject inlineData = new JSONObject();
+                                inlineData.put("mimeType", att.getMimeType());
+                                inlineData.put("data", att.getBase64Data());
+                                partsArr.put(new JSONObject().put("inlineData", inlineData));
+                            } else if (att.getBase64Data() != null) {
+                                partsArr.put(new JSONObject().put("text", "[Attachment: " + att.getName() + " (" + att.getMimeType() + ")]"));
+                            }
+                        }
+                    } else if (item.text != null && !item.text.trim().isEmpty()) {
+                        JSONObject last = lastPart(current, role);
+                        if (last != null && last.has("text")) {
+                            last.put("text", last.getString("text") + "\n\n" + item.text);
+                        } else {
+                            current = contentFor(contents, current, role);
+                            current.getJSONArray("parts").put(new JSONObject().put("text", item.text));
+                        }
                     }
                     break;
                 }

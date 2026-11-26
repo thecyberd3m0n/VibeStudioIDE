@@ -2,6 +2,15 @@
 
 The `terminal` skill provides control over the active shared terminal session in VibeStudio IDE.
 
+## Temporary Files & Directories
+- **Use `$TMPDIR` for Temporary Files**: `/tmp` is read-only on Termux/Android. Always use `$TMPDIR` (e.g. `mktemp -p "$TMPDIR"` or `$TMPDIR/filename`), which points to VibeStudio's writable temporary directory.
+
+## Blocking Wait (`terminal_wait`)
+- **`terminal_wait` (Wait for completion or pattern)**: Use `terminal_wait(pattern?, timeout_s, session_id?)` to block until a background command finishes or a pattern (e.g. `Build successful`) appears.
+- **HARD RULE: `timeout_s` must be 30 or less (the tool clamps anything larger to 30).** NEVER wait for a final marker (e.g. `ALLDONE`) with a long timeout, because errors are hidden until the wait ends and the user cannot see progress. Instead loop: `terminal_wait` (30s) -> read the output (`read_terminal_output` with `max_lines: 30` or `grep_pattern: "error|Error|FAIL|Exception"`) -> if it failed, stop and fix; if still running, wait again. Re-read the logs after EVERY wait, even a timed-out one.
+- If a terminal session ends or dies (`SESSION ENDED`, `not active`, `no longer alive`), do not start the same long command again blindly: first check what it already produced (e.g. `ls -la` of the output files, log tail) in a fresh session.
+
+
 ## Command Execution Modes (`execute_command` vs `execute_command_async`)
 - **`execute_command` (Synchronous / Instant)**: Use for quick, non-blocking bash shell commands (e.g., `ls`, `git status`, `cat file`, `pwd`, quick queries). Returns results directly and instantly without waiting for future readouts, allowing the agent loop to restart immediately.
 - **`execute_command_async` (Asynchronous / Long-running)**: Use for commands that start long-running background tasks, dev servers, watchers, or heavy build processes (e.g., `npm run dev`, `gradlew assembleDebug`, `npm install`). Use `read_terminal_output` to inspect output from ongoing async sessions.

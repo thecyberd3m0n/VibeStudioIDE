@@ -698,8 +698,8 @@ public class OnboardingActivity extends Activity {
         // 1. Create symlinks /u -> usrDir and /h -> homeDir across all candidate app directories
         List<File> targetDirs = new ArrayList<>();
         try { targetDirs.add(getDataDir()); } catch (Throwable ignored) {}
-        targetDirs.add(new File("/data/data/com.vibestudio.app"));
-        targetDirs.add(new File("/data/user/0/com.vibestudio.app"));
+        targetDirs.add(new File("/data/data/" + getPackageName()));
+        targetDirs.add(new File("/data/user/0/" + getPackageName()));
         if (usrDir.getParentFile() != null) {
             targetDirs.add(usrDir.getParentFile());
             if (usrDir.getParentFile().getParentFile() != null) {
@@ -724,10 +724,10 @@ public class OnboardingActivity extends Activity {
         appendLog("[libtermux] Created symlinks pointing to " + usrDir.getAbsolutePath());
 
         byte[] defaultUsrBytes = "/data/data/com.termux/files/usr".getBytes(StandardCharsets.UTF_8); // 31 bytes
-        byte[] targetUsrBytes  = "/data/data/com.vibestudio.app/u".getBytes(StandardCharsets.UTF_8);   // 31 bytes
+        byte[] targetUsrBytes  = ("/data/data/" + getPackageName() + "/u").getBytes(StandardCharsets.UTF_8);   // 31 bytes
 
         byte[] defaultHomeBytes = "/data/data/com.termux/files/home".getBytes(StandardCharsets.UTF_8); // 32 bytes
-        byte[] targetHomeBytes  = "/data/data/com.vibestudio.app/h\0".getBytes(StandardCharsets.UTF_8);  // 32 bytes (with trailing nul)
+        byte[] targetHomeBytes  = ("/data/data/" + getPackageName() + "/h\0").getBytes(StandardCharsets.UTF_8);  // 32 bytes (with trailing nul)
 
         int count = processDirectoryForTermuxPaths(usrDir, defaultUsrBytes, targetUsrBytes, defaultHomeBytes, targetHomeBytes, 0);
         LogViewerService.getInstance().i(TAG, "overrideSTermuxPaths completed. Overrode hardcoded termux paths in " + count + " files.");
@@ -1037,12 +1037,12 @@ public class OnboardingActivity extends Activity {
 
         // Ensure compatibility symlinks so that dpkg --root=$PREFIX extracts packages directly into $PREFIX (bin, lib, etc.)
         try {
-            File v1 = new File(usrDir, "data/data/com.vibestudio.app/files");
+            File v1 = new File(usrDir, "data/data/" + getPackageName() + "/files");
             if (!v1.exists()) v1.mkdirs();
             File l1 = new File(v1, "usr");
             if (!l1.exists()) Os.symlink(usrDir.getAbsolutePath(), l1.getAbsolutePath());
 
-            File v2 = new File(usrDir, "data/user/0/com.vibestudio.app/files");
+            File v2 = new File(usrDir, "data/user/0/" + getPackageName() + "/files");
             if (!v2.exists()) v2.mkdirs();
             File l2 = new File(v2, "usr");
             if (!l2.exists()) Os.symlink(usrDir.getAbsolutePath(), l2.getAbsolutePath());

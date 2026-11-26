@@ -1,5 +1,22 @@
 package com.vibestudio.app.fragments;
 
+import com.vibestudio.app.tab.TabManager;
+import com.vibestudio.app.tab.TabType;
+import com.vibestudio.app.fragments.ImageViewerFragment;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.provider.MediaStore;
+import android.widget.PopupMenu;
+import android.util.Base64;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import com.vibestudio.app.chat.model.ChatAttachment;
+
+
 import java.io.File;
 
 import android.content.Context;
@@ -74,6 +91,14 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
     private ChatSession mChatSession;
     private String mSessionId;
+    private static final int REQUEST_CODE_PICK_IMAGE = 2001;
+    private static final int REQUEST_CODE_TAKE_PHOTO = 2002;
+    private static final int REQUEST_CODE_PICK_FILE = 2003;
+
+    private LinearLayout mAttachmentsPreviewContainer;
+    private HorizontalScrollView mAttachmentsPreviewScroll;
+    private final List<ChatAttachment> mPendingAttachments = new ArrayList<>();
+
 
     private ScrollView mChatScroll;
     private LinearLayout mChatContainer;
@@ -147,10 +172,40 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         mProgressBar.setIndeterminate(true);
         mProgressBar.setVisibility(View.GONE);
 
+        mAttachmentsPreviewScroll = new HorizontalScrollView(context);
+        mAttachmentsPreviewScroll.setLayoutParams(new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+        mAttachmentsPreviewScroll.setVisibility(View.GONE);
+        mAttachmentsPreviewScroll.setPadding(0, 0, 0, 8);
+
+        mAttachmentsPreviewContainer = new LinearLayout(context);
+        mAttachmentsPreviewContainer.setOrientation(LinearLayout.HORIZONTAL);
+        mAttachmentsPreviewScroll.addView(mAttachmentsPreviewContainer);
+
         LinearLayout inputRow = new LinearLayout(context);
         inputRow.setOrientation(LinearLayout.HORIZONTAL);
         inputRow.setGravity(Gravity.CENTER_VERTICAL);
         inputRow.setPadding(0, 12, 0, 0);
+
+        int addBtnSizePx = dpToPx(context, 48);
+        FrameLayout btnAdd = new FrameLayout(context);
+        LinearLayout.LayoutParams addBtnParams = new LinearLayout.LayoutParams(addBtnSizePx, addBtnSizePx);
+        addBtnParams.setMargins(0, 0, 12, 0);
+        btnAdd.setLayoutParams(addBtnParams);
+        btnAdd.setBackgroundResource(R.drawable.round_add_button_bg);
+
+        TextView tvAddIcon = new TextView(context);
+        tvAddIcon.setText("+");
+        tvAddIcon.setTextColor(Color.parseColor("#A0A0A0"));
+        tvAddIcon.setTextSize(24);
+        tvAddIcon.setTypeface(null, Typeface.BOLD);
+        FrameLayout.LayoutParams addIconParams = new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+        addIconParams.gravity = Gravity.CENTER;
+        tvAddIcon.setLayoutParams(addIconParams);
+        btnAdd.addView(tvAddIcon);
+
+        btnAdd.setOnClickListener(v -> showAttachmentDropdown(v, context));
+
+        inputRow.addView(btnAdd);
 
         mMsgInput = new EditText(context);
         mMsgInput.setHint("Message VibeStudio...");
@@ -367,6 +422,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         layout.addView(mProgressBar);
         layout.addView(mChangesetBar);
+        layout.addView(mAttachmentsPreviewScroll);
         layout.addView(inputRow);
 
         if (mChatSession != null) {
@@ -704,6 +760,284 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, context.getResources().getDisplayMetrics());
     }
 
+    
+    
+    private void openAttachmentInImageViewer(ChatAttachment attachment) {
+        if (attachment == null || attachment.getBase64Data() == null) return;
+        if (attachment.getMimeType() != null && attachment.getMimeType().startsWith("image/")) {
+            ImageViewerFragment fragment = ImageViewerFragment.newInstanceWithBase64(attachment.getName(), attachment.getBase64Data());
+            TabManager.getInstance().openTab(TabType.IMAGE, attachment.getName(), fragment, true);
+        }
+    }
+
+    private void showAttachmentDropdown(View anchor, Context context) {
+        PopupMenu popup = new PopupMenu(context, anchor);
+        popup.getMenu().add(0, 1, 0, "Photo");
+        popup.getMenu().add(0, 2, 1, "Camera");
+        popup.getMenu().add(0, 3, 2, "File");
+
+        popup.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case 1:
+                    openGalleryPicker();
+                    return true;
+                case 2:
+                    openCameraPicker();
+                    return true;
+                case 3:
+                    openFilePicker();
+                    return true;
+            }
+            return false;
+        });
+        popup.show();
+    }
+
+    private void openGalleryPicker() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("image/*");
+        startActivityForResult(Intent.createChooser(intent, "Select Photo"), REQUEST_CODE_PICK_IMAGE);
+    }
+
+    private void openCameraPicker() {
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        if (getActivity() != null && intent.resolveActivity(getActivity().getPackageManager()) != null) {
+            startActivityForResult(intent, REQUEST_CODE_TAKE_PHOTO);
+        } else {
+            Toast.makeText(getContext(), "Camera unavailable", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void openFilePicker() {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("*/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(Intent.createChooser(intent, "Select File"), REQUEST_CODE_PICK_FILE);
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != Activity.RESULT_OK) return;
+
+        Context context = getContext();
+        if (context == null) return;
+
+        if (requestCode == REQUEST_CODE_PICK_IMAGE && data != null && data.getData() != null) {
+            handleSelectedUri(context, data.getData(), ChatAttachment.AttachmentType.PHOTO);
+        } else if (requestCode == REQUEST_CODE_TAKE_PHOTO && data != null) {
+            Bitmap photo = (Bitmap) data.getExtras().get("data");
+            if (photo != null) {
+                handleBitmap(context, photo, "camera_photo.jpg", ChatAttachment.AttachmentType.CAMERA);
+            }
+        } else if (requestCode == REQUEST_CODE_PICK_FILE && data != null && data.getData() != null) {
+            handleSelectedUri(context, data.getData(), ChatAttachment.AttachmentType.FILE);
+        }
+    }
+
+    
+    private byte[] resizeImageIfNeeded(byte[] bytes, String mimeType) {
+        if (mimeType == null || !mimeType.startsWith("image/") || "image/gif".equals(mimeType)) {
+            return bytes;
+        }
+        try {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+
+            int width = options.outWidth;
+            int height = options.outHeight;
+            if (width <= 0 || height <= 0) return bytes;
+
+            if (width <= 768 && height <= 768) {
+                return bytes;
+            }
+
+            if (width > 2048 || height > 2048) {
+                float scaleFactor = 2048.0f / Math.max(width, height);
+                width = Math.round(width * scaleFactor);
+                height = Math.round(height * scaleFactor);
+            }
+
+            float scaleFactor = 768.0f / Math.min(width, height);
+            width = Math.round(width * scaleFactor);
+            height = Math.round(height * scaleFactor);
+
+            Bitmap original = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            if (original == null) return bytes;
+
+            Bitmap scaled = Bitmap.createScaledBitmap(original, width, height, true);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            Bitmap.CompressFormat format = ("image/png".equalsIgnoreCase(mimeType)) ? Bitmap.CompressFormat.PNG : Bitmap.CompressFormat.JPEG;
+            scaled.compress(format, 85, baos);
+            if (original != scaled) original.recycle();
+            scaled.recycle();
+            return baos.toByteArray();
+        } catch (Exception e) {
+            return bytes;
+        }
+    }
+
+    private void handleSelectedUri(Context context, Uri uri, ChatAttachment.AttachmentType type) {
+        try {
+            String mimeType = context.getContentResolver().getType(uri);
+            if (mimeType == null) mimeType = "application/octet-stream";
+
+            String fileName = getFileNameFromUri(context, uri);
+            InputStream is = context.getContentResolver().openInputStream(uri);
+            if (is == null) return;
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = is.read(buffer)) != -1) {
+                baos.write(buffer, 0, bytesRead);
+            }
+            is.close();
+
+            byte[] bytes = baos.toByteArray();
+            if (mimeType.startsWith("image/")) {
+                bytes = resizeImageIfNeeded(bytes, mimeType);
+                if ("image/jpg".equalsIgnoreCase(mimeType)) mimeType = "image/jpeg";
+            }
+            String base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP);
+
+            Bitmap thumbnail = null;
+            if (mimeType.startsWith("image/")) {
+                thumbnail = decodeSampledBitmapFromBytes(bytes, 120, 120);
+            }
+
+            ChatAttachment attachment = new ChatAttachment(fileName, mimeType, base64Data, type, thumbnail);
+            addPendingAttachment(context, attachment);
+        } catch (Exception e) {
+            Toast.makeText(context, "Failed to load file: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void handleBitmap(Context context, Bitmap bitmap, String fileName, ChatAttachment.AttachmentType type) {
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, baos);
+            byte[] bytes = baos.toByteArray();
+            bytes = resizeImageIfNeeded(bytes, "image/jpeg");
+            String base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP);
+
+            ChatAttachment attachment = new ChatAttachment(fileName, "image/jpeg", base64Data, type, bitmap);
+            addPendingAttachment(context, attachment);
+        } catch (Exception e) {
+            Toast.makeText(context, "Failed to process image: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private String getFileNameFromUri(Context context, Uri uri) {
+        String fileName = uri.getLastPathSegment();
+        if (fileName == null) fileName = "file";
+        int cut = fileName.lastIndexOf('/');
+        if (cut != -1) {
+            fileName = fileName.substring(cut + 1);
+        }
+        return fileName;
+    }
+
+    private Bitmap decodeSampledBitmapFromBytes(byte[] bytes, int reqWidth, int reqHeight) {
+        final BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+
+        options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight);
+        options.inJustDecodeBounds = false;
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+    }
+
+    private int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > reqHeight || width > reqWidth) {
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+        return inSampleSize;
+    }
+
+    private void addPendingAttachment(Context context, ChatAttachment attachment) {
+        mPendingAttachments.add(attachment);
+        updatePendingAttachmentsUI(context);
+        updateActionButtonState();
+    }
+
+    private void removePendingAttachment(Context context, ChatAttachment attachment) {
+        mPendingAttachments.remove(attachment);
+        updatePendingAttachmentsUI(context);
+        updateActionButtonState();
+    }
+
+    private void updatePendingAttachmentsUI(Context context) {
+        if (mAttachmentsPreviewContainer == null || mAttachmentsPreviewScroll == null) return;
+        mAttachmentsPreviewContainer.removeAllViews();
+
+        if (mPendingAttachments.isEmpty()) {
+            mAttachmentsPreviewScroll.setVisibility(View.GONE);
+            return;
+        }
+
+        mAttachmentsPreviewScroll.setVisibility(View.VISIBLE);
+
+        for (final ChatAttachment attachment : mPendingAttachments) {
+            LinearLayout chip = new LinearLayout(context);
+            chip.setOrientation(LinearLayout.HORIZONTAL);
+            chip.setGravity(Gravity.CENTER_VERTICAL);
+            chip.setBackgroundColor(Color.parseColor("#2C2C35"));
+            chip.setPadding(16, 10, 16, 10);
+            LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+            chipParams.setMargins(0, 0, 12, 0);
+            chip.setLayoutParams(chipParams);
+
+            if (attachment.getThumbnail() != null) {
+                ImageView thumbView = new ImageView(context);
+                thumbView.setImageBitmap(attachment.getThumbnail());
+                thumbView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                int thumbSize = dpToPx(context, 24);
+                LinearLayout.LayoutParams thumbParams = new LinearLayout.LayoutParams(thumbSize, thumbSize);
+                thumbParams.setMargins(0, 0, 12, 0);
+                thumbView.setLayoutParams(thumbParams);
+                chip.addView(thumbView);
+            } else {
+                TextView iconView = new TextView(context);
+                iconView.setText("📎");
+                iconView.setTextSize(14);
+                iconView.setPadding(0, 0, 12, 0);
+                chip.addView(iconView);
+            }
+
+            TextView tvName = new TextView(context);
+            String name = attachment.getName();
+            if (name.length() > 18) {
+                name = name.substring(0, 15) + "...";
+            }
+            tvName.setText(name);
+            tvName.setTextColor(Color.parseColor("#EEEEEE"));
+            tvName.setTextSize(13);
+            chip.addView(tvName);
+
+            TextView btnRemove = new TextView(context);
+            btnRemove.setText(" ✕");
+            btnRemove.setTextColor(Color.parseColor("#FF6B6B"));
+            btnRemove.setTextSize(14);
+            btnRemove.setTypeface(null, Typeface.BOLD);
+            btnRemove.setPadding(12, 0, 0, 0);
+            btnRemove.setOnClickListener(v -> removePendingAttachment(context, attachment));
+            chip.addView(btnRemove);
+
+            chip.setOnClickListener(v -> openAttachmentInImageViewer(attachment));
+            mAttachmentsPreviewContainer.addView(chip);
+        }
+    }
+
     private void onActionButtonClicked(Context context) {
         if (mChatSession == null) return;
         if (mSkillAutocompleteContainer != null) {
@@ -713,7 +1047,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         boolean isLoading = mChatSession.isLoading();
         String text = mMsgInput.getText() != null ? mMsgInput.getText().toString() : "";
 
-        if (isLoading && text.trim().isEmpty()) {
+        if (isLoading && text.trim().isEmpty() && mPendingAttachments.isEmpty()) {
             // User pressed STOP while prompt is empty and agent is operating
             mChatSession.stopAgentExecution();
             Toast.makeText(context, "Stopping Agent execution...", Toast.LENGTH_SHORT).show();
@@ -721,12 +1055,18 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             return;
         }
 
-        if (text.trim().length() > 0) {
+        boolean hasText = text.trim().length() > 0;
+        boolean hasAttachments = !mPendingAttachments.isEmpty();
+
+        if (hasText || hasAttachments) {
             if (!ModelConnectionManager.getInstance().isConnectedAndConfigured(context)) {
                 Toast.makeText(context, ModelConnectionManager.getInstance().getConnectionStatusMessage(context), Toast.LENGTH_LONG).show();
             }
             mMsgInput.setText("");
-            mChatSession.sendMessage(context, text);
+            List<ChatAttachment> attachmentsToSend = new ArrayList<>(mPendingAttachments);
+            mPendingAttachments.clear();
+            updatePendingAttachmentsUI(context);
+            mChatSession.sendMessage(context, text, attachmentsToSend);
             updateActionButtonState();
         }
     }
@@ -750,7 +1090,7 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
         boolean isLoading = mChatSession != null && mChatSession.isLoading();
         String text = mMsgInput.getText() != null ? mMsgInput.getText().toString() : "";
 
-        if (isLoading && text.trim().isEmpty()) {
+        if (isLoading && text.trim().isEmpty() && mPendingAttachments.isEmpty()) {
             // Show delicate STOP button state (subtle dark grey circle with red stop square)
             mBtnActionButton.setBackgroundResource(R.drawable.round_stop_button_bg);
             mTvActionIcon.setText("■");
@@ -831,6 +1171,12 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
             mChatContainer.addView(reasoningView);
             return;
         }
+
+        if (msg.getType() == ChatMessage.MessageType.TOOL_IMAGE) {
+            mChatContainer.addView(new com.vibestudio.app.view.ToolImageMessage(context, msg, this::openAttachmentInImageViewer));
+            return;
+        }
+
 
         // Centralized SOLID check and view creation via ToolMessageFactory
         if (ToolMessageFactory.isToolMessage(msg)) {
@@ -957,6 +1303,57 @@ public class ChatFragment extends Fragment implements ChatSession.OnChatMessageL
 
         card.addView(tvSender);
         card.addView(tvText);
+
+        if (msg.hasAttachments()) {
+            HorizontalScrollView attachmentsScroll = new HorizontalScrollView(context);
+            attachmentsScroll.setPadding(0, 8, 0, 0);
+            LinearLayout attachmentsLayout = new LinearLayout(context);
+            attachmentsLayout.setOrientation(LinearLayout.HORIZONTAL);
+            attachmentsScroll.addView(attachmentsLayout);
+
+            for (ChatAttachment att : msg.getAttachments()) {
+                LinearLayout attChip = new LinearLayout(context);
+                attChip.setOrientation(LinearLayout.HORIZONTAL);
+                attChip.setGravity(Gravity.CENTER_VERTICAL);
+                attChip.setBackgroundColor(Color.parseColor("#1E1E24"));
+                attChip.setPadding(12, 8, 12, 8);
+                LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+                chipParams.setMargins(0, 0, 8, 0);
+                attChip.setLayoutParams(chipParams);
+
+                if (att.getThumbnail() != null) {
+                    ImageView thumbView = new ImageView(context);
+                    thumbView.setImageBitmap(att.getThumbnail());
+                    thumbView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                    int thumbSize = dpToPx(context, 20);
+                    LinearLayout.LayoutParams thumbParams = new LinearLayout.LayoutParams(thumbSize, thumbSize);
+                    thumbParams.setMargins(0, 0, 8, 0);
+                    thumbView.setLayoutParams(thumbParams);
+                    attChip.addView(thumbView);
+                } else {
+                    TextView iconView = new TextView(context);
+                    iconView.setText("📎");
+                    iconView.setTextSize(12);
+                    iconView.setPadding(0, 0, 8, 0);
+                    attChip.addView(iconView);
+                }
+
+                TextView tvAttName = new TextView(context);
+                String name = att.getName();
+                if (name.length() > 16) {
+                    name = name.substring(0, 13) + "...";
+                }
+                tvAttName.setText(name);
+                tvAttName.setTextColor(Color.parseColor("#CCCCCC"));
+                tvAttName.setTextSize(12);
+                attChip.addView(tvAttName);
+
+                final ChatAttachment clickAtt = att;
+                attChip.setOnClickListener(v -> openAttachmentInImageViewer(clickAtt));
+                attachmentsLayout.addView(attChip);
+            }
+            card.addView(attachmentsScroll);
+        }
 
         mChatContainer.addView(card);
     }

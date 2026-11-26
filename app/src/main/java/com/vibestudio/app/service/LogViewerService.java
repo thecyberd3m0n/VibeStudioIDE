@@ -20,7 +20,7 @@ import java.util.LinkedHashMap;
 public class LogViewerService {
 
     private static final String TAG = "LogViewerService";
-    private static final int MAX_LOG_SIZE_BYTES = 5 * 1024; // 5 KB limit
+    private static final int MAX_LOG_SIZE_BYTES = 10 * 1024; // 10 KB limit
 
     private static LogViewerService sInstance;
 

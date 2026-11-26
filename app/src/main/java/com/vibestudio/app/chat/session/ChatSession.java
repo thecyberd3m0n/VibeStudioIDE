@@ -11,6 +11,7 @@ import com.vibestudio.app.chat.agents.AgentToolPolicy;
 import com.vibestudio.app.chat.compressor.HistoryCompressor;
 import com.vibestudio.app.chat.instructions.InstructionsLoader;
 import com.vibestudio.app.chat.model.AiResponse;
+import com.vibestudio.app.chat.model.ChatAttachment;
 import com.vibestudio.app.chat.model.ChatMessage;
 import org.json.JSONObject;
 import com.vibestudio.app.chat.model.ToolResult;
@@ -164,6 +165,8 @@ public class ChatSession {
 
     public void stopAgentExecution() {
         LogViewerService.getInstance().i(TAG, "Agent execution stop requested by user.");
+        new Thread(new Runnable() { @Override public void run() { com.vibestudio.app.mcp.AutomatorMcpServer.endSessionIfActive(); } }, "automator-end").start();
+
         mStopRequested = true;
         mMainHandler.post(new Runnable() {
             @Override
@@ -191,7 +194,11 @@ public class ChatSession {
     }
 
     public void sendMessage(final Context context, final String userText) {
-        addUserMessage(context, userText);
+        addUserMessage(context, userText, null);
+    }
+
+    public void sendMessage(final Context context, final String userText, final List<ChatAttachment> attachments) {
+        addUserMessage(context, userText, attachments);
     }
 
     public void retry(final Context context) {
@@ -205,6 +212,8 @@ public class ChatSession {
             }
         }
         mIsLoading = true;
+        com.vibestudio.app.mcp.AutomatorMcpServer.resumeIfActive();
+
         mStopRequested = false;
         mMainHandler.post(new Runnable() {
             @Override
@@ -216,9 +225,15 @@ public class ChatSession {
     }
 
     public void addUserMessage(final Context context, final String userText) {
+        addUserMessage(context, userText, null);
+    }
+
+    public void addUserMessage(final Context context, final String userText, final List<ChatAttachment> attachments) {
         if (userText == null || userText.trim().isEmpty()) return;
 
         mStopRequested = false;
+        com.vibestudio.app.mcp.AutomatorMcpServer.resumeIfActive();
+
         String messageToStore = userText;
         if (messageToStore.length() > MAX_INPUT_CHARS) {
             messageToStore = messageToStore.substring(0, MAX_INPUT_CHARS);
@@ -243,7 +258,7 @@ public class ChatSession {
         }
         mActiveAgent = newActiveAgent;
 
-        ChatMessage userMsg = new ChatMessage("User", messageToStore, true);
+        ChatMessage userMsg = (attachments != null && !attachments.isEmpty()) ? new ChatMessage("User", messageToStore, true, attachments) : new ChatMessage("User", messageToStore, true);
 
         synchronized (this) {
             mMessages.add(userMsg);
@@ -269,6 +284,17 @@ public class ChatSession {
             }
         }).start();
     }
+
+    private static final int MAX_TIMEOUT_RETRIES = 3;
+
+    private static boolean isTimeout(AiResponse r) {
+        if (r == null || r.isSuccess()) return false;
+        String m = r.getErrorMessage();
+        if (m == null) return false;
+        m = m.toLowerCase();
+        return m.contains("timeout") || m.contains("timed out");
+    }
+
 
     private StepResult runTurn(final Context context) {
         if (mStopRequested) {
@@ -308,6 +334,22 @@ public class ChatSession {
         AiResponse response = mAiRouter.generateContent(context, apiKey,
                 buildSystemInstruction(context, nativeTools, parallelCalls, activeAgent), snapshot,
                 nativeTools ? declaredTools(toolPolicy) : null);
+
+        // Timeout: retry up to 3 times; if still failing, compress the history and try once more.
+        for (int attempt = 1; attempt <= MAX_TIMEOUT_RETRIES && isTimeout(response) && !mStopRequested; attempt++) {
+            LogViewerService.getInstance().w(TAG, "Request timed out; retry " + attempt + "/" + MAX_TIMEOUT_RETRIES);
+            response = mAiRouter.generateContent(context, apiKey,
+                    buildSystemInstruction(context, nativeTools, parallelCalls, activeAgent), snapshot,
+                    nativeTools ? declaredTools(toolPolicy) : null);
+        }
+        if (isTimeout(response) && !mStopRequested) {
+            LogViewerService.getInstance().w(TAG, "Still timing out after " + MAX_TIMEOUT_RETRIES + " retries; compressing context and continuing.");
+            snapshot = HistoryCompressor.compress(snapshot);
+            response = mAiRouter.generateContent(context, apiKey,
+                    buildSystemInstruction(context, nativeTools, parallelCalls, activeAgent), snapshot,
+                    nativeTools ? declaredTools(toolPolicy) : null);
+        }
+
 
         // The API refused the declared tools: ask again with the text protocol (prompt rebuilt with the schemas
         // and call format) and, if that works, remember to use it for this model.
@@ -503,6 +545,8 @@ public class ChatSession {
 
         if (McpClientManager.isTaskCompleteTool(toolName)) {
             String summary = args.optString("summary", "").trim();
+            new Thread(new Runnable() { @Override public void run() { com.vibestudio.app.mcp.AutomatorMcpServer.endSessionIfActive(); } }, "automator-end").start();
+
             if (summary.isEmpty()) {
                 finishLoading();
             } else {
@@ -544,20 +588,43 @@ public class ChatSession {
         mAgentLoop.setState(AgentLoopController.State.EXECUTING_TOOL);
         ToolResult toolResult = mToolExecutionManager.executeTool(context, toolCallObj);
 
+        // Tools may return a compressed image; move it out of the text result into a regular image attachment.
+        String imageBase64 = toolResult.getOutput().optString("image_base64", "");
+        String imageMime = toolResult.getOutput().optString("image_mime", "image/jpeg");
+        if (!imageBase64.isEmpty()) {
+            toolResult.getOutput().remove("image_base64");
+            toolResult.getOutput().remove("image_mime");
+        }
+
         // Record assistant call and system tool result in conversation history (for LLM context)
         ChatMessage modelCallMsg = turnCall.linkCall(new ChatMessage(modelAuthor, callText, false, ChatMessage.MessageType.TOOL_CALL, toolName, args));
         ChatMessage toolResultMsg = turnCall.linkResult(new ChatMessage("System Tool", toolResult.getFormattedOutput(), true,
                 toolResult.isError() ? ChatMessage.MessageType.ERROR : ChatMessage.MessageType.TOOL_RESULT, toolName, null));
 
+        ChatMessage imageMsg = null;
         synchronized (ChatSession.this) {
             mMessages.add(modelCallMsg);
             mMessages.add(toolResultMsg);
+            if (!imageBase64.isEmpty()) {
+                List<ChatAttachment> shot = new ArrayList<>();
+                byte[] imgBytes = android.util.Base64.decode(imageBase64, android.util.Base64.DEFAULT);
+                android.graphics.Bitmap thumb = android.graphics.BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.length);
+                shot.add(new ChatAttachment(toolName + ".jpg", imageMime, imageBase64, ChatAttachment.AttachmentType.PHOTO, thumb));
+                imageMsg = ChatMessage.toolImage(toolName, "Image returned by " + toolName + ":", shot);
+                mMessages.add(imageMsg);
+            }
         }
+        if (imageMsg != null) notifyMessageAdded(imageMsg);
+
 
         // If execution caused an error, notify UI
         if (toolResult.isError()) {
             postToolStatusMessage(toolResult.getFormattedOutput(), ChatMessage.MessageType.ERROR, toolName, null);
+            // User pressed STOP in the Automator bubble: stop the agent loop like the chat stop button.
+            String errOut = toolResult.getFormattedOutput();
+            if (errOut != null && errOut.contains("Error 15:")) mStopRequested = true;
         }
+
 
         if (mStopRequested) {
             postAssistantResponse("⏹️ Operation stopped by user.");
@@ -624,6 +691,8 @@ public class ChatSession {
     }
 
     private void finishLoading() {
+        // agent loop ended (task_complete / stop / error): drop the Automator frame + bubble
+        new Thread(new Runnable() { @Override public void run() { com.vibestudio.app.mcp.AutomatorMcpServer.endSessionIfActive(); } }, "automator-end").start();
         mMainHandler.post(new Runnable() {
             @Override
             public void run() {
@@ -634,6 +703,7 @@ public class ChatSession {
             }
         });
     }
+
 
     private void postAssistantResponse(final String reply) {
         postAssistantResponse(GENERIC_ASSISTANT_SENDER, reply);

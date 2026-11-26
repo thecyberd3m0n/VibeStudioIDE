@@ -47,5 +47,14 @@ public interface McpServer {
     /**
      * Creates a tool message view for chat UI for tools handled by this McpServer.
      */
+    /**
+     * Lazy skills keep their tools out of the natively declared tool list until the agent loads the skill
+     * through the skill-schema meta tool (used for optional, device-level skills).
+     */
+    default boolean isLazy() {
+        return false;
+    }
+
+
     BaseToolMessageView createToolMessageView(Context context, String toolName);
 }

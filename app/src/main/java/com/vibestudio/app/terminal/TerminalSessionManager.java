@@ -640,13 +640,16 @@ public class TerminalSessionManager {
             String[] linesArray = transcriptText.split("\n");
             List<String> rawLines = Arrays.asList(linesArray);
 
+            int lastNonEmpty = rawLines.size() - 1;
+            while (lastNonEmpty >= 0 && rawLines.get(lastNonEmpty).trim().isEmpty()) lastNonEmpty--;
             List<String> filteredLines = new ArrayList<>();
-            for (String line : rawLines) {
-                String trimmedLine = line.trim();
+            for (int i = 0; i <= lastNonEmpty; i++) {
+                String trimmedLine = rawLines.get(i).trim();
                 if (grepPattern == null || grepPattern.trim().isEmpty() || trimmedLine.contains(grepPattern)) {
                     filteredLines.add(trimmedLine);
                 }
             }
+
 
             int totalFiltered = filteredLines.size();
             int fromIndex = 0;
@@ -804,6 +807,57 @@ public class TerminalSessionManager {
         }
         return new CommandResult(exitCode, cleanOutput.toString().trim());
     }
+
+
+    /**
+     * Waits for a pattern to appear in terminal transcript output or until session completes / times out.
+     */
+    public String waitForTerminalOutput(TerminalSession session, String pattern, int timeoutS) {
+        if (session == null || !session.isRunning()) {
+            return "ERROR: terminal session is not running.";
+        }
+
+        long deadline = System.currentTimeMillis() + (timeoutS * 1000L);
+        boolean hasPattern = pattern != null && !pattern.trim().isEmpty();
+        // Occurrences already in the buffer (e.g. the echoed command line) must not count.
+        int baseline = hasPattern ? countOccurrences(getSessionOutput(session), pattern) : 0;
+
+        while (System.currentTimeMillis() < deadline && session.isRunning()) {
+            synchronized (session) {
+                try {
+                    session.wait(200);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+
+            if (hasPattern && countOccurrences(getSessionOutput(session), pattern) > baseline) {
+                return "PATTERN FOUND: '" + pattern + "'\n" + readTerminalOutput(session, 30, 0, true, null);
+            }
+        }
+
+        String tail = readTerminalOutput(session, 30, 0, true, null);
+        if (!session.isRunning()) {
+            return "SESSION ENDED before " + (hasPattern ? "pattern '" + pattern + "' appeared" : "completion") + ".\n" + tail;
+        }
+        if (hasPattern) {
+            return "TIMEOUT after " + timeoutS + "s: pattern '" + pattern + "' did not appear in new output.\n" + tail;
+        }
+        return "TIMEOUT after " + timeoutS + "s: no pattern given, session still running.\n" + tail;
+    }
+
+    private static int countOccurrences(String text, String pattern) {
+        if (text == null || pattern == null || pattern.isEmpty()) return 0;
+        int count = 0;
+        int idx = 0;
+        while ((idx = text.indexOf(pattern, idx)) >= 0) {
+            count++;
+            idx += pattern.length();
+        }
+        return count;
+    }
+
 
     public String getSessionOutput(TerminalSession session) {
         if (session == null || !session.isRunning()) {

@@ -45,3 +45,6 @@ compiled_test_res/
 
 # Kotlin compiler error logs
 .kotlin/errors/
+
+# Logs
+*.log

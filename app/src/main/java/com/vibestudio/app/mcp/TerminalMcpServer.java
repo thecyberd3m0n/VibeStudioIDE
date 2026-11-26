@@ -19,6 +19,7 @@ import java.util.Map;
 import org.json.JSONObject;
 
 public class TerminalMcpServer implements McpServer {
+    private static final int MAX_WAIT_S = 30;
 
     @Override
     public int getPriority() {
@@ -39,13 +40,20 @@ public class TerminalMcpServer implements McpServer {
             return "Keystroke: " + formatArgs.optString("keystroke", "");
         } else if ("read_terminal_output".equalsIgnoreCase(toolName)) {
             return "Reading terminal buffer (" + formatArgs.optInt("max_lines", 30) + " lines)";
+        } else if ("terminal_wait".equalsIgnoreCase(toolName)) {
+            String pattern = formatArgs.optString("pattern", "");
+            int timeout = formatArgs.optInt("timeout_s", 30);
+            if (!pattern.isEmpty()) {
+                return "Waiting up to " + timeout + "s for pattern: '" + pattern + "'";
+            }
+            return "Waiting up to " + timeout + "s for terminal command completion";
         }
         return null;
     }
 
     private static final String TAG = "TerminalMcpServer";
     private static final String NAME = "terminal";
-    private static final String DESCRIPTION = "Allows running shell commands in active or specific IDE terminal sessions, injecting keystrokes (such as 'n\\n', 'y\\n', ENTER, 'CTRL+C'), and inspecting terminal logs. Use 'terminal_open_tab' to explicitly create a new terminal session.";
+    private static final String DESCRIPTION = "Allows running shell commands in active or specific IDE terminal sessions, injecting keystrokes (such as 'n\\n', 'y\\n', ENTER, 'CTRL+C'), waiting for background commands/patterns, and inspecting terminal logs. Use 'terminal_open_tab' to explicitly create a new terminal session.";
 
     private boolean mIsActive = false;
     private final List<McpTool> mTools;
@@ -79,11 +87,18 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 3: read_terminal_output
-        mTools.add(McpTool.builder("read_terminal_output", "Read a paginated or filtered output fragment from a terminal session screen buffer. While a command is still running, call this instead of replying with text.")
+        mTools.add(McpTool.builder("read_terminal_output", "Read a paginated or filtered output fragment from a terminal session screen buffer. While a command is still running, call this or terminal_wait instead of replying with text.")
                 .addProperty("max_lines", PropertyType.INTEGER, "Maximum number of lines to return (default: 30 to conserve tokens).", false)
                 .addProperty("start_line", PropertyType.INTEGER, "Start line index for pagination (default: 0).", false)
                 .addProperty("tail_only", PropertyType.BOOLEAN, "If true, returns only the latest trailing lines (default: true).", false)
                 .addProperty("grep_pattern", PropertyType.STRING, "Optional search substring to filter matching terminal lines.", false)
+                .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
+                .build());
+
+        // Tool 4: terminal_wait
+        mTools.add(McpTool.builder("terminal_wait", "Block until a background job finishes or a pattern appears in the terminal output, or until timeout. HARD CAP 30s per call (longer is clamped): re-read logs after each wait. Prefer short waits (30s) and re-check status repeatedly instead of one long wait (e.g. 300s).")
+                .addProperty("pattern", PropertyType.STRING, "Optional substring pattern to wait for in the terminal output.", false)
+                .addProperty("timeout_s", PropertyType.INTEGER, "Timeout in seconds (default: 30; HARD CAP 30: larger values are clamped to 30; call again and re-read logs between waits).", false)
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
     }
@@ -140,6 +155,7 @@ public class TerminalMcpServer implements McpServer {
                 int newSessionId = sessionManager.getOrCreateSession(ToolType.TERMINAL, context, true);
                 Map<String, Object> extras = new HashMap<>();
                 extras.put("session_id", newSessionId);
+                extras.put("status", "running");
                 return McpToolResult.success("Opened new terminal tab with session_id: " + newSessionId, extras);
             }
 
@@ -180,6 +196,7 @@ public class TerminalMcpServer implements McpServer {
                     mPendingTerminalSessions.set(termSession);
                     Map<String, Object> extras = new HashMap<>();
                     extras.put("session_id", session.id);
+                    extras.put("session_state", "running");
                     return McpToolResult.success("Command dispatched to terminal session #" + session.id + ".", extras);
                 } else {
                     return McpToolResult.error("Failed to dispatch command to session #" + session.id + ".");
@@ -201,6 +218,7 @@ public class TerminalMcpServer implements McpServer {
                     String info = keyCode > 0 ? "keycode: " + keyCode : keystroke;
                     Map<String, Object> extras = new HashMap<>();
                     extras.put("session_id", session.id);
+                    extras.put("session_state", "running");
                     return McpToolResult.success("Keystroke injected into terminal session #" + session.id + ": " + info, extras);
                 } else {
                     return McpToolResult.error("Failed to inject keystroke.");
@@ -216,7 +234,21 @@ public class TerminalMcpServer implements McpServer {
 
                 Map<String, Object> extras = new HashMap<>();
                 extras.put("session_id", session.id);
+                extras.put("session_state", termSession.isRunning() ? "running" : "idle");
                 return McpToolResult.success(output, extras);
+
+            } else if ("terminal_wait".equals(toolName)) {
+                String pattern = arguments != null ? getStringArg(arguments, "pattern", null) : null;
+                int timeoutS = arguments != null ? getIntArg(arguments, "timeout_s", 30) : 30;
+                if (timeoutS <= 0) timeoutS = 30;
+                if (timeoutS > MAX_WAIT_S) timeoutS = MAX_WAIT_S; // hard cap: long waits hide errors; agent must re-read logs between waits
+
+                String resultOutput = TerminalSessionManager.getInstance().waitForTerminalOutput(termSession, pattern, timeoutS);
+
+                Map<String, Object> extras = new HashMap<>();
+                extras.put("session_id", session.id);
+                extras.put("session_state", termSession.isRunning() ? "running" : "idle");
+                return McpToolResult.success(resultOutput, extras);
 
             } else {
                 return McpToolResult.error("Unknown tool: " + toolName);
@@ -256,8 +288,20 @@ public class TerminalMcpServer implements McpServer {
     private String captureTerminalSnapshot(TerminalSession termSession) {
         try {
             if (termSession != null && termSession.isRunning()) {
-                String snapshot = TerminalSessionManager.getInstance().readTerminalOutput(termSession, 30, 0, true, null);
-                return snapshot != null ? snapshot : "";
+                // Settle: wait until output stops changing (max ~1.5s) so we don't return a stale buffer.
+                String prev = null;
+                String snapshot = "";
+                long deadline = System.currentTimeMillis() + 1500;
+                try { Thread.sleep(250); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                while (true) {
+                    snapshot = TerminalSessionManager.getInstance().readTerminalOutput(termSession, 30, 0, true, null);
+                    if (snapshot == null) snapshot = "";
+                    if (snapshot.equals(prev) || System.currentTimeMillis() >= deadline) break;
+                    prev = snapshot;
+                    try { Thread.sleep(200); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                }
+                return snapshot;
+
             }
         } catch (Exception e) {
             LogViewerService.getInstance().w(TAG, "Failed to capture terminal snapshot: " + e.getMessage());

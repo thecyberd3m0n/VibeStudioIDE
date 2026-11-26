@@ -75,6 +75,7 @@ public class McpClientManager {
         registerServer(new EditorMcpServer());
         registerServer(new TerminalMcpServer());
         registerServer(new BrowserMcpServer());
+        registerServer(new AutomatorMcpServer());
     }
 
     public void setWorkspacePath(String workspacePath) {
@@ -261,10 +262,12 @@ public class McpClientManager {
                 .addProperty("summary", PropertyType.STRING, "Final message shown to the user: what was done, or the question you need answered.", false)
                 .build());
         for (McpServer server : getSortedServers()) {
+            if (server.isLazy() && !isSkillLoaded(server.getName())) continue;
             for (McpTool tool : server.getTools()) {
                 tools.add(tool);
             }
         }
+
         return tools;
     }
 
@@ -283,15 +286,17 @@ public class McpClientManager {
             JSONArray skills = new JSONArray();
 
             for (McpServer server : getSortedServers()) {
+                if (server.getTools().isEmpty()) continue; // e.g. Automator app not installed
                 JSONObject skillObj = new JSONObject();
                 skillObj.put("name", server.getName());
                 skillObj.put("description", server.getDescription());
                 skillObj.put("priority_tier", server.getPriority());
-                if (!nativeTools) {
+                if (!nativeTools || server.isLazy()) {
                     skillObj.put("is_loaded", isSkillLoaded(server.getName()));
                 }
                 skills.put(skillObj);
             }
+
 
             List<Skill> customSkills = SkillScanner.scanSkills(mWorkspacePath);
             for (Skill customSkill : customSkills) {

@@ -472,18 +472,7 @@ public class BrowserManager {
 
         final String urlToLoad = finalUrl;
         addBrowserLog("INFO", TAG, "Navigating to: " + urlToLoad);
-
-        try {
-            JSONObject params = new JSONObject();
-            params.put("url", urlToLoad);
-            String cdpResult = CdpLocalClient.executeCdp(webView, "Page.navigate", params);
-            if (cdpResult != null && !cdpResult.startsWith("Native CDP Error:")) {
-                return "Navigating via CDP to " + urlToLoad;
-            }
-        } catch (Exception e) {
-            addBrowserLog("DEBUG", TAG, "CDP Page.navigate fallback to webView.loadUrl: " + e.getMessage());
-        }
-
+        // loadUrl on the main handler: never block the caller (UI thread) on the CDP socket.
         mMainHandler.post(() -> webView.loadUrl(urlToLoad));
         return "Navigating to " + urlToLoad;
     }
@@ -622,22 +611,48 @@ public class BrowserManager {
                 Canvas canvas = new Canvas(bitmap);
                 webView.draw(canvas);
 
-                ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-                bitmap.compress(Bitmap.CompressFormat.PNG, 90, outputStream);
-                byte[] byteArray = outputStream.toByteArray();
-                String base64Image = Base64.encodeToString(byteArray, Base64.NO_WRAP);
+                // Compress to fit ~64KB (base64 + JSON escaping) so the agent can actually read it.
+                final int budget = 64 * 1024 - 512;
+                float scale = 1f;
+                byte[] byteArray = null;
+                String base64Image = "";
+                int[] qualities = {70, 50, 35};
+                outer:
+                while (true) {
+                    int sw = Math.max(1, (int) (width * scale));
+                    int sh = Math.max(1, (int) (height * scale));
+                    Bitmap b = scale == 1f ? bitmap : Bitmap.createScaledBitmap(bitmap, sw, sh, true);
+                    try {
+                        for (int q : qualities) {
+                            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                            b.compress(Bitmap.CompressFormat.JPEG, q, bo);
+                            byteArray = bo.toByteArray();
+                            base64Image = Base64.encodeToString(byteArray, Base64.NO_WRAP);
+                            int escaped = base64Image.length();
+                            for (int i = 0; i < base64Image.length(); i++) if (base64Image.charAt(i) == '/') escaped++;
+                            if (escaped <= budget) break outer;
+                        }
+                    } finally {
+                        if (b != bitmap) b.recycle();
+                    }
+                    if (sw == 1 && sh == 1) break;
+                    scale *= 0.8f;
+                }
+                bitmap.recycle();
 
                 String filePath = "";
                 if (context != null) {
-                    File file = new File(context.getCacheDir(), "webview_screenshot_" + System.currentTimeMillis() + ".png");
+                    File file = new File(context.getCacheDir(), "webview_screenshot_" + System.currentTimeMillis() + ".jpg");
                     FileOutputStream fos = new FileOutputStream(file);
                     fos.write(byteArray);
                     fos.close();
                     filePath = file.getAbsolutePath();
                 }
+                result.put("image_mime", "image/jpeg");
+
 
                 result.put("status", "success");
-                result.put("base64", base64Image);
+                result.put("image_base64", base64Image);
                 result.put("file_path", filePath);
                 result.put("width", width);
                 result.put("height", height);

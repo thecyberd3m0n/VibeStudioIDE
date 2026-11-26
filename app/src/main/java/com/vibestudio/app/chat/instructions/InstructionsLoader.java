@@ -23,8 +23,9 @@ import java.util.Set;
 public class InstructionsLoader {
     private static final String TAG = "InstructionsLoader";
 
-    static final int MAX_FILE_CHARS = 8000;
-    static final int MAX_TOTAL_CHARS = 20000;
+    static final int MAX_FILE_CHARS = 16000;
+    static final int MAX_TOTAL_CHARS = 40000;
+
     private static final int MAX_SCAN_DEPTH = 4;
 
     private static final String[] ALWAYS_ON_FILES = {
@@ -96,7 +97,15 @@ public class InstructionsLoader {
         String body = FrontmatterParser.parse(raw).getBody().trim();
         if (body.isEmpty()) return;
         target.append("\n--- ").append(relativePath(root, file)).append(" ---\n").append(clip(body)).append("\n");
+        // Follow Claude-style "@path/to/file.md" imports (a line consisting only of the import); `seen` stops cycles.
+        for (String line : body.split("\n")) {
+            String t = line.trim();
+            if (t.length() > 1 && t.charAt(0) == '@' && t.indexOf(' ') < 0) {
+                appendFile(root, new File(file.getParentFile(), t.substring(1)), target, seen);
+            }
+        }
     }
+
 
     /** Reads a UTF-8 file only if it resolves (after symlinks) inside the workspace root. */
     private static String read(File root, File file) {

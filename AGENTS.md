@@ -1,4 +1,16 @@
-# VibeStudio IDE - Code Quality & Architectural Guidelines
+# VibeStudio IDE - Agent Instructions (AGENTS.md)
+
+
+## Project Map & Docs
+
+- `README.md` - project overview for humans.
+- `docs/DEVELOPMENT_TERMUX.md` - build/test/run via Termux (`./build.sh`, `./test.sh`, `./test-shizuku.sh`).
+- `docs/PROOT_FOR_SDK_29.md` - why targetSdk is 28 and the proot runtime design (read before touching targetSdk or the Linux runtime).
+- `CHANGELOG.md` - release notes (release procedure: `.github/skills/vibestudio-upgrade/SKILL.md`).
+- `app/src/main/assets/ai/*.md` - runtime prompts bundled into the app (NOT agent docs; do not move).
+- `libtermux-android/README.md` - terminal library docs.
+
+---
 
 This document outlines the strict architectural principles, code rules, and design patterns established for VibeStudio IDE. All future sessions, developers, and AI agents MUST adhere to these guidelines to ensure clean plugin isolation, decoupling, concurrency safety, and maintainability.
 
@@ -94,4 +106,36 @@ This document outlines the strict architectural principles, code rules, and desi
 ## 📐 Verification & Build Standards
 
 - **Clean Builds**: Always verify code changes by executing `./build.sh` and ensuring `bin/VibeStudio.apk` compiles cleanly without errors.
-- **No Residual Dependencies**: When refactoring or moving logic, strip out all unused domain imports and verify code quality using static analysis (`analyze_file`).
+
+---
+
+## 🧪 Self-Hosted Testing (VibeStudio inside VibeStudio)
+
+To build and test VibeStudio from inside another VibeStudio instance, build a dev variant with a different package id so both install side by side. No source patching is needed:
+
+```
+APP_ID=com.vibestudio.dev ./build.sh        # Termux build
+./gradlew assembleDebug -PappId=com.vibestudio.dev   # Gradle build
+```
+
+- Default (no `APP_ID`/`appId`) is unchanged: `com.vibestudio.app`. CI is unaffected.
+- `APP_ID` must have the **same length** as `com.vibestudio.app` (termux paths are byte-patched in `OnboardingActivity`).
+- Java packages/`namespace` stay `com.vibestudio.app`; `build.sh` uses `--rename-manifest-package` + `--custom-package`. FileProvider authority is `${applicationId}.fileprovider`.
+- Runtime paths derive from `getPackageName()` (Java) / `$APP_PKG` (bootstrap script); never hardcode the package id.
+- `build_test_apk.sh` and `test-shizuku.sh` also honor `APP_ID`.
+- Verify: `aapt dump badging bin/VibeStudio.apk | head -1`.
+- Logs: `/tmp` is not writable inside the IDE; write to `$HOME`. `build.sh` sets `ANDROID_DATA`/`ANDROID_ROOT` so the legacy `aapt` fallback works when `aapt2` is broken.
+
+---
+
+## 🤖 Android Tooling Workflow (Automator)
+
+Full details: `docs/DEVELOPMENT_TERMUX.md` section "Android Tooling Workflow". Summary:
+
+1. `android_status` first; check the allowlist and driver mode.
+2. Build the dev variant: `APP_ID=com.vibestudio.dev ./build.sh`. Never test against `com.vibestudio.app` (the IDE you run in).
+3. Install with `android_install_apk` (PackageInstaller via Automator, no Shizuku required), then `android_launch_app com.vibestudio.dev` (floating window by default) so the chat stays visible; test from there. After any UI change, do this yourself without asking the user (plain `./build.sh` is the release id and would target your own instance).
+4. Test: prefer `android_dump_ui_tree` + `android_tap_node`; take `android_screenshot` only when the tree lacks info. Ids are valid per dump only.
+5. Diagnose: `android_logcat` for the tested app's logs; `android_force_stop` to close it before a clean relaunch.
+6. Fix the code, rebuild, reinstall, force-stop, relaunch and re-verify. Repeat until the behavior is correct.
+7. Do not loop re-reading the same files or stale terminal buffers; if the result is unchanged, change approach.

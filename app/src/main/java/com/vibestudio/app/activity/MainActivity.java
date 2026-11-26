@@ -47,12 +47,16 @@ import com.vibestudio.app.terminal.TerminalSessionManager;
 import com.vibestudio.app.git.GitManager;
 import com.vibestudio.app.util.IntentUtils;
 
+import com.vibestudio.app.ux.TaskbarComponent;
+import com.vibestudio.app.ux.TaskbarUiState;
+
 import java.io.File;
 import java.util.List;
 
 public class MainActivity extends FragmentActivity implements TabManager.TabListener, FilesFragment.FileSelectionListener {
 
-    private LinearLayout mTabStripContainer;
+    private TaskbarComponent mTaskbar;
+
     private View mBtnLauncherContainer;
     private TabManager mTabManager;
     private LauncherFragment mLauncherFragment;
@@ -64,7 +68,18 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
 
         LogViewerService.getInstance().i("MainActivity", "MainActivity created with Tabbed Layout");
 
-        mTabStripContainer = findViewById(R.id.tab_strip_container);
+        mTaskbar = new TaskbarComponent(findViewById(android.R.id.content), new TaskbarComponent.Listener() {
+            @Override
+            public void onTabSelected(String tabId) {
+                mTabManager.selectTabById(tabId);
+            }
+
+            @Override
+            public void onTabCloseRequested(String tabId) {
+                mTabManager.closeTabById(tabId);
+            }
+        });
+
         mBtnLauncherContainer = findViewById(R.id.btn_launcher_container);
 
         mTabManager = TabManager.getInstance();
@@ -459,64 +474,17 @@ public class MainActivity extends FragmentActivity implements TabManager.TabList
         ft.commitAllowingStateLoss();
     }
 
+    /** Derives the taskbar uiState from TabManager and pushes it to the (purely visual) component. */
     private void renderTabs() {
-        mTabStripContainer.removeAllViews();
-        List<TabItem> tabs = mTabManager.getTabs();
         TabItem activeTab = mTabManager.getActiveTab();
-
-        LayoutInflater inflater = LayoutInflater.from(this);
-
-        for (final TabItem tab : tabs) {
-            View tabView = inflater.inflate(R.layout.tab_item_view, mTabStripContainer, false);
-
-            TextView tvIcon = tabView.findViewById(R.id.tab_icon);
-            ImageView ivFavicon = tabView.findViewById(R.id.tab_favicon);
-            TextView tvTitle = tabView.findViewById(R.id.tab_title);
-            TextView tvClose = tabView.findViewById(R.id.tab_close_btn);
-
-            if (tab.getFavicon() != null) {
-                ivFavicon.setImageBitmap(tab.getFavicon());
-                ivFavicon.setVisibility(View.VISIBLE);
-                tvIcon.setVisibility(View.GONE);
-            } else if (tab.getIconResId() != null) {
-                ivFavicon.setImageResource(tab.getIconResId());
-                ivFavicon.setVisibility(View.VISIBLE);
-                tvIcon.setVisibility(View.GONE);
-            } else {
-                tvIcon.setText(tab.getIcon());
-                tvIcon.setVisibility(View.VISIBLE);
-                ivFavicon.setVisibility(View.GONE);
-            }
-            tvTitle.setText(tab.getTitle());
-
-            boolean isActive = (activeTab != null && activeTab.getId().equals(tab.getId()));
-
-            if (isActive) {
-                tabView.setBackgroundColor(Color.parseColor("#1E1E1E"));
-                tvTitle.setTextColor(Color.parseColor("#FFFFFF"));
-                tvIcon.setTextColor(Color.parseColor("#FFFFFF"));
-            } else {
-                tabView.setBackgroundColor(Color.parseColor("#2D2D2D"));
-                tvTitle.setTextColor(Color.parseColor("#969696"));
-                tvIcon.setTextColor(Color.parseColor("#969696"));
-            }
-
-            if (!tab.isCloseable()) {
-                tvClose.setVisibility(View.GONE);
-            } else {
-                tvClose.setVisibility(View.VISIBLE);
-                tvClose.setOnClickListener(v -> {
-                    mTabManager.closeTab(tab);
-                });
-            }
-
-            tabView.setOnClickListener(v -> {
-                mTabManager.selectTab(tab);
-            });
-
-            mTabStripContainer.addView(tabView);
+        List<TaskbarUiState.Item> items = new java.util.ArrayList<>();
+        for (TabItem tab : mTabManager.getTabs()) {
+            items.add(new TaskbarUiState.Item(tab.getId(), tab.getTitle(), tab.getIcon(), tab.getIconResId(),
+                    tab.getFavicon(), tab.isCloseable(), activeTab != null && activeTab.getId().equals(tab.getId())));
         }
+        mTaskbar.render(new TaskbarUiState(items));
     }
+
 
     @Override
     protected void onNewIntent(Intent intent) {

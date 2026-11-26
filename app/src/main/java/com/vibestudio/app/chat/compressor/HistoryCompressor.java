@@ -27,17 +27,21 @@ public class HistoryCompressor {
     }
 
     public static List<ChatMessage> compressIfNeeded(List<ChatMessage> history) {
+        if (history == null || history.size() <= 6 || estimateTokenCount(history) < TOKEN_THRESHOLD) {
+            return history != null ? new ArrayList<>(history) : new ArrayList<ChatMessage>();
+        }
+        return compress(history);
+    }
+
+    /** Compresses regardless of the token threshold (used as a last resort after repeated request timeouts). */
+    public static List<ChatMessage> compress(List<ChatMessage> history) {
         if (history == null || history.size() <= 6) {
             return history != null ? new ArrayList<>(history) : new ArrayList<ChatMessage>();
         }
 
-        int estimatedTokens = estimateTokenCount(history);
-        if (estimatedTokens < TOKEN_THRESHOLD) {
-            return new ArrayList<>(history);
-        }
-
         // Keep system/welcome message at index 0, summarize middle, keep last 4 messages
         List<ChatMessage> compressed = new ArrayList<>();
+
         compressed.add(history.get(0));
 
         int midEndIndex = history.size() - 4;

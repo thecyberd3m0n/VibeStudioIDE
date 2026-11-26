@@ -41,6 +41,14 @@ public class ToolResult {
     }
 
     public String getFormattedOutput() {
-        return "[MCP Tool Execution Output for " + toolName + "]\n" + output.toString();
+        String header = "[MCP Tool Execution Output for " + toolName + "]\n";
+        if (isError()) {
+            String msg = getErrorMessage();
+            return header + "TOOL CALL FAILED"
+                    + (msg != null && !msg.isEmpty() ? ": " + msg : "")
+                    + "\nDo not continue as if it succeeded: fix the cause (e.g. wrong session_id, bad arguments) and retry.\n"
+                    + output.toString();
+        }
+        return header + output.toString();
     }
 }

@@ -48,24 +48,27 @@ final class NativeHistory {
         final Call call;
         final boolean error;
 
-        private Item(Kind kind, String text, List<Call> calls, Call call, boolean error) {
+        final ChatMessage sourceMessage;
+
+        private Item(Kind kind, String text, List<Call> calls, Call call, boolean error, ChatMessage sourceMessage) {
             this.kind = kind;
             this.text = text;
             this.calls = calls;
             this.call = call;
             this.error = error;
+            this.sourceMessage = sourceMessage;
         }
 
-        static Item text(boolean user, String text) {
-            return new Item(user ? Kind.USER : Kind.ASSISTANT, text, null, null, false);
+        static Item text(boolean user, String text, ChatMessage sourceMessage) {
+            return new Item(user ? Kind.USER : Kind.ASSISTANT, text, null, null, false, sourceMessage);
         }
 
         static Item calls(List<Call> calls) {
-            return new Item(Kind.ASSISTANT_CALLS, null, calls, null, false);
+            return new Item(Kind.ASSISTANT_CALLS, null, calls, null, false, null);
         }
 
         static Item result(Call call, String text, boolean error) {
-            return new Item(Kind.TOOL_RESULT, text, null, call, error);
+            return new Item(Kind.TOOL_RESULT, text, null, call, error, null);
         }
     }
 
@@ -99,7 +102,7 @@ final class NativeHistory {
                     continue;
                 }
             }
-            items.add(Item.text(msg.isUser(), msg.getText()));
+            items.add(Item.text(msg.isUser(), msg.getText(), msg));
             i++;
         }
         return items;

@@ -1,7 +1,9 @@
 package com.vibestudio.app.chat.agents;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -17,13 +19,22 @@ public final class AgentToolPolicy {
             "editor_replace_lines", "editor_search_replace", "editor_insert_lines", "editor_save",
             "file_create_file", "file_create_directory", "file_delete", "file_move", "file_copy");
     private static final List<String> EXECUTE_TOOLS = Arrays.asList(
-            "terminal_open_tab", "execute_command", "execute_command_async", "send_keystroke", "read_terminal_output");
-    private static final String BROWSER_PREFIX = "browser_";
+            "terminal_open_tab", "execute_command", "execute_command_async", "send_keystroke", "read_terminal_output", "terminal_wait");
+    /** Skill tool families addressed by prefix; an agent naming the family allows all of its tools. */
+    private static final Map<String, String> PREFIX_FAMILIES = new HashMap<>();
+    static {
+        PREFIX_FAMILIES.put("browser", "browser_");
+        PREFIX_FAMILIES.put("web", "browser_");
+        PREFIX_FAMILIES.put("android", "android_");
+        PREFIX_FAMILIES.put("device", "android_");
+        PREFIX_FAMILIES.put("automator", "android_");
+    }
 
     private final boolean mEnforced;
     private final boolean mAllowAll;
     private final Set<String> mAllowedTools = new HashSet<>();
-    private boolean mAllowBrowser;
+    private final Set<String> mAllowedPrefixes = new HashSet<>();
+
 
     public AgentToolPolicy(List<String> declaredTools) {
         if (declaredTools == null) {
@@ -61,16 +72,15 @@ public final class AgentToolPolicy {
                     mAllowedTools.addAll(EXECUTE_TOOLS);
                     recognised = true;
                     break;
-                case "web":
-                case "browser":
-                    mAllowBrowser = true;
-                    recognised = true;
-                    break;
                 default:
-                    if (isBuiltInTool(t)) {
+                    if (PREFIX_FAMILIES.containsKey(t)) {
+                        mAllowedPrefixes.add(PREFIX_FAMILIES.get(t));
+                        recognised = true;
+                    } else if (isBuiltInTool(t)) {
                         mAllowedTools.add(t);
                         recognised = true;
                     }
+
             }
         }
         // A list naming only tools we do not have (e.g. MCP tools of another host) must not brick the agent.
@@ -79,7 +89,11 @@ public final class AgentToolPolicy {
     }
 
     private static boolean isBuiltInTool(String t) {
-        return READ_TOOLS.contains(t) || EDIT_TOOLS.contains(t) || EXECUTE_TOOLS.contains(t) || t.startsWith(BROWSER_PREFIX);
+        return READ_TOOLS.contains(t) || EDIT_TOOLS.contains(t) || EXECUTE_TOOLS.contains(t) || PREFIX_FAMILIES.containsValue(prefixOf(t));
+    }
+
+    private static String prefixOf(String tool) {
+        return tool.substring(0, tool.indexOf('_') + 1);
     }
 
     public boolean isEnforced() {
@@ -89,6 +103,7 @@ public final class AgentToolPolicy {
     public boolean isAllowed(String toolName) {
         if (mAllowAll || toolName == null) return true;
         String t = toolName.toLowerCase(Locale.ROOT);
-        return mAllowedTools.contains(t) || (mAllowBrowser && t.startsWith(BROWSER_PREFIX));
+        return mAllowedTools.contains(t) || mAllowedPrefixes.contains(prefixOf(t));
     }
+
 }
