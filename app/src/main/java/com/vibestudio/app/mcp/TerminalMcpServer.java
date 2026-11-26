@@ -19,6 +19,7 @@ import java.util.Map;
 import org.json.JSONObject;
 
 public class TerminalMcpServer implements McpServer {
+    private static final int MAX_WAIT_S = 30;
 
     @Override
     public int getPriority() {
@@ -95,9 +96,9 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 4: terminal_wait
-        mTools.add(McpTool.builder("terminal_wait", "Block until a background job finishes or a pattern appears in the terminal output, or until timeout. Prefer short waits (30s) and re-check status repeatedly instead of one long wait (e.g. 300s).")
+        mTools.add(McpTool.builder("terminal_wait", "Block until a background job finishes or a pattern appears in the terminal output, or until timeout. HARD CAP 30s per call (longer is clamped): re-read logs after each wait. Prefer short waits (30s) and re-check status repeatedly instead of one long wait (e.g. 300s).")
                 .addProperty("pattern", PropertyType.STRING, "Optional substring pattern to wait for in the terminal output.", false)
-                .addProperty("timeout_s", PropertyType.INTEGER, "Timeout in seconds (default: 30; use 30 and re-check rather than long waits, max: 300).", false)
+                .addProperty("timeout_s", PropertyType.INTEGER, "Timeout in seconds (default: 30; HARD CAP 30: larger values are clamped to 30; call again and re-read logs between waits).", false)
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
     }
@@ -240,7 +241,7 @@ public class TerminalMcpServer implements McpServer {
                 String pattern = arguments != null ? getStringArg(arguments, "pattern", null) : null;
                 int timeoutS = arguments != null ? getIntArg(arguments, "timeout_s", 30) : 30;
                 if (timeoutS <= 0) timeoutS = 30;
-                if (timeoutS > 300) timeoutS = 300;
+                if (timeoutS > MAX_WAIT_S) timeoutS = MAX_WAIT_S; // hard cap: long waits hide errors; agent must re-read logs between waits
 
                 String resultOutput = TerminalSessionManager.getInstance().waitForTerminalOutput(termSession, pattern, timeoutS);
 
