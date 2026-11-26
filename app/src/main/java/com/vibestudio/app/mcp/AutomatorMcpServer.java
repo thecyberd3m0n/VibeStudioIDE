@@ -56,15 +56,18 @@ public class AutomatorMcpServer implements McpServer {
 
     public AutomatorMcpServer() {
         mTools.add(McpTool.builder("android_status", "Get VibeStudioAutomator driver status (mode ACCESSIBILITY/SHIZUKU/UNAVAILABLE, capabilities, allowlist) and run state.").build());
+        mTools.add(McpTool.builder("android_begin_session", "REQUIRED FIRST. Declare the app under test (descriptor = package). The Automator binds that app's window: all coordinates, UI tree and screenshots are relative to it (0,0 = top-left corner of the app window, not the device screen) and nothing outside it is reachable. Returns the window width/height.")
+                .addProperty("package", PropertyType.STRING, "Package name of the tested app (must be in the Automator allowlist).", true).build());
+        mTools.add(McpTool.builder("android_begin_full_device_session", "Separate mode, no descriptor: operate on the whole device screen (only if Full Device Mode is enabled by the user in the Automator).").build());
         mTools.add(McpTool.builder("android_dump_ui_tree", "Dump the foreground app UI tree with sequential node ids usable by android_tap_node.")
                 .addProperty("compact", PropertyType.BOOLEAN, "Strip non-interactive wrappers (default true).", false).build());
         mTools.add(McpTool.builder("android_tap_node", "Tap a node by id from the latest android_dump_ui_tree.")
                 .addProperty("id", PropertyType.INTEGER, "Node id.", true).build());
-        mTools.add(McpTool.builder("android_tap", "Tap screen coordinates (screenshot coords divided by scaleFactor).")
+        mTools.add(McpTool.builder("android_tap", "Tap in the session window space: (0,0) is the top-left corner of the tested app window, not the display (screenshot coords divided by scaleFactor). The Automator clamps every point into that window, so a tap can never land outside the app.")
                 .addProperty("x", PropertyType.INTEGER, "X.", true)
                 .addProperty("y", PropertyType.INTEGER, "Y.", true)
                 .addProperty("scaleFactor", PropertyType.STRING, "Screenshot scaleFactor (default 1).", false).build());
-        mTools.add(McpTool.builder("android_swipe", "Swipe between two points in native pixels.")
+        mTools.add(McpTool.builder("android_swipe", "Swipe between two points in the session window space ((0,0) = top-left of the tested app window). Points are clamped into that window.")
                 .addProperty("x1", PropertyType.INTEGER, "Start X.", true)
                 .addProperty("y1", PropertyType.INTEGER, "Start Y.", true)
                 .addProperty("x2", PropertyType.INTEGER, "End X.", true)
@@ -75,7 +78,7 @@ public class AutomatorMcpServer implements McpServer {
                 .addProperty("id", PropertyType.INTEGER, "Node id (optional).", false).build());
         mTools.add(McpTool.builder("android_global_action", "Perform BACK, HOME, RECENTS or NOTIFICATIONS.")
                 .addProperty("action", PropertyType.STRING, "BACK|HOME|RECENTS|NOTIFICATIONS", true).build());
-        mTools.add(McpTool.builder("android_launch_app", "Launch an app by package name (must be in the Automator allowlist). Optionally in a floating window on a screen quarter.")
+        mTools.add(McpTool.builder("android_launch_app", "Launch an app by package name (must be in the Automator allowlist); binds the session to it, or adopts its already open window if the session package matches. Optionally in a floating window on a screen quarter.")
                 .addProperty("package", PropertyType.STRING, "Package name.", true)
                 .addProperty("quarter", PropertyType.STRING, "Optional: top_left|top_right|bottom_left|bottom_right. Launches the app in a floating window covering that quarter of the screen (needs freeform support).", false).build());
         mTools.add(McpTool.builder("android_screenshot", "Capture a <=64KB WebP/JPEG screenshot as JSON with base64, scaleFactor.").build());
@@ -87,7 +90,7 @@ public class AutomatorMcpServer implements McpServer {
         mTools.add(McpTool.builder("android_force_stop", "Close a tested app (allowlisted package). Uses am force-stop with Shizuku, otherwise killBackgroundProcesses.")
                 .addProperty("package", PropertyType.STRING, "Package name.", true).build());
 
-        mTools.add(McpTool.builder("android_install_apk", "Install an APK via the Automator (PackageInstaller; Shizuku not required, the user may have to confirm the system dialog).")
+        mTools.add(McpTool.builder("android_install_apk", "Install an APK via the Automator (PackageInstaller; Shizuku not required, the user must tap Install in the system dialog). BLOCKS the agent loop with no timeout until the user acts (Install or cancel); the screen is not readable and the frame is hidden meanwhile. Do not call other tools in parallel.")
                 .addProperty("path", PropertyType.STRING, "Absolute path of an APK readable by the IDE (e.g. the IDE home build output); it is streamed to the Automator. Never copy the APK to /sdcard or shared storage.", true).build());
 
         mTools.add(McpTool.builder("android_emergency_stop", "Immediately stop the Automator agent session.").build());
@@ -193,7 +196,9 @@ public class AutomatorMcpServer implements McpServer {
                         @Override public void onSuccess(String r) { iok[0] = r; ilatch.countDown(); }
                         @Override public void onError(int code, String m) { ierr[0] = "Error " + code + ": " + m; ilatch.countDown(); }
                     });
-                    if (!ilatch.await(CALL_TIMEOUT_S, TimeUnit.SECONDS)) return McpToolResult.error("Automator call timed out");
+                    // No timeout: the loop stays suspended until the Automator reports the user's decision
+                    // (Install / cancel / focus back to VibeStudio) or STOP releases the call.
+                    ilatch.await();
                 }
                 if (ierr[0] != null) return McpToolResult.error(ierr[0]);
                 return McpToolResult.success(iok[0], toolName);

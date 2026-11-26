@@ -4,14 +4,15 @@ The `android` skill inspects, navigates and tests native Android apps on this de
 
 ## Key Capabilities:
 - `android_status`: Driver mode (ACCESSIBILITY | SHIZUKU | UNAVAILABLE), capabilities, allowlist and run state. Call it first.
+- `android_begin_session` {package}: **Call first.** Declares the app under test; the Automator binds its window. Everything you see/do is window-relative (0,0 = the app's top-left corner) and nothing outside the window is reachable. `android_begin_full_device_session` is a separate, descriptor-less whole-screen mode (only when the user enabled Full Device Mode).
 - `android_dump_ui_tree`: Compact UI tree of the foreground app; every node gets an integer `id` valid only for that dump.
 - `android_tap_node`: Tap a node by `id` from the latest dump.
 - `android_tap` / `android_swipe`: Gestures in native pixels. For `android_tap` with screenshot coordinates pass the screenshot's `scaleFactor`.
 - `android_input_text`: Set text on a node (or the focused one if `id` is omitted).
-- `android_global_action`: BACK, HOME, RECENTS or NOTIFICATIONS.
-- `android_launch_app`: Launch an app by package name.
+- `android_global_action`: BACK, HOME, RECENTS or NOTIFICATIONS. HOME/RECENTS/NOTIFICATIONS leave the app box: use them only when the user asks.
+- `android_launch_app`: Launch an app by package name (binds the session; adopts the open window if the package matches the session).
 - `android_screenshot`: JSON with `base64`, `width`, `height`, `scaleFactor`; the image is at most 64 KB.
-- `android_install_apk`: Installs an APK through the Automator's PackageInstaller (no Shizuku needed). The user may have to confirm the system install dialog; tap it via the UI tree. Pass the absolute path of the APK inside the IDE home (e.g. ~/Project/bin/App.apk); the IDE streams it to the Automator via ParcelFileDescriptor. NEVER copy the APK to /sdcard or shared storage first: it is not available and will not work.
+- `android_install_apk`: Installs an APK through the Automator's PackageInstaller (no Shizuku needed). The user must tap Install in the system dialog themselves: the call BLOCKS (agent loop paused) until they do; the frame is hidden and the screen unreadable meanwhile. Never try to tap the installer. Pass the absolute path of the APK inside the IDE home (e.g. ~/Project/bin/App.apk); the IDE streams it to the Automator via ParcelFileDescriptor. NEVER copy the APK to /sdcard or shared storage first: it is not available and will not work.
 - `android_logcat` (optional `package`, `level`): whole-device log needs Shizuku or `pm grant dev.vibestudio.automator android.permission.READ_LOGS`; otherwise only the Automator's own log. `android_force_stop`: Shizuku, otherwise killBackgroundProcesses.
 - `android_emergency_stop`: Stops the session immediately.
 

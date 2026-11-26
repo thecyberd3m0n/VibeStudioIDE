@@ -162,7 +162,7 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
         // 1. Global Logcat Process Entry
         int globalPid = Process.myPid();
         String globalPath = context.getFilesDir() != null ? context.getFilesDir().getAbsolutePath() : "App Process";
-        addProcessCard(context, "Global Logcat", "System & app stdout/stderr (~5KB max)",
+        addProcessCard(context, "Global Logcat", "System & app stdout/stderr (~10KB max)",
                 globalPid, globalPath, true, () -> openLogDetail(Mode.GLOBAL_LOGCAT));
 
         // 2. One entry per managed PTY session; GitManager registers its channel on first use.
@@ -286,7 +286,7 @@ public class LogViewerFragment extends Fragment implements LogViewerService.OnLo
     private void reloadCurrentLogDetail() {
         if (mCurrentMode == Mode.GLOBAL_LOGCAT) {
             if (mTvLogDetailTitle != null) {
-                mTvLogDetailTitle.setText("Global Logcat (~5KB Max)");
+                mTvLogDetailTitle.setText("Global Logcat (~10KB Max)");
             }
             if (mLogAdapter != null && mLogService != null) {
                 mLogAdapter.setLines(mLogService.getLogList());

@@ -52,6 +52,17 @@ public class WorkspaceBoundaryGuard {
             return true;
         }
 
+        // Temp directories are always allowed.
+        String envTmp = System.getenv("TMPDIR");
+        for (String tmp : new String[] {"/tmp", envTmp}) {
+            if (tmp == null || tmp.isEmpty()) continue;
+            String canonicalTmp = canonicalizePath(tmp, null);
+            if (canonicalTarget.equals(canonicalTmp) || canonicalTarget.startsWith(canonicalTmp + File.separator)) {
+                return true;
+            }
+        }
+
+
         String prefix = canonicalWorkspace.endsWith(File.separator)
                 ? canonicalWorkspace
                 : canonicalWorkspace + File.separator;

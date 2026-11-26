@@ -95,9 +95,9 @@ public class TerminalMcpServer implements McpServer {
                 .build());
 
         // Tool 4: terminal_wait
-        mTools.add(McpTool.builder("terminal_wait", "Block and wait until a background job finishes or until a specific pattern appears in the terminal output, or until timeout hits. Eliminates polling loops.")
+        mTools.add(McpTool.builder("terminal_wait", "Block until a background job finishes or a pattern appears in the terminal output, or until timeout. Prefer short waits (30s) and re-check status repeatedly instead of one long wait (e.g. 300s).")
                 .addProperty("pattern", PropertyType.STRING, "Optional substring pattern to wait for in the terminal output.", false)
-                .addProperty("timeout_s", PropertyType.INTEGER, "Timeout in seconds to wait (default: 30, max: 300).", false)
+                .addProperty("timeout_s", PropertyType.INTEGER, "Timeout in seconds (default: 30; use 30 and re-check rather than long waits, max: 300).", false)
                 .addProperty("session_id", PropertyType.INTEGER, "Optional target terminal session ID (integer, e.g. 1).", false)
                 .build());
     }

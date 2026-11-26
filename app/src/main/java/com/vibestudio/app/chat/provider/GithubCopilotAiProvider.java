@@ -629,6 +629,9 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
             String responseBody = api == CopilotApi.RESPONSES ? readStreamKeepingLines(is) : readStream(is);
 
             logResponseDetails(TAG, responseCode, responseHeaders, responseBody);
+            LogViewerService.getInstance().i(TAG, "Sent " + targetModel + " via " + api.path + ": thinking_budget="
+                    + payload.opt("thinking_budget") + ", reasoning_effort=" + payload.opt("reasoning_effort") + ", max_tokens=" + payload.opt("max_tokens"));
+
 
             if (responseCode >= 200 && responseCode < 300 && api == CopilotApi.RESPONSES) {
                 CopilotResponsesApi.Result result = CopilotResponsesApi.parse(responseBody, targetModel);
@@ -652,13 +655,12 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
                     JSONObject choice = choices.getJSONObject(0);
                     JSONObject msg = choice.getJSONObject("message");
                     String resContent = msg.isNull("content") ? "" : msg.optString("content", "");
-                    String reasoningContent = msg.optString("reasoning_content", null);
-                    if (reasoningContent == null || reasoningContent.trim().isEmpty()) {
-                        reasoningContent = msg.optString("thinking", null);
+                    String reasoningContent = null;
+                    for (String key : new String[] {"reasoning_content", "reasoning_text", "thinking", "reasoning"}) {
+                        reasoningContent = msg.optString(key, null);
+                        if (reasoningContent != null && !reasoningContent.trim().isEmpty()) break;
                     }
-                    if (reasoningContent == null || reasoningContent.trim().isEmpty()) {
-                        reasoningContent = msg.optString("reasoning", null);
-                    }
+
 
                     JSONArray toolCalls = msg.optJSONArray("tool_calls");
                     List<AiResponse.ToolCall> nativeCalls = new ArrayList<>();
@@ -781,6 +783,9 @@ public class GithubCopilotAiProvider extends AbstractAiProvider {
         JSONObject payload = new JSONObject();
         payload.put("model", targetModel);
         payload.put("messages", messagesArray);
+        // Copilot only returns Claude thinking (reasoning_text) when a budget is requested.
+        if (targetModel.toLowerCase().startsWith("claude")) payload.put("thinking_budget", 4000).put("max_tokens", 16000).put("reasoning_effort", "medium");
+
 
         if (tools != null && !tools.isEmpty()) {
             JSONArray toolsArray = new JSONArray();
