@@ -78,9 +78,11 @@ public class AutomatorMcpServer implements McpServer {
                 .addProperty("id", PropertyType.INTEGER, "Node id (optional).", false).build());
         mTools.add(McpTool.builder("android_global_action", "Perform BACK, HOME, RECENTS or NOTIFICATIONS.")
                 .addProperty("action", PropertyType.STRING, "BACK|HOME|RECENTS|NOTIFICATIONS", true).build());
-        mTools.add(McpTool.builder("android_launch_app", "Launch an app by package name (must be in the Automator allowlist); binds the session to it, or adopts its already open window if the session package matches. Optionally in a floating window on a screen quarter.")
+        mTools.add(McpTool.builder("android_launch_app", "Launch an app by package name (must be in the Automator allowlist); binds the session to it, or adopts its already open window if the session package matches. By DEFAULT the app opens in a floating window (top_right quarter) when freeform is supported; set standard_window=true only to deliberately use normal full-screen mode (e.g. the user asked for it).")
                 .addProperty("package", PropertyType.STRING, "Package name.", true)
-                .addProperty("quarter", PropertyType.STRING, "Optional: top_left|top_right|bottom_left|bottom_right. Launches the app in a floating window covering that quarter of the screen (needs freeform support).", false).build());
+                .addProperty("quarter", PropertyType.STRING, "Optional: top_left|top_right|bottom_left|bottom_right. Floating window position (default top_right).", false)
+                .addProperty("standard_window", PropertyType.BOOLEAN, "Set true to launch in normal full-screen mode instead of the default floating window. Use only if the user asked for it or floating mode is unsuitable. Default: false.", false).build());
+
         mTools.add(McpTool.builder("android_screenshot", "Capture a <=64KB WebP/JPEG screenshot as JSON with base64, scaleFactor.").build());
         mTools.add(McpTool.builder("android_logcat", "Read recent logcat lines (logcat -d -t N). Whole device log needs Shizuku or READ_LOGS granted via pm grant; otherwise only the Automator's own log is readable.")
                 .addProperty("lines", PropertyType.INTEGER, "Number of trailing lines (default 200).", false)
