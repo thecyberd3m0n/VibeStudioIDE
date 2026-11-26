@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+### Added
+- **Android Automator Integration**: Native Android app control through the optional VibeStudioAutomator companion (AIDL toolkit): launch, tap, type, UI tree dump, screenshots, logcat, force-stop, and APK install streamed via `ParcelFileDescriptor`/PackageInstaller. `android_launch_app` opens a floating window by default (`standard_window` flag and `quarter` param available).
+- **Self-Hosted Dev Build**: `VibeStudioDev` variant (`APP_ID=com.vibestudio.dev ./build.sh`) so VibeStudio can be built and tested from inside VibeStudio, with distinct APK output filenames for standard and dev builds. Documented the Android Tooling Workflow in `AGENTS.md` and `docs/DEVELOPMENT_TERMUX.md`.
+- **Image Attachments in Chat**: Images can be attached to chat messages; screenshots from browser and Automator tools are delivered to the model as image attachments and shown in chat as a thumbnail chip (tap to open) via a dedicated `TOOL_IMAGE` message.
+- **Tab Strip Overflow**: Taskbar overflow button with upward popup, hidden-tab count indicator, tabs shown at >=50% fit, and tab titles truncated to 15 characters.
+- **Single-Instance Tabs**: Files and Settings tabs are now single-instance.
+
+### Changed
+- **Terminal Tool**: Improved terminal tool; snapshots trim trailing empty lines; `terminal_wait` has a hard 30s cap and reports timeout, pattern match, or session end; agents are told to use `$TMPDIR` for temporary files.
+- **Tool Error Handling**: Failed tool results are marked in history and an error rule was added to the agent loop prompt.
+- **AI Request Resilience**: Timed-out AI requests are retried up to 3 times, then the context is compressed and the conversation continues.
+- **Browser Screenshots**: Compressed to JPEG (~64KB) and returned as `image_base64`.
+- **Taskbar**: Refactored the taskbar into a reusable UX component.
+- **Prompts & Docs**: Prompt optimization, `android_tool.md` is dump-first with screenshots used sparingly, browser prompt documents the 403 user-agent workaround, and agent learnings doc added.
+
+### Fixed
+- **Browser Navigation**: Navigate via `loadUrl` on the main handler so the UI no longer blocks on the CDP socket.
+- **Build Script**: `build.sh` no longer wipes existing APKs in `bin/`.
+
+
 ## [0.2.0]
 
 ### Added
